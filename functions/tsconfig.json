@@ -4,9 +4,12 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
+    "noUncheckedIndexedAccess": true,
     "noEmit": true,
+    "skipLibCheck": true,
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["."]
+  "//": "engine/data/types 만 포함한다. src/ui·scenes·main 은 DOM 을 쓰므로 Workers 런타임에서 못 돈다 — 이 경계가 무너지면 여기서 잡힌다.",
+  "include": [".", "../src/engine/**/*.ts", "../src/data/**/*.ts", "../src/types.ts"]
 }
