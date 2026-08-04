@@ -23,6 +23,8 @@
 - 2026-08-05 **Task 1 완료** — vite+ts+vitest, GitHub Pages 워크플로, Workers 프록시 스텁.
   테스트 2/2, 빌드 성공, `dist` 경로 `./assets/...` 확인. 커밋 `815adee`
 - 2026-08-05 GitHub 레포 생성·푸시 (private): https://github.com/teobasaki/nan-alibi
+- 2026-08-05 **배포 경로 확정 → Cloudflare Pages 단일 오리진** (ADR 002). `workers/` 제거,
+  `functions/api/` 로 전환. CORS 코드 소멸. 테스트 4/4, functions 타입체크·빌드 통과
 
 ## 다음 할 일
 
@@ -34,9 +36,9 @@
 
 ## 안 되는 것 / 막힌 것 (정직하게 — "다 잘 됨"이라고 쓰지 마라)
 
-- **GitHub Pages 미설정.** 레포가 private인데 무료 플랜에서는 private repo에 Pages를 못 붙인다.
-  토큰에 `user` 스코프가 없어 플랜 확인 불가. 배포 경로 결정 대기 중 → [QUESTIONS.md](QUESTIONS.md) Q1
-- Workers는 아직 에코 스텁 — Anthropic 실호출은 Task 9
+- **Cloudflare 인증 미완.** `wrangler login` 은 브라우저 로그인이라 에이전트가 못 한다.
+  **최초 1회는 사람이 실행해야 배포가 가능하다.** 그 전까지 실배포 URL 없음
+- API는 아직 에코 스텁 — Anthropic 실호출·SSE 중계는 Task 9
 
 ## 열린 질문
 
