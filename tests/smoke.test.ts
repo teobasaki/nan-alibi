@@ -27,7 +27,7 @@ describe('scaffold', () => {
 
   it('소스 어디에도 API 키 리터럴이 없다', () => {
     for (const f of [...allFiles('src'), ...allFiles('functions'), 'wrangler.toml']) {
-      expect(readFileSync(f, 'utf-8'), f).not.toMatch(/sk-ant-[A-Za-z0-9_-]{8}/)
+      expect(readFileSync(f, 'utf-8'), f).not.toMatch(/sk-(ant|proj|or)-[A-Za-z0-9_-]{8}/)
     }
   })
 })
