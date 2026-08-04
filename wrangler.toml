@@ -1,0 +1,7 @@
+name = "nan-alibi"
+compatibility_date = "2026-08-01"
+pages_build_output_dir = "dist"
+
+# ANTHROPIC_API_KEY 는 Secret 으로만 넣는다:
+#   npx wrangler pages secret put ANTHROPIC_API_KEY
+# 절대 이 파일이나 소스에 쓰지 말 것 — tests/smoke.test.ts 가 회귀 테스트로 막는다.
