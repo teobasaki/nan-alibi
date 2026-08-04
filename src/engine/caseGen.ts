@@ -126,6 +126,15 @@ export function generateCase(seed: number): CaseFile {
     text: '증거 앞에서 무너지며 흘린 진술',
   })
 
+  // 사슬 깊이를 시드마다 다르게 준다. 이게 없으면 모든 사건의 최소 조사 수가 3으로 고정되어
+  // 난이도 분포가 사라진다 (ADR 003).
+  //   'short'   접근물증 → 제시 → 결정적                     (m* 3)
+  //   'witness' 목격자 심문 → 접근물증 → 제시 → 결정적        (m* 4)
+  //   'double'  목격자 심문 → 접근물증 → 제시 → 결정적        (m* 4, 결정적이 증언 2개 요구)
+  const chain = pick(rng, ['short', 'witness', 'double'] as const)
+  const witness = pick(rng, innocents)
+  const witnessTestimony = `T-${witness}`
+
   // --- 물증 ---
   const evidence: Evidence[] = []
   let n = 0
@@ -139,7 +148,7 @@ export function generateCase(seed: number): CaseFile {
     place: suspects[culprit].truth[1]!,
     subjects: [culprit],
     decisive: false,
-    requires: [],
+    requires: chain === 'short' ? [] : [witnessTestimony],
   }
   evidence.push(anchorEv)
   presentUnlocks.push({ evidenceId: anchorEv.id, suspectId: culprit, yieldsTestimonyId: slipId })
@@ -152,7 +161,7 @@ export function generateCase(seed: number): CaseFile {
     place: CRIME_PLACE,
     subjects: [culprit],
     decisive: true,
-    requires: [slipId],
+    requires: chain === 'double' ? [slipId, witnessTestimony] : [slipId],
   }
   evidence.push(decisive)
 
