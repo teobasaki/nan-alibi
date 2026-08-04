@@ -30,5 +30,50 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm test:*)",
+      "Bash(npm run:*)",
+      "Bash(npm ci)",
+      "Bash(npm i:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(python3:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git push:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(wc:*)",
+      "Bash(mkdir:*)",
+      "Bash(du:*)",
+      "Bash(curl -s:*)",
+      "Bash(npx wrangler pages deploy:*)",
+      "Read(//Users/teo/Project/**)",
+      "Edit(//Users/teo/Project/nan-alibi/**)",
+      "Write(//Users/teo/Project/nan-alibi/**)"
+    ],
+    "ask": [
+      "Bash(gh repo create:*)",
+      "Bash(gh api -X POST:*)",
+      "Bash(gh api -X PUT:*)",
+      "Bash(git push --force:*)",
+      "Bash(rm -rf:*)",
+      "Bash(npx wrangler pages secret:*)",
+      "Bash(npx wrangler delete:*)"
+    ]
   }
 }
