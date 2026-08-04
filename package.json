@@ -11,7 +11,8 @@
     "deploy": "npm run build && wrangler pages deploy dist",
     "cf:dev": "wrangler pages dev dist --live-reload",
     "typecheck:functions": "tsc -p functions --noEmit",
-    "verify": "npm test && npm run typecheck:functions && npm run build"
+    "verify": "npm test && npm run typecheck:functions && npm run build",
+    "audit:persona": "node scripts/persona-audit.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260804.1",
