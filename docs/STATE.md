@@ -25,6 +25,8 @@
 - 2026-08-05 GitHub 레포 생성·푸시 (private): https://github.com/teobasaki/nan-alibi
 - 2026-08-05 **배포 경로 확정 → Cloudflare Pages 단일 오리진** (ADR 002). `workers/` 제거,
   `functions/api/` 로 전환. CORS 코드 소멸. 테스트 4/4, functions 타입체크·빌드 통과
+- 2026-08-05 **LLM 공급자 OpenAI 확정** (ADR 004). 모델 `gpt-5.6-terra`, 판당 ~$0.04.
+  `OPENAI_API_KEY` Pages Secret 등록 완료. 캐시 수동 제어는 유지(`prompt_cache_breakpoint`), 프리워밍만 손실
 - 2026-08-05 **Task 2~5 완료 ★ 최대 마일스톤 통과.** 테스트 43/43
   - 시드 고정 RNG(mulberry32) + 코어 타입 + 결정론 사건 생성기 + 검증기 V1~V7 + BFS 해결탐색기
   - **100시드 배치: 원생성 통과율 100%, m\* 분포 3회58/4회42, 범인 S1~S5 전부, 8ms**
@@ -42,7 +44,8 @@
 
 ## 안 되는 것 / 막힌 것 (정직하게 — "다 잘 됨"이라고 쓰지 마라)
 
-- API는 아직 에코 스텁 — Anthropic 실호출·SSE 중계는 Task 9. 현재 `hasKey:false`
+- API는 아직 에코 스텁 — OpenAI 실호출·SSE 중계는 Task 9
+- **프리워밍 폐기** (OpenAI 미지원) → 첫 심문만 캐시 미스 1~2초. 완화책은 ADR 004 참조
 - wrangler 4.x 가 신규 프로젝트에 **Pages 대신 Workers(static assets)** 를 권한다.
   Pages 는 정상 동작하므로 마감 전 전환하지 않는다 — 마감 후 재검토 (ADR 002 에 기록)
 
