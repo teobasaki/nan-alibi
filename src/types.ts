@@ -1,0 +1,70 @@
+/** 공유 타입 — 사건의 진실 모델. 이 파일의 데이터는 전부 코드가 소유하며 LLM에 통째로 넘기지 않는다. */
+
+export type SuspectId = 'S1' | 'S2' | 'S3' | 'S4' | 'S5'
+export const SUSPECTS: readonly SuspectId[] = ['S1', 'S2', 'S3', 'S4', 'S5']
+
+/** 22:00 / 22:10 / 22:20(범행) / 22:30 / 22:40 */
+export type Slot = 0 | 1 | 2 | 3 | 4
+export const SLOTS: readonly Slot[] = [0, 1, 2, 3, 4]
+export const SLOT_LABEL = ['22:00', '22:10', '22:20', '22:30', '22:40'] as const
+
+/** 장소 index. 2번(1204호)이 범행 현장. */
+export type PlaceId = 0 | 1 | 2 | 3 | 4
+export const PLACE_LABEL = ['로비', '복도', '1204호', '직원계단', '라운지'] as const
+
+export const CRIME_SLOT: Slot = 2
+export const CRIME_PLACE: PlaceId = 2
+
+/** 물증 1건 = "이 시각 이 장소에 이 인물들이 있었다"를 **확정**한다. 진술과 달리 거짓일 수 없다. */
+export interface Evidence {
+  id: string
+  kind: 'keycard' | 'cctv' | 'call' | 'receipt'
+  slot: Slot
+  place: PlaceId
+  /** 이 기록으로 위치가 확정되는 인물들 (CCTV는 여럿, 카드키는 1명) */
+  subjects: SuspectId[]
+  /** 범인을 직접 가리키는 결정적 증거인가 */
+  decisive: boolean
+  /** 이 항목들을 먼저 획득해야 조회 가능 (없으면 즉시 조회 가능) */
+  requires: string[]
+}
+
+/** 인물이 말하는 궤적. truth 와 다른 칸이 거짓말이다. */
+export type Trajectory = PlaceId[]   // 길이 5 (Slot 별)
+
+export interface Suspect {
+  id: SuspectId
+  isCulprit: boolean
+  /** 실제 궤적 — 코드만 안다 */
+  truth: Trajectory
+  /** 진술 궤적 — 플레이어에게 보인다 */
+  claim: Trajectory
+  /** claim !== truth 인 슬롯들 */
+  lieSlots: Slot[]
+  /** 거짓말 이유 (범인이 아닌 경우: 개인 비밀) */
+  lieReason: string
+  /** 심문으로 해금되는 증언 id들 */
+  testimonies: string[]
+}
+
+/** 심문으로 얻는 증언 — 물증 조회를 여는 열쇠 역할을 한다 */
+export interface Testimony {
+  id: string
+  /** 이 증언을 가진 인물 */
+  from: SuspectId
+  /** 무엇에 대한 증언인지 (UI 표시용) */
+  about: SuspectId | null
+  text: string
+}
+
+export interface CaseFile {
+  seed: number
+  culprit: SuspectId
+  motive: string
+  method: string
+  suspects: Record<SuspectId, Suspect>
+  evidence: Evidence[]
+  testimonies: Testimony[]
+  /** 결정적 증거 id */
+  decisiveEvidenceId: string
+}
