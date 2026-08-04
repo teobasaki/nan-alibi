@@ -44,6 +44,17 @@ describe('★ 100시드 배치 검증 (Task 5 — 완료기준 A1·A4)', () => {
     console.log('  m* 분포:', [...dist].sort((a, b) => a[0] - b[0]).map(([m, n]) => `${m}회:${n}건`).join('  '))
   })
 
+  it('난이도가 한 값에 고정되지 않는다 (사슬 깊이 가변화 회귀 감시)', () => {
+    const dist = new Map<number, number>()
+    for (const s of SEEDS) {
+      const m = generateValidCase(s).validation.solve.minActions!
+      dist.set(m, (dist.get(m) ?? 0) + 1)
+    }
+    expect(dist.size).toBeGreaterThanOrEqual(2)
+    // 어느 한 난이도가 90% 를 넘게 독식하면 사실상 고정된 것이다
+    for (const [, n] of dist) expect(n / SEEDS.length).toBeLessThan(0.9)
+  })
+
   it('모든 시드에서 조사 0회로는 풀리지 않는다 (A3)', () => {
     for (const s of SEEDS) {
       expect(generateValidCase(s).validation.solve.initialCandidates).toBeGreaterThanOrEqual(3)
