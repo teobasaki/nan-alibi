@@ -1,0 +1,7 @@
+name = "nan-alibi-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# ANTHROPIC_API_KEY 는 Secret 으로만 넣는다:
+#   npx wrangler secret put ANTHROPIC_API_KEY
+# 절대 여기에 쓰지 말 것.
