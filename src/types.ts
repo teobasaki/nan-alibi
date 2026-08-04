@@ -57,6 +57,16 @@ export interface Testimony {
   text: string
 }
 
+/** 증거를 인물에게 제시했을 때 열리는 것. 이것이 "조사 6회" 를 전략 게임으로 만든다. */
+export interface PresentUnlock {
+  /** 이 증거를 */
+  evidenceId: string
+  /** 이 인물에게 제시하면 */
+  suspectId: SuspectId
+  /** 이 증언이 열린다 */
+  yieldsTestimonyId: string
+}
+
 export interface CaseFile {
   seed: number
   culprit: SuspectId
@@ -65,6 +75,7 @@ export interface CaseFile {
   suspects: Record<SuspectId, Suspect>
   evidence: Evidence[]
   testimonies: Testimony[]
+  presentUnlocks: PresentUnlock[]
   /** 결정적 증거 id */
   decisiveEvidenceId: string
 }
