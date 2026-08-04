@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "deploy": "npm run build && wrangler pages deploy dist",
     "cf:dev": "wrangler pages dev dist --live-reload",
-    "typecheck:functions": "tsc -p functions --noEmit"
+    "typecheck:functions": "tsc -p functions --noEmit",
+    "verify": "npm test && npm run typecheck:functions && npm run build"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260804.1",

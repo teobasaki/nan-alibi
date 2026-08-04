@@ -12,6 +12,7 @@ import {
   SUSPECTS,
   type CaseFile,
   type Slot,
+  type SuspectId,
 } from '../types'
 import {
   MIN_INITIAL_CANDIDATES,
@@ -39,8 +40,14 @@ export interface ValidationResult {
  * 유효한 모순 = 물증이 확정한 사실과 어떤 인물의 진술이 충돌하는 (물증, 인물, 슬롯) 조합.
  * 플레이어가 보드에서 카드 2장을 연결했을 때 "모순 발견" 이 뜨는 지점들이다.
  */
-export function findContradictions(c: CaseFile): { evidenceId: string; suspect: string; slot: Slot }[] {
-  const out: { evidenceId: string; suspect: string; slot: Slot }[] = []
+export interface Contradiction {
+  evidenceId: string
+  suspect: SuspectId
+  slot: Slot
+}
+
+export function findContradictions(c: CaseFile): Contradiction[] {
+  const out: Contradiction[] = []
   for (const e of c.evidence) {
     for (const s of e.subjects) {
       if (c.suspects[s].claim[e.slot] !== e.place) {
