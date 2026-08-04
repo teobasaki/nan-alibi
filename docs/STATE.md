@@ -25,6 +25,9 @@
 - 2026-08-05 GitHub 레포 생성·푸시 (private): https://github.com/teobasaki/nan-alibi
 - 2026-08-05 **배포 경로 확정 → Cloudflare Pages 단일 오리진** (ADR 002). `workers/` 제거,
   `functions/api/` 로 전환. CORS 코드 소멸. 테스트 4/4, functions 타입체크·빌드 통과
+- 2026-08-05 **실배포 성공 → https://nan-alibi.pages.dev** (Account `1524bb03...`).
+  검증: 게임 200 / `/api/health` `{ok:true,hasKey:false}` / `/api/interrogate` `503 {fallback:true}` /
+  CORS 헤더 없음. 배포 파이프라인 종단 확인 완료
 
 ## 다음 할 일
 
@@ -36,9 +39,9 @@
 
 ## 안 되는 것 / 막힌 것 (정직하게 — "다 잘 됨"이라고 쓰지 마라)
 
-- **Cloudflare 인증 미완.** `wrangler login` 은 브라우저 로그인이라 에이전트가 못 한다.
-  **최초 1회는 사람이 실행해야 배포가 가능하다.** 그 전까지 실배포 URL 없음
-- API는 아직 에코 스텁 — Anthropic 실호출·SSE 중계는 Task 9
+- API는 아직 에코 스텁 — Anthropic 실호출·SSE 중계는 Task 9. 현재 `hasKey:false`
+- wrangler 4.x 가 신규 프로젝트에 **Pages 대신 Workers(static assets)** 를 권한다.
+  Pages 는 정상 동작하므로 마감 전 전환하지 않는다 — 마감 후 재검토 (ADR 002 에 기록)
 
 ## 열린 질문
 
