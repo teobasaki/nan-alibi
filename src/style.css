@@ -1,0 +1,9 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
+  background: #0e0d12;
+  color: #e8e4dc;
+}
+#app { max-width: 1280px; margin: 0 auto; padding: 16px; }
