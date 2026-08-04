@@ -47,3 +47,14 @@
 - `.github/workflows/deploy.yml` 삭제 → `ci.yml` 로 대체. CI에 시크릿이 필요 없어졌다.
 - **미해결:** Cloudflare 계정 인증(`wrangler login`)은 브라우저 로그인이 필요해 에이전트가 대신할 수 없다.
   최초 1회는 사람이 실행해야 한다.
+
+## 후기 (2026-08-05, 실배포 후 추가)
+
+- `wrangler login` 이 브라우저에 "application authorisation fail" 을 표시했지만 **콜백은 성공**했고
+  토큰은 정상 발급됐다. 실제 원인은 인증이 아니라 **Pages 프로젝트 미생성**이었다
+  (`wrangler pages project create nan-alibi --production-branch main` 이 선행돼야 한다).
+  교훈: OAuth 화면의 실패 표시를 믿지 말고 `wrangler whoami` + 권한이 필요한 실제 명령으로 검증할 것.
+- 종단 검증 통과: 게임 200 · `/api/health` 200 · `/api/interrogate` 503 `{fallback:true}` · **CORS 헤더 없음**.
+- wrangler 4.118 이 신규 프로젝트에 **Workers(static assets)** 를 권고한다 (Pages 의 후속 경로).
+  같은 단일 오리진 이점을 Workers 로도 얻을 수 있으나, **Pages 가 정상 동작하고 마감이 2일**이므로
+  전환하지 않는다. 마감 후 재검토 대상.
