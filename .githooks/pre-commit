@@ -1,0 +1,10 @@
+#!/bin/sh
+# 커밋 전 게이트 — 테스트만 통과하고 tsc 가 깨진 채 푸시되는 사고를 막는다 (2026-08-05 실제로 발생).
+# 우회가 필요하면: git commit --no-verify
+echo "▶ pre-commit: npm run verify"
+npm run verify >/tmp/nan-alibi-verify.log 2>&1 || {
+  echo "✘ verify 실패 — 커밋 중단. 마지막 30줄:"
+  tail -30 /tmp/nan-alibi-verify.log
+  exit 1
+}
+echo "✓ verify 통과"

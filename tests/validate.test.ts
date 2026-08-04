@@ -89,7 +89,7 @@ describe('검증기 V1~V7 (Task 4)', () => {
     const c = generateCase(212)
     for (const x of findContradictions(c)) {
       const e = c.evidence.find((ev) => ev.id === x.evidenceId)!
-      expect(c.suspects[x.suspect as never].claim[x.slot]).not.toBe(e.place)
+      expect(c.suspects[x.suspect].claim[x.slot]).not.toBe(e.place)
     }
   })
 })
