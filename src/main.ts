@@ -14,6 +14,8 @@ import {
 } from './engine/game'
 import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './ui/josa'
+import { isMuted, play, setMuted, wake } from './ui/sound'
+import { record, stats } from './ui/records'
 import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
 import { candidatesFrom } from './engine/solver'
@@ -40,6 +42,8 @@ interface UI {
   selected: string[]
   busy: boolean
   flash: string | null
+  /** 이미 화면에 찍힌 인장 — 재렌더 때 전부 다시 찍히는 걸 막는다 */
+  stamped: Set<string>
 }
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -65,6 +69,7 @@ const ui: UI = {
   selected: [],
   busy: false,
   flash: null,
+  stamped: new Set(),
 }
 
 const h = (tag: string, cls?: string, text?: string): HTMLElement => {
@@ -86,7 +91,13 @@ function topbar(): HTMLElement {
   for (let i = 0; i < INVESTIGATION_BUDGET; i++) budget.appendChild(h('i', `pip${i < ui.game.investigationsLeft ? '' : ' spent'}`))
   bar.appendChild(budget)
 
+  const mute = focusKey(h('button', 'mutebtn', isMuted() ? '♪ 꺼짐' : '♪ 켜짐'), 'mute') as HTMLButtonElement
+  mute.setAttribute('aria-label', isMuted() ? '소리 켜기' : '소리 끄기')
+  mute.onclick = () => { setMuted(!isMuted()); if (!isMuted()) play('paper'); render() }
+  bar.appendChild(mute)
+
   const btn = h('button', undefined, '범인 지목') as HTMLButtonElement
+  focusKey(btn, 'submit')
   btn.onclick = openSubmit
   bar.appendChild(btn)
   return bar
@@ -105,6 +116,7 @@ function suspectColumn(): HTMLElement {
     card.tabIndex = 0
     card.setAttribute('aria-pressed', String(ui.active === s))
     card.setAttribute('aria-label', `${sus.name} ${sus.job} 심문하기`)
+    focusKey(card, `suspect:${s}`)
     const choose = (): void => { ui.active = s; render() }
     card.onclick = choose
     card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
@@ -184,7 +196,7 @@ function stage(): HTMLElement {
   meta.appendChild(h('div', 'name', `${sus.name} · ${sus.job}`))
   meta.appendChild(h('div', 'hint', `읽힌 성향: ${persona.label} — ${persona.hint}`))
   p.appendChild(meta)
-  const back = h('button', 'backbtn', '← 대조표') as HTMLButtonElement
+  const back = focusKey(h('button', 'backbtn', '← 대조표'), 'back') as HTMLButtonElement
   back.onclick = () => { ui.active = null; render() }
   p.appendChild(back)
   box.appendChild(p)
@@ -243,6 +255,7 @@ function alibiGrid(): HTMLElement {
     who.setAttribute('role', 'button')
     who.tabIndex = 0
     who.setAttribute('aria-label', `${sus.name} 심문하기`)
+    focusKey(who, `gridwho:${s}`)
     who.appendChild(document.createTextNode(sus.name))
     who.appendChild(h('small', undefined, sus.job))
     if (!cands.includes(s)) who.appendChild(h('small', 'cleared', '기록으로 소거됨'))
@@ -259,8 +272,13 @@ function alibiGrid(): HTMLElement {
       })
       const cid = claimCardId(s, t)
       const sel = ui.selected.includes(cid)
+      // 인장 애니메이션은 **처음 찍힐 때 한 번만** 돈다.
+      // 전체 재렌더 구조라 그냥 두면 행동할 때마다 모든 인장이 다시 찍혔다.
+      const stampKey = `${s}:${t}`
+      const fresh = bad && !ui.stamped.has(stampKey)
+      if (bad) ui.stamped.add(stampKey)
       const cell = h('div',
-        `cell${t === CRIME_SLOT ? ' now' : ''}${known ? '' : ' unknown'}${bad ? ' bad' : ''}${sel ? ' sel' : ''}`)
+        `cell${t === CRIME_SLOT ? ' now' : ''}${known ? '' : ' unknown'}${bad ? ' bad' : ''}${sel ? ' sel' : ''}${fresh ? ' fresh' : ''}`)
       cell.appendChild(h('span', undefined, known ? PLACE_LABEL[sus.claim[t]!] : '—'))
       // **칸이 곧 진술 카드다.** 예전엔 같은 진술이 왼쪽 카드·격자·오른쪽 보유카드에 세 번 나왔다.
       // 격자에서 바로 집게 하면 중복이 사라지고, 연결이 "표 위의 한 칸을 짚는" 공간적 행동이 된다.
@@ -269,6 +287,7 @@ function alibiGrid(): HTMLElement {
         cell.tabIndex = 0
         cell.setAttribute('aria-pressed', String(sel))
         cell.setAttribute('aria-label', `${sus.name} ${SLOT_LABEL[t]} 진술 — 연결하려면 선택`)
+        focusKey(cell, `cell:${cid}`)
         cell.onclick = () => pickCard(cid)
         cell.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCard(cid) } }
       }
@@ -389,7 +408,8 @@ function board(): HTMLElement {
     // 기록번호를 붙여 구분한다 — 내용을 흘리지 않으면서 "다른 문서" 임을 알린다 (자동 리뷰 minor/fairness).
     const b = h('button', undefined, `[${e.id}] ${label} — ${use} (조사 1회)`) as HTMLButtonElement
     b.disabled = ui.game.investigationsLeft <= 0 || ui.busy
-    b.onclick = () => act(() => lookupEvidence(ui.game, e.id))
+    b.onclick = () => { play('paper'); act(() => lookupEvidence(ui.game, e.id)) }
+    focusKey(b, `lookup:${e.id}`)
     into.appendChild(b)
   }
 
@@ -438,6 +458,7 @@ function board(): HTMLElement {
     card.tabIndex = 0
     card.setAttribute('aria-pressed', String(ui.selected.includes(id)))
     card.setAttribute('aria-label', `${cardSummary(CASE, id)} — 연결하려면 선택`)
+    focusKey(card, `card:${id}`)
     card.onclick = () => pickCard(id)
     card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCard(id) } }
     col.appendChild(card)
@@ -457,6 +478,7 @@ function pickCard(id: string): void {
     const r = connect(ui.game, a, b)
     ui.game = r.state
     ui.flash = r.contradiction ? b : null
+    play(r.contradiction ? 'stamp' : 'deny')
     ui.selected = []
     render()
     if (r.contradiction) setTimeout(() => { ui.flash = null; render() }, 600)
@@ -523,6 +545,7 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   if (r.fallback) ui.game = before
 
   const opened = advanced.cards.length > before.cards.length
+  play(opened ? 'open' : 'deny')
   ui.chats[s] = [...ui.chats[s]!, {
     q: `[증거 제시] ${cardSummary(CASE, evId)}`,
     a: r.reply.speech + unlockNote(before, advanced, opened),
@@ -644,6 +667,7 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   const ov = h('div', 'overlay')
   const sheet = h('div', 'sheet casefile')
   // 붉은 인장은 '확정' 의 색이다. 못 맞혔으면 색을 빼야 한다 — 색이 곧 판정이다.
+  play(r.correct.culprit ? 'solved' : 'filed')
   sheet.appendChild(fileHeader(r.correct.culprit ? '사건\n해결' : '미제\n편철', !r.correct.culprit))
   sheet.appendChild(h('div', `verdict ${r.correct.culprit ? 'ok' : 'no'}`,
     r.correct.culprit ? '범인을 맞혔습니다.' : '범인이 아닙니다.'))
@@ -719,6 +743,15 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   sheet.appendChild(sc)
   sheet.appendChild(h('p', undefined, `최소 ${generated.validation.solve.minActions}회면 풀 수 있었습니다.`))
 
+  // 판 기록 — 다음 판이 이전 판에 대한 응답이 되게 한다
+  const st = record(CASE.seed, r.total, r.correct.culprit)
+  const isNewBest = r.total >= st.best && st.bestSeed === CASE.seed
+  sheet.appendChild(h('div', isNewBest ? 'candline' : 'tally',
+    isNewBest
+      ? `최고 기록입니다 — ${st.best}점. 통산 ${st.plays}판 중 ${st.solved}건 해결.`
+      : `통산 ${st.plays}판 중 ${st.solved}건 해결 · 최고 ${st.best}점` +
+        (st.bestSeed !== null ? ` (사건번호 ${String(st.bestSeed).padStart(5, '0')})` : '')))
+
   const again = h('button', undefined, '다른 사건으로') as HTMLButtonElement
   // 시드 '선택' 은 시뮬레이션 밖이지만, 가드에 예외를 두면 그 예외가 언젠가 시뮬레이션으로 샌다.
   // crypto 를 쓰면 규칙을 안 깨고도 더 나은 난수를 얻는다.
@@ -790,9 +823,15 @@ function openBriefing(): void {
   }
   sheet.appendChild(ol)
 
+  const st = stats()
+  if (st.plays > 0) {
+    sheet.appendChild(h('div', 'tally',
+      `통산 ${st.plays}판 중 ${st.solved}건 해결 · 최고 ${st.best}점. 이번 판은 사건번호 ${String(CASE.seed).padStart(5, '0')} 입니다.`))
+  }
+
   const go = h('button', undefined, '수사를 시작한다') as HTMLButtonElement
   go.style.marginTop = '10px'
-  go.onclick = () => { ov.remove(); render() }
+  go.onclick = () => { wake(); ov.remove(); render() }
   sheet.appendChild(go)
 
   ov.appendChild(sheet)
@@ -840,7 +879,39 @@ function coachLine(): string {
 }
 
 /* ─────────── 렌더 ─────────── */
+/**
+ * 재렌더는 DOM 을 통째로 갈아치운다. 그러면 **키보드 포커스가 사라진다** —
+ * `role="button"` 과 `tabIndex` 를 붙여 키보드만으로 플레이할 수 있게 해 놓고,
+ * 정작 첫 행동 뒤에는 Tab 을 처음부터 다시 눌러야 했다. 약속을 지킨다.
+ *
+ * 모든 포커스 대상에 안정된 키(`data-fk`)를 달아 두고, 재렌더 뒤 같은 키를 다시 잡는다.
+ */
+function focusKey(el: HTMLElement, key: string): HTMLElement {
+  el.dataset.fk = key
+  return el
+}
+
+/**
+ * 재렌더 뒤 포커스를 되돌린다. 같은 요소가 살아 있으면 그리로,
+ * 사라졌으면(방금 조회한 기록처럼) **같은 종류의 다음 것**으로 넘긴다.
+ * 아무것도 없으면 상단바로 — 키보드 사용자를 화면 맨 위에 버려두지 않는다.
+ */
+function restoreFocus(key: string): void {
+  const exact = app.querySelector<HTMLElement>(`[data-fk="${CSS.escape(key)}"]`)
+  if (exact) return exact.focus()
+
+  const kind = key.split(':')[0]!
+  const sibling = app.querySelector<HTMLElement>(`[data-fk^="${CSS.escape(kind)}:"]`)
+  if (sibling) return sibling.focus()
+
+  app.querySelector<HTMLElement>('[data-fk="submit"]')?.focus()
+}
+
 function render(): void {
+  const keep = (document.activeElement as HTMLElement | null)?.dataset?.fk ?? null
+  // 전체 재렌더의 대가 — 스크롤 위치. 측정상 렌더 자체는 0.8ms 라 비용이 아니지만,
+  // 오른쪽 기록 더미를 내려보다 행동하면 맨 위로 튀는 건 실제 불편이다.
+  const scrolls = Array.from(app.querySelectorAll('.col')).map((c) => c.scrollTop)
   app.replaceChildren()
   app.appendChild(topbar())
   app.appendChild(h('div', 'coach', coachLine()))
@@ -849,6 +920,11 @@ function render(): void {
   cols.appendChild(stage())
   cols.appendChild(board())
   app.appendChild(cols)
+
+  const cols2 = app.querySelectorAll('.col')
+  scrolls.forEach((top, i) => { if (top) cols2[i]?.scrollTo({ top }) })
+
+  if (keep) restoreFocus(keep)
 }
 
 render()
