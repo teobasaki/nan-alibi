@@ -1,10 +1,20 @@
 /** 밸런스 숫자는 전부 여기 모은다 — 튜닝할 때 코드를 안 뒤지기 위해서 (기획서 §9). */
 
-export const INVESTIGATION_BUDGET = 6
+/**
+ * 조사 예산. 6 → 9 (2026-08-05, ADR 009).
+ *
+ * 6회는 **누설이 게임을 떠받치던 시절의 숫자**였다. 증거 순서 누설을 제거하고
+ * 결정적 증거에 목격자 증언을 필수화하자(ADR 008) 최소 조사 수가 3~4 → 4~5 로 올랐고,
+ * 6회로는 상식 봇이 45% 밖에 못 풀었다.
+ *
+ * 측정: 6회 45% · 7회 52% · 8회 55% · **9회 60%** · 10회 64%
+ * 시간: 예산 전소진 시 4분 57초 (숙련자는 4~5회면 끝나 3분 40초대)
+ */
+export const INVESTIGATION_BUDGET = 9
 
 /** 검증기가 요구하는 최소 조사 수 범위 (V5). 3 미만이면 너무 쉽고, 6 이상이면 못 푼다. */
 export const MIN_SOLUTION_LOWER = 3
-export const MIN_SOLUTION_UPPER = 5
+export const MIN_SOLUTION_UPPER = 6
 
 /** 조사 0회 시점에 남아야 하는 최소 후보 수 (V4) */
 export const MIN_INITIAL_CANDIDATES = 3

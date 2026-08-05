@@ -2,7 +2,7 @@
  * 해결 탐색기 — "이 사건이 조사 몇 회로 풀리는가" 를 **증명**한다.
  *
  * 이 파일이 프로젝트의 핵심 주장을 지탱한다:
- *   "매 판 다른 사건이 생성되지만, 6회 안에 유일한 진실에 도달한다."
+ *   "매 판 다른 사건이 생성되지만, 정해진 조사 횟수 안에 유일한 진실에 도달한다."
  * 이 주장을 UI 없이 검증하는 유일한 수단이 여기 BFS 다.
  *
  * 모델:
@@ -17,6 +17,7 @@
  */
 
 import { CRIME_PLACE, CRIME_SLOT, SUSPECTS, type CaseFile, type SuspectId } from '../types'
+import { INVESTIGATION_BUDGET } from '../data/config'
 
 export interface SolveResult {
   /** 유일해까지 필요한 최소 조사 수. 도달 불가면 null */
@@ -88,9 +89,9 @@ const keyOf = (o: ReadonlySet<string>) => [...o].sort().join('|')
 
 /**
  * 최소 조사 수를 BFS 로 구한다.
- * @param budget 이 횟수를 넘으면 탐색을 끊는다 (기본 6 = 게임의 조사 예산)
+ * @param budget 이 횟수를 넘으면 탐색을 끊는다 (기본값 = 게임의 조사 예산)
  */
-export function solve(c: CaseFile, budget = 6): SolveResult {
+export function solve(c: CaseFile, budget = INVESTIGATION_BUDGET): SolveResult {
   const acts = actionsOf(c)
   const start = new Set<string>()
   const initialCandidates = candidatesFrom(c, start).length

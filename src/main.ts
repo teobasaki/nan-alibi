@@ -20,7 +20,7 @@ import {
   CRIME_SLOT, PLACE_LABEL, SLOT_LABEL, SUSPECTS,
   type CaseFile, type Slot, type SuspectId,
 } from './types'
-import { METHODS } from './data/config'
+import { INVESTIGATION_BUDGET, METHODS } from './data/config'
 
 const PRESETS = [
   '사건 시간에 어디 계셨습니까?',
@@ -71,7 +71,7 @@ function topbar(): HTMLElement {
 
   const budget = h('div', 'budget')
   budget.appendChild(h('span', 'label', '남은 조사'))
-  for (let i = 0; i < 6; i++) budget.appendChild(h('i', `pip${i < ui.game.investigationsLeft ? '' : ' spent'}`))
+  for (let i = 0; i < INVESTIGATION_BUDGET; i++) budget.appendChild(h('i', `pip${i < ui.game.investigationsLeft ? '' : ' spent'}`))
   bar.appendChild(budget)
 
   const btn = h('button', undefined, '범인 지목') as HTMLButtonElement
@@ -147,7 +147,7 @@ function stage(): HTMLElement {
 
   if (!ui.active) {
     box.appendChild(h('div', 'empty',
-      '왼쪽에서 용의자를 선택해 심문을 시작하십시오. 조사는 6회뿐이고, 카드 연결과 모순 확인은 무료입니다.'))
+      `왼쪽에서 용의자를 선택해 심문을 시작하십시오. 조사는 ${INVESTIGATION_BUDGET}회뿐이고, 카드 연결과 모순 확인은 무료입니다.`))
     col.appendChild(box)
     return col
   }
@@ -482,7 +482,7 @@ function openBriefing(): void {
   const ol = h('ol', 'steps')
   for (const [t, d] of [
     ['다섯 명의 진술을 읽는다', '왼쪽 카드에 각자의 22:20 주장이 적혀 있다. 무료다.'],
-    ['심문하거나 기록을 조회한다', '조사는 총 6회뿐. 이게 이 게임의 유일한 자원이다.'],
+    ['심문하거나 기록을 조회한다', `조사는 총 ${INVESTIGATION_BUDGET}회뿐. 이게 이 게임의 유일한 자원이다.`],
     ['카드를 연결해 모순을 찾는다', '기록과 진술이 어긋나는 지점 — 연결은 몇 번을 해도 무료다.'],
     ['모순을 들이민다', '증거를 당사자에게 제시하면 새로운 진술이 열린다.'],
     ['범인·수단·결정적 증거를 지목한다', '범인만 맞혀도 점수는 있다. 남은 조사도 점수가 된다.'],
