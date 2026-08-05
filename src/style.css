@@ -490,3 +490,9 @@ body::after {
   .room3d.opening canvas { animation: none; }
   .bubble3d { transition: none; }
 }
+.room3d { cursor: grab; }
+.room3d:active { cursor: grabbing; }
+.room3d .hint3d {
+  position: absolute; right: 8px; bottom: 7px; z-index: 3; pointer-events: none;
+  font-family: var(--mono); font-size: 9.5px; color: rgba(233,225,211,.34);
+}

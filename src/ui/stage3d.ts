@@ -214,7 +214,19 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       return hit
     }
     const head = findBone(/^head$|head(?!_?end|front)/i) ?? findBone(/head/i)
-    const spine = findBone(/spine|chest|torso/i)
+    const spine = findBone(/^spine$|spine0?1|chest|torso/i)
+    /**
+     * 말할 때 쓰는 뼈들. Meshy 오토리깅은 24본 Mixamo 계열 이름을 준다.
+     * 리깅이 되어 있으니 **얼굴만 흔들 이유가 없다** — 사람은 말할 때 몸이 같이 움직인다.
+     */
+    const neck = findBone(/^neck$/i)
+    const armL = findBone(/^LeftArm$/i)
+    const armR = findBone(/^RightArm$/i)
+    const foreL = findBone(/^LeftForeArm$/i)
+    const foreR = findBone(/^RightForeArm$/i)
+    const handL = findBone(/^LeftHand$/i)
+    const handR = findBone(/^RightHand$/i)
+    const gestureBones = [neck, armL, armR, foreL, foreR, handL, handR]
 
     /**
      * **카메라를 얼굴에 겨눈다 — 실측으로.**
@@ -274,7 +286,11 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       shoulder.position.y -= 0.48
     }
     const rest = new Map<import('three').Object3D, import('three').Euler>()
-    for (const b of [head, spine]) if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
+    for (const b of [head, spine, ...gestureBones]) {
+      if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
+    }
+    /** 지금 진행 중인 제스처의 세기 0~1. 말하기 시작하면 오르고 끝나면 잦아든다. */
+    let gest = 0
 
     let pressure = 0
     let speaking = false
@@ -301,6 +317,35 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
         const r = rest.get(spine)!
         spine.rotation.set(r.x + breath * 0.5, r.y, r.z)
       }
+      // 제스처 세기를 부드럽게 따라가게 한다 — 켜고 끌 때 툭 끊기면 인형처럼 보인다
+      gest += ((speaking ? 1 : 0) - gest) * 0.055
+
+      if (gest > 0.01) {
+        /**
+         * **말하면 몸이 움직인다.** 리깅이 되어 있는데 얼굴만 흔들면 인형이다.
+         * 팔은 무릎에 얹힌 채 아래팔만 들썩이고(사람이 앉아서 말할 때 하는 것),
+         * 어깨와 목이 그 리듬을 받는다. 진폭은 작게 — 크면 연극이 된다.
+         */
+        const g1 = Math.sin(t * 2.7) * gest
+        const g2 = Math.sin(t * 1.63 + 1.1) * gest
+        const g3 = Math.sin(t * 3.9 + 0.4) * gest
+
+        if (foreL) { const r = rest.get(foreL)!; foreL.rotation.set(r.x + g1 * 0.16, r.y, r.z + g2 * 0.1) }
+        if (foreR) { const r = rest.get(foreR)!; foreR.rotation.set(r.x + g2 * 0.15, r.y, r.z - g1 * 0.1) }
+        if (armL) { const r = rest.get(armL)!; armL.rotation.set(r.x + g2 * 0.05, r.y, r.z + g1 * 0.035) }
+        if (armR) { const r = rest.get(armR)!; armR.rotation.set(r.x + g1 * 0.05, r.y, r.z - g2 * 0.035) }
+        if (handL) { const r = rest.get(handL)!; handL.rotation.set(r.x + g3 * 0.1, r.y, r.z) }
+        if (handR) { const r = rest.get(handR)!; handR.rotation.set(r.x + g3 * 0.09, r.y, r.z) }
+        if (neck) { const r = rest.get(neck)!; neck.rotation.set(r.x + g1 * 0.035, r.y + g2 * 0.05, r.z) }
+      } else {
+        // 침묵 — 쉬는 자세로 되돌린다
+        for (const b of gestureBones) {
+          if (!b) continue
+          const r = rest.get(b)!
+          b.rotation.set(r.x, r.y, r.z)
+        }
+      }
+
       if (head) {
         const r = rest.get(head)!
         // 말할 때만 고개가 산다. 침묵할 때 움직이면 인형처럼 보인다.
@@ -357,6 +402,56 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       }
     }, 2000)
 
+    /**
+     * ## 룸 인터랙션 — 휠로 다가가고, 끌어서 둘러본다
+     *
+     * 방을 만들어 놓고 고정 카메라로만 보여주면 배경 그림과 다를 게 없다.
+     * 다만 자유 궤도는 주지 않는다 — 벽 밖으로 나가거나 뒤통수를 보게 되면
+     * "취조하는 자리" 라는 전제가 깨진다. **얼굴을 중심으로 한 좁은 범위**만 허용한다.
+     */
+    const base = camera.position.clone()
+    const orbit = { yaw: 0, pitch: 0, dist: 1 }
+    const applyCam = (): void => {
+      const off = base.clone().sub(aim)
+      const sph = new THREE.Spherical().setFromVector3(off)
+      sph.theta += orbit.yaw
+      sph.phi = Math.max(0.55, Math.min(1.48, sph.phi + orbit.pitch))
+      sph.radius = off.length() * orbit.dist
+      camera.position.copy(aim).add(new THREE.Vector3().setFromSpherical(sph))
+      camera.lookAt(aim)
+    }
+
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault()
+      orbit.dist = Math.max(0.55, Math.min(1.45, orbit.dist + e.deltaY * 0.0012))
+      applyCam()
+    }
+    let dragging = false
+    let px = 0
+    let py = 0
+    const onDown = (e: PointerEvent): void => {
+      dragging = true; px = e.clientX; py = e.clientY
+      host.setPointerCapture(e.pointerId)
+    }
+    const onMove = (e: PointerEvent): void => {
+      if (!dragging) return
+      // 좌우 ±20°, 상하 ±11° 정도로 묶는다
+      orbit.yaw = Math.max(-0.35, Math.min(0.35, orbit.yaw - (e.clientX - px) * 0.004))
+      orbit.pitch = Math.max(-0.2, Math.min(0.2, orbit.pitch + (e.clientY - py) * 0.003))
+      px = e.clientX; py = e.clientY
+      applyCam()
+    }
+    const onUp = (e: PointerEvent): void => {
+      dragging = false
+      if (host.hasPointerCapture(e.pointerId)) host.releasePointerCapture(e.pointerId)
+    }
+    host.addEventListener('wheel', onWheel, { passive: false })
+    host.addEventListener('pointerdown', onDown)
+    host.addEventListener('pointermove', onMove)
+    host.addEventListener('pointerup', onUp)
+    host.addEventListener('pointercancel', onUp)
+    host.style.cursor = 'grab'
+
     const onResize = (): void => {
       const nw = host.clientWidth || w
       const nh = host.clientHeight || h
@@ -378,6 +473,11 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
         cancelAnimationFrame(raf)
         clearInterval(watchdog)
         removeEventListener('resize', onResize)
+        host.removeEventListener('wheel', onWheel)
+        host.removeEventListener('pointerdown', onDown)
+        host.removeEventListener('pointermove', onMove)
+        host.removeEventListener('pointerup', onUp)
+        host.removeEventListener('pointercancel', onUp)
         renderer.dispose()
         draco.dispose()
         scene.traverse((o) => {

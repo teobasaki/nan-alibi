@@ -104,6 +104,12 @@ const bubbleEl = document.createElement('div')
 bubbleEl.className = 'bubble3d'
 roomEl.appendChild(bubbleEl)
 
+// 조작이 있다는 걸 알려 준다 — 안 알려주면 아무도 끌어보지 않는다
+const hintEl = document.createElement('div')
+hintEl.className = 'hint3d'
+hintEl.textContent = '끌어서 둘러보기 · 휠로 다가가기'
+roomEl.appendChild(hintEl)
+
 /** 얼굴 위치를 따라 말풍선을 옮긴다. 3D 는 매 프레임 움직이므로 계속 따라가야 한다. */
 let bubbleRaf = 0
 function trackBubble(): void {
