@@ -211,6 +211,23 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
           }
           if (mm.normalMap) mm.normalScale.set(1, 1)
           mm.envMapIntensity = 0.25
+
+          /**
+           * ## ★ emissive 를 끈다 — 이게 "조악해 보이는" 가장 큰 원인이었다
+           *
+           * Meshy 는 `emissiveFactor = (1,1,1)` 에 **emissive 텍스처로 baseColor 를 그대로**
+           * 넣어서 내보낸다. 조명 없는 뷰어에서도 모델이 보이게 하려는 배려인데,
+           * 게임에서는 정확히 반대로 작동한다.
+           *
+           * PBR 에서 최종 색 = `조명받은 baseColor + emissive` 이고 **emissive 는 조명을
+           * 완전히 무시한다.** 그래서 화면에 보이던 것은 사실상 원본 사진(평평한 스튜디오
+           * 조명이 구워진)이었고, 흔들리는 등도 그림자도 노멀맵도 그 위에 겨우 얹혔다.
+           *
+           * 끄면 인물이 비로소 **방의 조명을 받는다** — 노멀맵과 러프니스맵도 그제야 일한다.
+           */
+          mm.emissive.setScalar(0)
+          mm.emissiveMap = null
+          mm.needsUpdate = true
         }
       }
     })
