@@ -11,6 +11,7 @@
 import {
   CRIME_PLACE,
   CRIME_SLOT,
+  PLACE_LABEL,
   SLOT_LABEL,
   SUSPECTS,
   type CaseFile,
@@ -31,6 +32,12 @@ export interface VisibleRecord {
   kind: string
   slot: Slot
   place: PlaceId
+}
+
+/** 기록 한 건을 사람이 읽는 한 줄로. **원시 id·숫자를 로그에 흘리지 않는다.** */
+const evLabel = (c: CaseFile, id: string): string => {
+  const e = c.evidence.find((x) => x.id === id)
+  return e ? `${e.kind} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}` : id
 }
 
 const visible = (g: GameState): VisibleRecord[] =>
@@ -118,7 +125,7 @@ function finish(g: GameState, seed: number, bot: string, log: string[], reacted?
     decisiveEvidenceId: (atScene ?? ownedEv[ownedEv.length - 1])?.id ?? '',
   })
   log.push(
-    `제출 — 범인:${g.case.suspects[guess].name} / 수단:${readMethod}${decisiveCard ? '(카드 판독)' : '(추측)'} / 결정적증거:${(atScene ?? ownedEv[ownedEv.length - 1])?.id ?? '(없음)'}` +
+    `제출 — 범인:${g.case.suspects[guess].name} / 수단:${readMethod}${decisiveCard ? '(카드 판독)' : '(추측)'} / 결정적증거:${(() => { const d = atScene ?? ownedEv[ownedEv.length - 1]; return d ? `${d.id} [${evLabel(g.case, d.id)}]` : '(없음)' })()}` +
     ` → 범인 ${r.correct.culprit ? '적중' : '오답'} · 수단 ${r.correct.method ? '적중' : '오답'} · 증거 ${r.correct.decisive ? '적중' : '오답'}` +
     ` · 점수 ${r.total} (후보 ${cands.length}명 남음)`,
   )
@@ -184,7 +191,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
     // 3) 모순이 걸렸는데 아직 안 만나본 사람 → 심문
     if (flagged.length) {
       const s = flagged[0]!
-      g = interview(g, s); interviewed.add(s); log.push(`심문 ${s} (모순 대상)`)
+      g = interview(g, s); interviewed.add(s); log.push(`심문 ${s} [${c.suspects[s].name}] — 모순 대상`)
       g = connectAll(g); continue
     }
 
@@ -198,7 +205,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
       .filter((x) => !interviewed.has(x))
     if (oddHourSeen.length) {
       const s = oddHourSeen[0]!
-      g = interview(g, s); interviewed.add(s); log.push(`심문 ${s} (범행시각 밖 기록에 찍힘)`)
+      g = interview(g, s); interviewed.add(s); log.push(`심문 ${s} [${c.suspects[s].name}] — 범행시각 밖 기록에 찍힘`)
       g = connectAll(g); continue
     }
 
@@ -228,7 +235,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
       g = presentEvidence(g, evForHim, t)
       const yielded = g.cards.length > before
       if (yielded) reacted.add(t)
-      log.push(`제시 ${evForHim}→${t}${yielded ? ' ★반응' : ' (무반응)'}`)
+      log.push(`제시 ${evForHim} [${evLabel(c, evForHim)}] → ${c.suspects[t].name}${yielded ? ' ★반응' : ' (무반응)'}`)
       g = connectAll(g); pushed = true
       break
     }
@@ -238,7 +245,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
     const unlocked = recs.filter((r) => c.evidence.find((e) => e.id === r.id)!.requires.length > 0)
     if (unlocked.length) {
       const r = unlocked[0]!
-      g = lookupEvidence(g, r.id); log.push(`조회 ${r.id} (해금됨)`)
+      g = lookupEvidence(g, r.id); log.push(`조회 ${r.id} [${evLabel(c, r.id)}] — 해금됨`)
       g = connectAll(g); continue
     }
 
@@ -251,7 +258,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
     )
     if (interviewed.size > 0 && crossCheck.length) {
       const r = crossCheck[0]!
-      g = lookupEvidence(g, r.id); log.push(`조회 ${r.id} (교차검증 ${SLOT_LABEL[r.slot]})`)
+      g = lookupEvidence(g, r.id); log.push(`조회 ${r.id} [${evLabel(c, r.id)}] — 교차검증`)
       g = connectAll(g); continue
     }
 
@@ -266,7 +273,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
       if (odd0.length) {
         const r = odd0[0]!
         g = lookupEvidence(g, r.id); lookedUp++
-        log.push(`조회 ${r.id} (${SLOT_LABEL[r.slot]} — 사슬 탐색)`)
+        log.push(`조회 ${r.id} [${evLabel(c, r.id)}] — 사슬 탐색`)
         g = connectAll(g); continue
       }
     }
@@ -278,7 +285,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
     if (alibi.length) {
       const r = alibi[0]!
       g = lookupEvidence(g, r.id); lookedUp++
-      log.push(`조회 ${r.id} (${r.place}·주장자 ${claimCount.get(r.place)}명)`)
+      log.push(`조회 ${r.id} [${evLabel(c, r.id)}] — 이 장소를 주장한 사람 ${claimCount.get(r.place)}명`)
       g = connectAll(g); continue
     }
 
@@ -286,7 +293,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResu
     const fresh = SUSPECTS.filter((s) => !interviewed.has(s))
     if (fresh.length) {
       const s = pick(rng, fresh)
-      g = interview(g, s); interviewed.add(s); log.push(`심문 ${s} (탐색)`)
+      g = interview(g, s); interviewed.add(s); log.push(`심문 ${s} [${c.suspects[s].name}] — 탐색`)
       g = connectAll(g); continue
     }
     if (recs.length) { const r = pick(rng, recs); g = lookupEvidence(g, r.id); log.push(`조회 ${r.id} (탐색)`); g = connectAll(g); continue }

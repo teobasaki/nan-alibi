@@ -171,7 +171,10 @@ describe('모순 판정 (Task 7 — 완료기준 B3)', () => {
 
 describe('최종 채점 (Task 7 — 완료기준 B4·B5)', () => {
   it('전부 정답이면 만점 구성이다 (B4)', () => {
-    const g = fresh(5008)
+    // 수단 20점은 **결정적 증거 카드를 쥔 사람만** 받는다 (ADR 014).
+    // 만점 제출은 그 카드를 확보한 플레이어를 뜻하므로, 여기서도 손에 쥐여 준다.
+    const base = fresh(5008)
+    const g = { ...base, cards: [...base.cards, base.case.decisiveEvidenceId] }
     const r = submit(g, {
       culprit: g.case.culprit,
       method: g.case.method,
