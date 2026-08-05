@@ -32,6 +32,8 @@ export interface Evidence {
   exhaustive: boolean
   /** 범인을 직접 가리키는 결정적 증거인가 */
   decisive: boolean
+  /** 카드키 기록에만 있는 '발급 구분' — 결정적 증거에서 범행 수단을 읽어내는 근거 */
+  keyLabel?: string
   /** 이 항목들을 먼저 획득해야 조회 가능 (없으면 즉시 조회 가능) */
   requires: string[]
 }

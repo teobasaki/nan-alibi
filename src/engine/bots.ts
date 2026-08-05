@@ -23,7 +23,7 @@ import {
   lookupEvidence, presentEvidence, submit, type GameState,
 } from './game'
 import { makeRng, pick, shuffle, type Rng } from './rng'
-import { INVESTIGATION_BUDGET } from '../data/config'
+import { INVESTIGATION_BUDGET, KEY_LABEL, METHODS } from '../data/config'
 
 /** 조회 전에 화면에 보이는 정보만 (subjects 없음) */
 export interface VisibleRecord {
@@ -105,13 +105,20 @@ function finish(g: GameState, seed: number, bot: string, log: string[], reacted?
   // 봇이 화면 규칙을 우회하면 그 로그는 게임을 대표하지 못한다.
   const ownedEv = g.case.evidence.filter((e) => g.cards.includes(e.id) && e.slot === CRIME_SLOT)
   const atScene = ownedEv.find((e) => e.place === CRIME_PLACE)
+  // **수단도 정직하게 판독한다.** 예전엔 `g.case.method` 를 그대로 제출해 항상 적중했고,
+  // 그 로그가 "수단은 근거 없이 맞는다" 는 착시를 만들었다. 결정적 증거를 쥐었으면
+  // 카드의 발급 구분에서 읽고, 없으면 첫 후보를 찍는다 — 사람과 같은 조건이다.
+  const decisiveCard = g.case.evidence.find((e) => e.decisive && g.cards.includes(e.id))
+  const readMethod = decisiveCard
+    ? (METHODS.find((m) => KEY_LABEL[m] === decisiveCard.keyLabel) ?? METHODS[0])
+    : METHODS[0]
   const r = submit(g, {
     culprit: guess,
-    method: g.case.method,
+    method: readMethod,
     decisiveEvidenceId: (atScene ?? ownedEv[ownedEv.length - 1])?.id ?? '',
   })
   log.push(
-    `제출 — 범인:${g.case.suspects[guess].name} / 수단:${g.case.method} / 결정적증거:${(atScene ?? ownedEv[ownedEv.length - 1])?.id ?? '(없음)'}` +
+    `제출 — 범인:${g.case.suspects[guess].name} / 수단:${readMethod}${decisiveCard ? '(카드 판독)' : '(추측)'} / 결정적증거:${(atScene ?? ownedEv[ownedEv.length - 1])?.id ?? '(없음)'}` +
     ` → 범인 ${r.correct.culprit ? '적중' : '오답'} · 수단 ${r.correct.method ? '적중' : '오답'} · 증거 ${r.correct.decisive ? '적중' : '오답'}` +
     ` · 점수 ${r.total} (후보 ${cands.length}명 남음)`,
   )
