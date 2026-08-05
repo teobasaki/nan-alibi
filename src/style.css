@@ -561,3 +561,13 @@ body::after {
   .intro.out { animation: fadeOutFast .3s forwards; }
   @keyframes fadeOutFast { to { opacity: 0; } }
 }
+
+/* ══ 엔딩 — 인트로와 같은 문법, 반대 방향 ══
+   인트로는 어둠에서 사건으로 들어가고, 엔딩은 사건에서 어둠으로 빠져나온다.
+   그래서 색면이 더 차갑고, 마지막 패널이 완전한 검정으로 닫힌다. */
+.outro .intro-frame.plate {
+  background: linear-gradient(160deg, #12100f 0%, #1b1416 55%, #0a0809 100%);
+}
+.outro .intro-frame.plate span { color: rgba(233,225,211,.10); }
+.outro .intro-cap { color: #ded5c6; }
+.outro .intro-bar i.on { background: var(--stamp, #8d3b34); }

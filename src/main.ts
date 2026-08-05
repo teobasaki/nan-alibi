@@ -17,6 +17,7 @@ import { josa } from './ui/josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
 import { playIntro } from './ui/intro'
+import { playOutro } from './ui/outro'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
@@ -825,6 +826,20 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   const r = submit(ui.game, { culprit, method, decisiveEvidenceId })
   ui.game = r.state
 
+  /**
+   * **판정문보다 장면이 먼저다.**
+   * 점수표를 바로 들이밀면 "정답 확인" 으로 끝난다. 검거 장면을 먼저 보여주고
+   * 그다음에 서류를 펼쳐야 한 편의 사건으로 닫힌다 — 인트로와 같은 문법이다.
+   * 3D 는 정리하고 간다 (심문은 끝났고, 뒤에 남아 돌 이유가 없다).
+   */
+  stopVoice()
+  ui.scene?.handle?.dispose()
+  ui.scene = null
+  roomEl.remove()
+  void playOutro(CASE, culprit, r.correct.culprit).then(() => renderResultSheet(r, culprit))
+}
+
+function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): void {
   const ov = h('div', 'overlay')
   const sheet = h('div', 'sheet casefile')
   // 붉은 인장은 '확정' 의 색이다. 못 맞혔으면 색을 빼야 한다 — 색이 곧 판정이다.
