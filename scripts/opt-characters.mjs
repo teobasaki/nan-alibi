@@ -20,14 +20,17 @@ const SIMPLIFY = process.env.SIMPLIFY === '1'
 
 if (!existsSync(DIR)) { console.log('캐릭터 폴더가 없다.'); process.exit(0) }
 
-const srcs = readdirSync(DIR).filter((f) => f.endsWith('.rigged.glb'))
-if (srcs.length === 0) { console.log('최적화할 .rigged.glb 가 없다.'); process.exit(0) }
+// **앉은 버전이 있으면 그걸 쓴다.** 서 있는 원본은 심문 장면에 안 맞는다.
+const all = readdirSync(DIR)
+const seated = all.filter((f) => f.endsWith('.seated.glb'))
+const srcs = seated.length ? seated : all.filter((f) => f.endsWith('.rigged.glb'))
+if (srcs.length === 0) { console.log('최적화할 GLB 가 없다.'); process.exit(0) }
 
 const mb = (p) => statSync(p).size / 1048576
 let before = 0, after = 0
 
 for (const f of srcs) {
-  const slug = f.replace(/\.rigged\.glb$/, '')
+  const slug = f.replace(/\.(seated|rigged)\.glb$/, '')
   const src = `${DIR}/${f}`
   const out = `${DIR}/${slug}.opt.glb`
   const args = [

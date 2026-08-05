@@ -75,12 +75,14 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    // **가슴 위로 바짝 붙는다.** 전신을 담으면 얼굴이 20px 이 되고,
-    // 그러면 3D 를 넣은 이유가 사라진다 (첫 배선에서 실제로 그랬다).
+    /**
+     * **얼굴에 바짝 붙는다.** 전신을 담으면 얼굴이 20px 이 되고, 그러면 3D 를 넣은 이유가 사라진다.
+     *
+     * 위치는 모델을 **로드한 뒤 머리 뼈를 실측해서** 정한다 (아래 참조).
+     * 눈높이를 상수로 박았더니 선 모델(1.56)과 앉은 모델(1.25)에서 각각 틀렸다 —
+     * 정수리를 보거나 가슴을 봤다. 모델이 8개라 상수는 언제든 다시 틀린다.
+     */
     const camera = new THREE.PerspectiveCamera(30, w / h, 0.05, 50)
-    const EYE = 1.56          // 서 있는 사람의 눈높이 (모델은 1.72m 로 정규화된다)
-    camera.position.set(0.12, EYE, 0.78)
-    camera.lookAt(0, EYE - 0.06, 0)
 
     /**
      * 취조실 조명 — **머리 위 하나뿐**이다.
@@ -88,7 +90,6 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 빛을 더 넣으면 사무실이 되고, 하나만 두면 취조실이 된다.
      */
     const key = new THREE.SpotLight(0xffe2b4, 9, 6, Math.PI / 9, 0.7, 1.8)
-    key.position.set(0.35, 2.5, 0.55)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
     key.shadow.bias = -0.0015
@@ -129,14 +130,15 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     scene.add(model)
 
     // 발이 바닥에 닿고 가슴이 화면 중앙에 오도록 맞춘다 — 모델마다 크기가 다르다
+    // 앉은 모델은 세로가 1.36m 다. 선 키(1.72)로 정규화하면 26% 커진다.
+    // 실제 세로를 그대로 두고(이미 미터 단위) 크기 보정은 하지 않는다.
     const box = new THREE.Box3().setFromObject(model)
     const size = box.getSize(new THREE.Vector3())
-    const scale = 1.72 / (size.y || 1.72)
+    const scale = size.y > 1.55 ? 1.72 / size.y : 1   // 서 있는 모델만 정규화
     model.scale.setScalar(scale)
     const box2 = new THREE.Box3().setFromObject(model)
     model.position.y -= box2.min.y
     model.position.x -= (box2.max.x + box2.min.x) / 2
-    key.target.position.set(0, 1.4, 0)
 
     /** 뼈 이름은 리깅 도구마다 다르다. 패턴으로 찾고, 못 찾으면 모델 전체를 흔든다. */
     const findBone = (re: RegExp): import('three').Object3D | null => {
@@ -146,8 +148,26 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       })
       return hit
     }
-    const head = findBone(/head/i)
+    const head = findBone(/^head$|head(?!_?end|front)/i) ?? findBone(/head/i)
     const spine = findBone(/spine|chest|torso/i)
+
+    /**
+     * **카메라를 얼굴에 겨눈다 — 실측으로.**
+     * 머리 뼈의 월드 좌표를 읽어 그 앞에 카메라를 놓는다.
+     * 선 모델이든 앉은 모델이든, 8명 중 누구든 같은 코드가 맞춘다.
+     */
+    model.updateMatrixWorld(true)
+    const face = new THREE.Vector3()
+    if (head) head.getWorldPosition(face)
+    else {
+      const bb = new THREE.Box3().setFromObject(model)
+      face.set(0, bb.max.y - 0.12, 0)   // 뼈를 못 찾으면 정수리에서 조금 내려온 지점
+    }
+    face.y += 0.06        // 머리 뼈는 목 위쪽이라 눈높이로 조금 올린다
+    camera.position.set(face.x + 0.1, face.y + 0.02, face.z + 0.66)
+    camera.lookAt(face)
+    key.target.position.copy(face)
+    key.position.set(face.x + 0.3, face.y + 0.95, face.z + 0.45)
     const rest = new Map<import('three').Object3D, import('three').Euler>()
     for (const b of [head, spine]) if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
 
