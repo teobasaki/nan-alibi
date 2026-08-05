@@ -496,3 +496,68 @@ body::after {
   position: absolute; right: 8px; bottom: 7px; z-index: 3; pointer-events: none;
   font-family: var(--mono); font-size: 9.5px; color: rgba(233,225,211,.34);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   오프닝 — 웹툰처럼 포개지며 넘어가는 컷
+   컷이 옆으로 밀리면 슬라이드쇼가 되고, 겹쳐서 사라지면 만화가 된다.
+   ══════════════════════════════════════════════════════════════ */
+.intro {
+  position: fixed; inset: 0; z-index: 40; background: #0b0807;
+  display: grid; grid-template-rows: 1fr auto auto; gap: 0;
+  cursor: pointer; animation: fadein .5s ease-out;
+}
+.intro.out { animation: introOut .7s forwards; }
+@keyframes introOut {
+  0%   { opacity: 1; filter: brightness(1); }
+  55%  { opacity: 1; filter: brightness(2.6) contrast(.7); }
+  100% { opacity: 0; filter: brightness(4); }
+}
+
+.intro-stage { position: relative; overflow: hidden; }
+.intro-frame {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  animation: kenburns 7s linear forwards, cutIn .9s ease-out;
+}
+.intro-frame.gone { animation: cutOut .9s forwards; }
+/* 느린 줌 — 정지 그림에 시간이 흐르게 한다 */
+@keyframes kenburns { from { transform: scale(1.02); } to { transform: scale(1.13); } }
+@keyframes cutIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cutOut { to { opacity: 0; } }
+
+/* 그림이 없을 때 — 색면에 큰 활자 */
+.intro-frame.noimg {
+  display: grid; place-items: center;
+  background: radial-gradient(ellipse at 50% 40%, #2a1c20, #0b0807 72%);
+  font-family: var(--serif); font-size: clamp(48px, 9vw, 130px);
+  color: rgba(233,225,211,.13); letter-spacing: .04em;
+}
+
+.intro-title {
+  font-family: var(--serif); font-size: 13px; color: var(--amber);
+  text-align: center; padding: 4px 0 0; opacity: .8;
+}
+.intro-cap {
+  font-family: var(--serif); font-size: clamp(15px, 2.1vw, 23px); line-height: 1.7;
+  color: var(--ink); text-align: center; padding: 22px 8vw 4px;
+  text-shadow: 0 2px 18px rgba(0,0,0,.9);
+  opacity: 0;
+}
+.intro-cap.on { animation: capIn .7s ease-out forwards; }
+@keyframes capIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+
+.intro-bar { display: flex; gap: 5px; justify-content: center; padding: 14px 0 18px; }
+.intro-bar i { width: 26px; height: 2px; background: var(--line); transition: background .4s; }
+.intro-bar i.on { background: var(--amber); }
+
+.intro-skip {
+  position: fixed; right: 18px; top: 16px; z-index: 41;
+  font-size: 11px; color: var(--muted); background: transparent; border: 0;
+}
+.intro-skip:hover { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-frame { animation: cutIn .3s ease-out; }
+  .intro.out { animation: fadeOutFast .3s forwards; }
+  @keyframes fadeOutFast { to { opacity: 0; } }
+}

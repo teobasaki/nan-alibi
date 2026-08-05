@@ -16,6 +16,7 @@ import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './ui/josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
+import { playIntro } from './ui/intro'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
@@ -1094,4 +1095,4 @@ function render(): void {
 }
 
 render()
-openBriefing()
+void playIntro(CASE).then(openBriefing)

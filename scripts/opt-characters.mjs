@@ -15,7 +15,12 @@ import { readdirSync, existsSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 
 const DIR = 'public/characters'
-const SIZE = process.env.TEXTURE_SIZE ?? '768'
+/**
+ * 텍스처 해상도. 768 로 줄였더니 **얼굴이 뭉개졌다** — 이 한 장이 몸 전체 아틀라스라
+ * 얼굴에 배정되는 건 실질 200~300px 뿐인데 화면에서는 그보다 크게 나온다.
+ * 한 번에 한 명만 로드하므로 1인당 1MB 는 감당된다. **얼굴이 주인공인 게임이다.**
+ */
+const SIZE = process.env.TEXTURE_SIZE ?? '2048'
 const SIMPLIFY = process.env.SIMPLIFY === '1'
 
 if (!existsSync(DIR)) { console.log('캐릭터 폴더가 없다.'); process.exit(0) }
