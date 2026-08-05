@@ -173,3 +173,15 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 [role="button"]:focus-visible,
 button:focus-visible,
 input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ── 코치 줄 · 브리핑 ── */
+.coach {
+  padding: 7px 18px; background: rgba(217, 164, 65, .07);
+  border-bottom: 1px solid var(--line); color: var(--amber);
+  font-size: 12px; letter-spacing: .2px;
+}
+.kicker { font-size: 11px; letter-spacing: 3px; color: var(--amber); margin-bottom: 6px; }
+.steps { margin: 12px 0 0; padding-left: 20px; }
+.steps li { margin-bottom: 9px; font-size: 13px; line-height: 1.6; }
+.steps b { display: block; color: var(--ink); }
+.steps span { color: var(--muted); font-size: 12px; }

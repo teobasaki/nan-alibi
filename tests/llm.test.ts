@@ -171,3 +171,20 @@ describe('화이트리스트 원본', () => {
     }
   })
 })
+
+describe('구간 표현 차단 (플레이 테스트에서 발견)', () => {
+  it('"22:00부터 22:30까지" 같은 구간 주장을 폐기한다', () => {
+    const r = verifyReply(ok({ speech: '저는 22:00부터 22:30까지 로비에 있었습니다.' }), C, S)
+    expect(r.ok).toBe(false)
+    expect(r.ok === false && r.reason).toBe('time-range')
+  })
+
+  it('"22시부터 22시 30분 사이" 도 잡는다', () => {
+    const r = verifyReply(ok({ speech: '22시 00분부터 22시 30분 사이에 로비였습니다.' }), C, S)
+    expect(r.ok === false && r.reason).toBe('time-range')
+  })
+
+  it('단일 시각은 통과한다', () => {
+    expect(verifyReply(ok({ speech: '22:20에는 로비에 있었습니다.' }), C, S).ok).toBe(true)
+  })
+})

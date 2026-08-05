@@ -13,6 +13,7 @@ import {
   presentEvidence, submit, type GameState,
 } from './engine/game'
 import { cardSummary, renderCard } from './ui/cards'
+import { josa } from './ui/josa'
 import { personaById } from './data/personas'
 import { ask } from './api'
 import {
@@ -282,6 +283,7 @@ function pickCard(id: string): void {
   if (ui.selected.includes(id)) {
     ui.selected = ui.selected.filter((x) => x !== id)
     return render()
+openBriefing()
   }
   ui.selected = [...ui.selected, id]
   if (ui.selected.length === 2) {
@@ -456,10 +458,71 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   document.body.appendChild(ov)
 }
 
+/* ─────────── 오프닝 브리핑 (기획서 §5.1) ─────────── */
+/**
+ * 플레이 테스트 지적: "어디부터 해야 되는지, 뭘 조사해야 되는지 모르겠다."
+ * 규칙을 툴팁으로 흩뿌리는 대신 **시작 전에 한 번** 사건과 목표를 세워준다.
+ */
+function openBriefing(): void {
+  const ov = h('div', 'overlay')
+  const sheet = h('div', 'sheet')
+
+  sheet.appendChild(h('div', 'kicker', '사건 브리핑'))
+  sheet.appendChild(h('h2', undefined, CASE.title))
+  sheet.appendChild(h('p', undefined,
+    `어젯밤 ${SLOT_LABEL[CRIME_SLOT]}, ${CASE.venue.name} ${CASE.venue.room}에서 ` +
+    `${CASE.victim.title} ${josa(CASE.victim.name, '이/가')} 숨진 채 발견됐다. ` +
+    `호텔에는 다섯 사람이 남아 있었고, 그중 한 명이 범인이다.`))
+  sheet.appendChild(h('p', undefined,
+    '다섯 명 모두 "그 시간엔 다른 곳에 있었다"고 말한다. ' +
+    '그러나 거짓말하는 사람이 곧 범인은 아니다 — 저마다 숨기고 싶은 사정이 따로 있다.'))
+
+  sheet.appendChild(h('h2', undefined, '당신이 할 일'))
+  const ol = h('ol', 'steps')
+  for (const [t, d] of [
+    ['다섯 명의 진술을 읽는다', '왼쪽 카드에 각자의 22:20 주장이 적혀 있다. 무료다.'],
+    ['심문하거나 기록을 조회한다', '조사는 총 6회뿐. 이게 이 게임의 유일한 자원이다.'],
+    ['카드를 연결해 모순을 찾는다', '기록과 진술이 어긋나는 지점 — 연결은 몇 번을 해도 무료다.'],
+    ['모순을 들이민다', '증거를 당사자에게 제시하면 새로운 진술이 열린다.'],
+    ['범인·수단·결정적 증거를 지목한다', '범인만 맞혀도 점수는 있다. 남은 조사도 점수가 된다.'],
+  ] as [string, string][]) {
+    const li = h('li')
+    li.appendChild(h('b', undefined, t))
+    li.appendChild(h('span', undefined, d))
+    ol.appendChild(li)
+  }
+  sheet.appendChild(ol)
+
+  const go = h('button', undefined, '수사를 시작한다') as HTMLButtonElement
+  go.style.marginTop = '10px'
+  go.onclick = () => { ov.remove(); render() }
+  sheet.appendChild(go)
+
+  ov.appendChild(sheet)
+  document.body.appendChild(ov)
+  queueMicrotask(() => go.focus())
+}
+
+/* ─────────── 다음 할 일 코치 ─────────── */
+/** 상태를 보고 "지금 뭘 하면 되는지" 한 줄로 알려준다. 규칙 설명이 아니라 **다음 행동** 이다. */
+function coachLine(): string {
+  const g = ui.game
+  const hasEvidence = g.cards.some((id) => CASE.evidence.some((e) => e.id === id))
+  const interviewed = SUSPECTS.some((s) => (ui.chats[s]?.length ?? 0) > 0)
+
+  if (g.investigationsLeft === 0) return '조사가 끝났다. 상단 [범인 지목]으로 결론을 내리십시오.'
+  if (!interviewed && !hasEvidence) return '① 다섯 진술을 훑고, 가장 걸리는 사람을 눌러 심문하십시오.'
+  if (!hasEvidence) return '② 오른쪽에서 기록을 조회해 진술과 맞춰 보십시오.'
+  if (g.foundContradictions.length === 0) return '③ 기록 카드와 진술 카드를 하나씩 눌러 연결하십시오. 무료입니다.'
+  if (g.investigationsLeft <= 2) return `④ 남은 조사 ${g.investigationsLeft}회. 슬슬 결론을 낼 때입니다.`
+  return '④ 모순이 나온 인물에게 그 증거를 제시하면 새 진술이 열립니다.'
+}
+
 /* ─────────── 렌더 ─────────── */
 function render(): void {
   app.replaceChildren()
   app.appendChild(topbar())
+  app.appendChild(h('div', 'coach', coachLine()))
   const cols = h('div', 'cols')
   cols.appendChild(suspectColumn())
   cols.appendChild(stage())
@@ -468,3 +531,4 @@ function render(): void {
 }
 
 render()
+openBriefing()
