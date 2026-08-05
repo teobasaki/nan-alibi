@@ -1,15 +1,23 @@
+/*
+ * 색은 템플릿이 아니라 **허구의 세계**에서 뽑는다.
+ * 이 게임의 무대는 22:20, 불이 반쯤 꺼진 호텔 12층이다.
+ *   불 꺼진 복도(갈색기 검정) · 카펫(버건디) · 놋쇠 문패 · 비상구 유도등 · 조서 용지 · 인장
+ * 이전 팔레트(중성 검정 + 앰버 단색)는 "AI가 만든 다크 UI" 의 기본값이었다.
+ */
 :root {
   color-scheme: dark;
-  --bg: #0e0d12;
-  --panel: #16151d;
-  --panel-2: #1d1c26;
-  --line: #2c2a38;
-  --ink: #e8e4dc;
-  --muted: #8d879b;
-  --amber: #d9a441;
-  --red: #c8503f;
-  --green: #5b8c6e;
-  --serif: 'Iowan Old Style', 'Apple SD Gothic Neo', Georgia, serif;
+  --bg: #16110f;        /* 불 꺼진 복도 */
+  --panel: #201519;     /* 호텔 카펫 */
+  --panel-2: #2a1c20;
+  --line: #3d2b2c;      /* 괘선 */
+  --ink: #e9e1d3;       /* 조서 용지 */
+  --muted: #9a8b80;
+  --amber: #c8912f;     /* 놋쇠 문패 — 자원·주목 */
+  --red: #b3372c;       /* 인장 붉은색 — 모순 */
+  --green: #4f9b6e;     /* 비상구 유도등 — 확인됨 */
+  /* 서체: 조서는 명조로 쓴다. 시각·기록번호는 데이터이므로 고정폭. */
+  --serif: AppleMyungjo, Batang, 'Nanum Myeongjo', 'Apple SD Gothic Neo', serif;
+  --mono: 'SF Mono', 'D2Coding', ui-monospace, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -53,8 +61,10 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .col { overflow-y: auto; padding: 12px; }
 .col + .col { border-left: 1px solid var(--line); }
 .col h2 {
-  font-size: 11px; letter-spacing: 2px; color: var(--muted);
-  margin: 0 0 10px; text-transform: uppercase; font-weight: 600;
+  /* 자간·대문자화는 라틴 전용 장식이다. 한글에 걸면 "기 록 조 회" 로 벌어져 읽기가 깨진다. */
+  font-size: 11.5px; color: var(--muted); font-family: var(--serif);
+  margin: 0 0 10px; font-weight: 500;
+  border-bottom: 1px solid var(--line); padding-bottom: 5px;
 }
 
 /* ── 용의자 카드 ── */
@@ -149,9 +159,9 @@ button:disabled { opacity: .35; cursor: not-allowed; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   padding: 22px; max-width: 620px; width: 100%; max-height: 88vh; overflow-y: auto;
 }
-.sheet h2 { font-family: var(--serif); margin: 0 0 14px; font-size: 21px; letter-spacing: .5px; }
+.sheet h2 { font-family: var(--serif); margin: 0 0 14px; font-size: 22px; }
 .sheet p { font-size: 13px; line-height: 1.7; color: #cfc9c0; }
-.sheet label { display: block; font-size: 11px; color: var(--muted); margin: 12px 0 5px; letter-spacing: 1px; }
+.sheet label { display: block; font-size: 11.5px; color: var(--muted); margin: 12px 0 5px; font-family: var(--serif); }
 .sheet select, .sheet input {
   width: 100%; background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 4px; padding: 8px; color: var(--ink); font: inherit; font-size: 13px;
@@ -180,8 +190,78 @@ input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   border-bottom: 1px solid var(--line); color: var(--amber);
   font-size: 12px; letter-spacing: .2px;
 }
-.kicker { font-size: 11px; letter-spacing: 3px; color: var(--amber); margin-bottom: 6px; }
+.kicker { font-size: 11px; color: var(--amber); margin-bottom: 6px; font-family: var(--serif); }
 .steps { margin: 12px 0 0; padding-left: 20px; }
 .steps li { margin-bottom: 9px; font-size: 13px; line-height: 1.6; }
 .steps b { display: block; color: var(--ink); }
 .steps span { color: var(--muted); font-size: 12px; }
+
+/* ══════════════════════════════════════════════════════════════
+   시그니처 — 알리바이 격자 (5인 × 5시각)
+   이 게임의 추리는 전부 "누가 언제 어디 있었다고 했는가" 의 격자다.
+   그 격자를 카드 더미에 흩어 놓지 않고 **화면의 주인공**으로 세운다.
+   범행 시각 열만 놋쇠 괘선으로 세로로 관통시켜 눈이 거기로 가게 한다.
+   ══════════════════════════════════════════════════════════════ */
+.gridwrap { padding: 4px 2px 14px; }
+.gridwrap .cap {
+  font-family: var(--serif); font-size: 16px;
+  margin: 0 0 3px; color: var(--ink);
+}
+.gridwrap .sub { color: var(--muted); font-size: 11.5px; line-height: 1.6; margin-bottom: 12px; }
+
+.agrid { display: grid; grid-template-columns: minmax(74px, 1fr) repeat(5, minmax(0, 1.15fr)); }
+.agrid > * { padding: 7px 4px; border-bottom: 1px solid var(--line); min-width: 0; }
+
+.agrid .hd {
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  text-align: center; border-bottom-color: var(--amber); letter-spacing: -.2px;
+}
+.agrid .hd.now { color: var(--amber); }
+.agrid .who {
+  font-family: var(--serif); font-size: 12.5px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.agrid .who:hover { color: var(--amber); }
+.agrid .who small { display: block; font-family: inherit; color: var(--muted); font-size: 10px; }
+
+.agrid .cell {
+  text-align: center; font-size: 11px; color: var(--ink);
+  position: relative; line-height: 1.35;
+}
+.agrid .cell.unknown { color: #5c4b46; }
+/* 범행 시각 열 — 격자를 세로로 관통하는 놋쇠 괘선 */
+.agrid .cell.now, .agrid .hd.now { background: rgba(200, 145, 47, .07); box-shadow: inset 1px 0 0 var(--amber), inset -1px 0 0 var(--amber); }
+/* 모순 — 붉은 인장을 찍는다 */
+.agrid .cell.bad { color: var(--red); }
+.agrid .cell.bad::after {
+  content: '印'; position: absolute; right: 3px; top: 2px;
+  font-family: var(--serif); font-size: 9px; color: var(--red); opacity: .85;
+}
+.agrid .cell.bad > span { text-decoration: line-through; text-decoration-color: var(--red); }
+
+/* 열 아래 — 그 시각에 내가 쥔 기록 수 */
+.agrid .foot {
+  font-family: var(--mono); font-size: 9.5px; color: var(--muted);
+  text-align: center; border-bottom: 0; padding-top: 5px;
+}
+.agrid .foot.has { color: var(--green); }
+
+/* ── 인물 명패 — 이모지 얼굴 대신 놋쇠 문패에 새긴 성(姓) ── */
+.plate {
+  font-family: var(--serif); display: grid; place-items: center;
+  background: linear-gradient(160deg, #3a2a16, #23180f);
+  border: 1px solid var(--amber); color: var(--amber);
+  letter-spacing: 0; font-weight: 500;
+}
+.plate.tense { border-color: var(--red); color: var(--red); background: linear-gradient(160deg, #3a1a16, #23100f); }
+
+/* 상황판 — 격자 아래에 붙는 모순 기록 */
+.findings { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+.findings h3 { font-family: var(--serif); font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+.backbtn { font-size: 11px; padding: 3px 9px; margin-left: auto; }
+.agrid .cell.sel { outline: 2px solid var(--amber); outline-offset: -2px; background: rgba(200,145,47,.16); }
+.agrid .cell[role="button"] { cursor: pointer; }
+.agrid .cell[role="button"]:hover { background: rgba(200,145,47,.1); }
+.agrid .cell:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.suspect { padding: 9px 10px 10px; }
+.prlabel { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--serif); }
