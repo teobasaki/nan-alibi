@@ -318,3 +318,35 @@ input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   margin: 8px 0 2px; padding-bottom: 3px; border-bottom: 1px dashed var(--line);
 }
 .grouphd:first-child { margin-top: 0; }
+.mutebtn { font-size: 11px; padding: 4px 9px; color: var(--muted); background: transparent; }
+.mutebtn:hover { color: var(--ink); }
+
+/* ══ 터치 타깃 — 손가락은 마우스보다 굵다 ══
+   포인터가 굵은 기기에서만 키운다. 데스크톱 밀도를 희생하지 않기 위해서다. */
+@media (pointer: coarse) {
+  button, .chip, .mutebtn { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
+  .agrid > * { padding-top: 12px; padding-bottom: 12px; }
+  .agrid .cell[role="button"] { min-height: 44px; display: grid; place-items: center; }
+  .agrid .who { min-height: 44px; display: flex; flex-direction: column; justify-content: center; }
+  .evcard { padding: 12px 13px; }
+  .suspect { padding: 12px; }
+  .backbtn { min-height: 44px; }
+}
+
+/* ══ 화면 전환 ══
+   전부 컷이었다 — 브리핑도 제출도 결과도 그냥 나타났다.
+   과하게 움직이지 않는다. 서류가 놓이는 정도의 짧은 동작이면 충분하다. */
+.overlay { animation: fadein .22s ease-out; }
+.sheet { animation: settle .28s cubic-bezier(.2, .8, .3, 1); }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes settle { from { opacity: 0; transform: translateY(10px); } }
+
+/* 인장은 찍히듯 들어온다 — 이 게임에서 도장은 판정 그 자체다 */
+.sheet.casefile .stamp { animation: press .34s cubic-bezier(.2, 1.4, .4, 1) .12s backwards; }
+@keyframes press {
+  from { opacity: 0; transform: rotate(-26deg) scale(1.9); }
+  to   { opacity: .88; transform: rotate(-9deg) scale(1); }
+}
+
+/* 격자에 인장이 찍힐 때 — 그 칸만 잠깐 붉게 */
+.agrid .cell.fresh::after { animation: press .3s cubic-bezier(.2, 1.4, .4, 1) backwards; }
