@@ -1,9 +1,170 @@
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --bg: #0e0d12;
+  --panel: #16151d;
+  --panel-2: #1d1c26;
+  --line: #2c2a38;
+  --ink: #e8e4dc;
+  --muted: #8d879b;
+  --amber: #d9a441;
+  --red: #c8503f;
+  --green: #5b8c6e;
+  --serif: 'Iowan Old Style', 'Apple SD Gothic Neo', Georgia, serif;
+}
+
 * { box-sizing: border-box; }
+
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
-  background: #0e0d12;
-  color: #e8e4dc;
+  font-family: 'Apple SD Gothic Neo', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  overflow: hidden;
 }
-#app { max-width: 1280px; margin: 0 auto; padding: 16px; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--amber); }
+button:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ── 레이아웃 ── */
+#app { height: 100vh; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.topbar h1 { font-family: var(--serif); font-size: 17px; margin: 0; letter-spacing: .5px; }
+.topbar .brief { color: var(--muted); font-size: 13px; flex: 1; }
+
+.budget { display: flex; gap: 5px; align-items: center; }
+.budget .pip { width: 11px; height: 11px; border-radius: 50%; background: var(--amber); }
+.budget .pip.spent { background: var(--line); }
+.budget .label { color: var(--muted); font-size: 12px; margin-right: 4px; }
+
+.cols { flex: 1; display: grid; grid-template-columns: 25% 45% 30%; min-height: 0; }
+.col { overflow-y: auto; padding: 12px; }
+.col + .col { border-left: 1px solid var(--line); }
+.col h2 {
+  font-size: 11px; letter-spacing: 2px; color: var(--muted);
+  margin: 0 0 10px; text-transform: uppercase; font-weight: 600;
+}
+
+/* ── 용의자 카드 ── */
+.suspect {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px; margin-bottom: 9px; cursor: pointer; transition: border-color .15s;
+}
+.suspect:hover { border-color: var(--amber); }
+.suspect.active { border-color: var(--amber); background: var(--panel-2); }
+.suspect .row { display: flex; gap: 10px; align-items: center; }
+.suspect .face {
+  width: 42px; height: 42px; border-radius: 4px; flex: 0 0 42px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  display: grid; place-items: center; font-size: 19px;
+}
+.suspect .name { font-family: var(--serif); font-size: 15px; }
+.suspect .job { color: var(--muted); font-size: 11px; }
+.suspect .relation { color: var(--muted); font-size: 11px; margin-top: 5px; font-style: italic; }
+.suspect .claim { font-size: 12px; margin-top: 6px; color: #cfc9c0; line-height: 1.45; }
+.gauge { height: 3px; background: var(--line); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+.gauge > i { display: block; height: 100%; background: var(--red); transition: width .3s; }
+
+/* ── 중앙 ── */
+.stage { display: flex; flex-direction: column; height: 100%; }
+.stage .empty { color: var(--muted); font-size: 13px; margin-top: 40px; text-align: center; line-height: 1.7; }
+
+.portrait {
+  display: flex; gap: 12px; align-items: center;
+  padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px;
+}
+.portrait .big {
+  width: 60px; height: 60px; border-radius: 5px; background: var(--panel-2);
+  border: 1px solid var(--line); display: grid; place-items: center; font-size: 26px;
+}
+.portrait .big.tense { border-color: var(--red); }
+.portrait .hint { color: var(--amber); font-size: 11px; margin-top: 4px; }
+
+.log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+.bubble { max-width: 86%; padding: 8px 11px; border-radius: 8px; font-size: 13px; line-height: 1.55; }
+.bubble.q { align-self: flex-end; background: var(--panel-2); border: 1px solid var(--line); }
+.bubble.a { align-self: flex-start; background: var(--panel); border-left: 2px solid var(--amber); }
+.bubble.a.fallback { border-left-color: var(--muted); color: var(--muted); }
+.bubble .tell { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+.ask { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.chip { font-size: 11px; padding: 4px 8px; background: transparent; color: var(--muted); }
+.chip:hover { color: var(--ink); }
+.askrow { display: flex; gap: 7px; }
+.askrow input {
+  flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+  padding: 8px 10px; color: var(--ink); font: inherit; font-size: 13px;
+}
+.askrow input:focus { outline: none; border-color: var(--amber); }
+.cost { color: var(--amber); font-size: 11px; align-self: center; white-space: nowrap; }
+
+/* ── 증거 카드 ── */
+.evcard {
+  background: #f4efe4; color: #221f1a; border-radius: 4px; padding: 9px 11px;
+  font-family: 'SF Mono', ui-monospace, monospace; font-size: 11px; margin-bottom: 8px;
+  cursor: pointer; border: 1px solid #cdc4b0; line-height: 1.5;
+}
+.evcard.sel { outline: 2px solid var(--amber); }
+.evcard .head {
+  font-weight: 700; letter-spacing: 1px; border-bottom: 1px dashed #b9ae97;
+  padding-bottom: 4px; margin-bottom: 5px; display: flex; justify-content: space-between;
+}
+.evcard dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+.evcard dt { color: #6e6656; }
+.evcard dd { margin: 0; }
+.evcard.claim { background: var(--panel); color: var(--ink); border-color: var(--line); font-family: inherit; }
+.evcard.claim .head { border-bottom-color: var(--line); color: var(--muted); }
+
+.lookup { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.lookup button { text-align: left; font-size: 12px; }
+
+/* ── 보드 ── */
+.contradiction {
+  border-left: 2px solid var(--red); background: rgba(200, 80, 63, .1);
+  padding: 7px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 7px; line-height: 1.5;
+}
+.hintline { color: var(--muted); font-size: 11px; margin-bottom: 8px; line-height: 1.5; }
+.flash { animation: flash .5s; }
+@keyframes flash { 0% { background: rgba(200,80,63,.55); } 100% { background: transparent; } }
+
+/* ── 오버레이 ── */
+.overlay {
+  position: fixed; inset: 0; background: rgba(8, 7, 11, .93);
+  display: grid; place-items: center; padding: 24px; z-index: 10;
+}
+.sheet {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 22px; max-width: 620px; width: 100%; max-height: 88vh; overflow-y: auto;
+}
+.sheet h2 { font-family: var(--serif); margin: 0 0 14px; font-size: 21px; letter-spacing: .5px; }
+.sheet p { font-size: 13px; line-height: 1.7; color: #cfc9c0; }
+.sheet label { display: block; font-size: 11px; color: var(--muted); margin: 12px 0 5px; letter-spacing: 1px; }
+.sheet select, .sheet input {
+  width: 100%; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 4px; padding: 8px; color: var(--ink); font: inherit; font-size: 13px;
+}
+.timeline { list-style: none; padding: 0; margin: 14px 0; }
+.timeline li {
+  padding: 7px 0 7px 16px; border-left: 2px solid var(--line);
+  font-size: 13px; opacity: 0; animation: reveal .4s forwards;
+}
+.timeline li.crime { border-left-color: var(--red); }
+@keyframes reveal { to { opacity: 1; } }
+.score { display: grid; grid-template-columns: 1fr auto; gap: 5px 14px; font-size: 13px; margin: 14px 0; }
+.score .tot { border-top: 1px solid var(--line); padding-top: 8px; font-size: 17px; color: var(--amber); }
+.verdict { font-family: var(--serif); font-size: 19px; margin-bottom: 6px; }
+.verdict.ok { color: var(--green); }
+.verdict.no { color: var(--red); }

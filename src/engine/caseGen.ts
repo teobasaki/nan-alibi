@@ -25,6 +25,8 @@ import {
   type Trajectory,
 } from '../types'
 import { METHODS, MOTIVES, NOISE_EVIDENCE_MAX, NOISE_EVIDENCE_MIN, SECRETS } from '../data/config'
+import { CASE_TITLES, GIVEN_NAMES, ROLES, SURNAMES, VENUES, VICTIMS } from '../data/names'
+import { PERSONAS, PERSONA_CONFLICTS } from '../data/personas'
 import { makeRng, pick, randInt, sample, shuffle, type Rng } from './rng'
 
 /** 범행 현장이 아닌 장소들 — 무고한 사람들이 배치되는 곳 */
@@ -69,11 +71,36 @@ export function generateCase(seed: number): CaseFile {
     anchorOf[s] = pairUp && i === 1 ? anchors[0]! : anchors[i]!
   })
 
+  // --- 표면 데이터 (이름·직업·페르소나) ---
+  // 페르소나는 충돌 조합(접근법이 겹치는 쌍)을 피해서 5종을 고른다.
+  const chosenPersonas: string[] = []
+  for (const p of shuffle(rng, PERSONAS.map((x) => x.id))) {
+    const clashes = PERSONA_CONFLICTS.some(
+      ([a, b]) => (p === a && chosenPersonas.includes(b)) || (p === b && chosenPersonas.includes(a)),
+    )
+    if (!clashes) chosenPersonas.push(p)
+    if (chosenPersonas.length === SUSPECTS.length) break
+  }
+
+  const usedNames = new Set<string>()
+  const pickName = (): string => {
+    for (let i = 0; i < 40; i++) {
+      const n = `${pick(rng, SURNAMES)}${pick(rng, GIVEN_NAMES)}`
+      if (!usedNames.has(n)) { usedNames.add(n); return n }
+    }
+    throw new Error('이름 생성 실패')
+  }
+  const roles = sample(rng, ROLES, SUSPECTS.length)
+
   const suspects = {} as Record<SuspectId, Suspect>
-  for (const s of SUSPECTS) {
+  SUSPECTS.forEach((s, i) => {
     const truth = s === culprit ? culpritTruth(rng) : innocentTruth(rng, anchorOf[s]!)
     suspects[s] = {
       id: s,
+      name: pickName(),
+      job: roles[i]!.job,
+      relation: roles[i]!.relation,
+      personaId: chosenPersonas[i]!,
       isCulprit: s === culprit,
       truth,
       claim: [...truth] as Trajectory,
@@ -81,7 +108,7 @@ export function generateCase(seed: number): CaseFile {
       lieReason: '',
       testimonies: [],
     }
-  }
+  })
 
   // --- 거짓말 ---
   // 범인은 범행 시각(필수)과 접근 시각(1)을 거짓말한다.
@@ -202,6 +229,9 @@ export function generateCase(seed: number): CaseFile {
 
   return {
     seed,
+    title: pick(rng, CASE_TITLES),
+    victim: pick(rng, VICTIMS),
+    venue: pick(rng, VENUES),
     culprit,
     motive: pick(rng, MOTIVES),
     method: pick(rng, METHODS),
