@@ -67,23 +67,51 @@ def fit_arms(arm, side):
     target = knee.copy()
     target.z += 0.06
 
+    # 몸통 축 — 팔이 이걸 뚫고 지나가면 안 된다
+    spine_lo = arm.matrix_world @ pb['Spine'].head
+    spine_hi = arm.matrix_world @ pb['Spine02'].tail
+    shoulder_w = abs((arm.matrix_world @ pb[f'{side}Shoulder'].head).x - spine_lo.x)
+    CLEAR = max(0.10, shoulder_w * 0.9)   # 몸통 반지름 어림
+
+    def torso_hit():
+        """팔꿈치와 손이 몸통 축에 얼마나 파고들었는지. 0 이면 안 겹친다."""
+        pen = 0.0
+        for p in (pb[f'{side}ForeArm'].head, pb[f'{side}Hand'].head, pb[f'{side}Hand'].tail):
+            w = arm.matrix_world @ p
+            # 몸통 축(수직선)까지의 수평 거리
+            t = max(0.0, min(1.0, (w.z - spine_lo.z) / max(1e-6, spine_hi.z - spine_lo.z)))
+            axis = spine_lo.lerp(spine_hi, t)
+            horiz = ((w.x - axis.x) ** 2 + (w.y - axis.y) ** 2) ** 0.5
+            if horiz < CLEAR:
+                pen += (CLEAR - horiz)
+        return pen
+
+    def cost():
+        """
+        손을 무릎에 놓되 **몸통을 뚫지 않는다.**
+        거리만 최소화했더니 팔이 가슴을 통과한 채로 손만 무릎에 닿는 답이 나왔다 —
+        관통 벌점이 없으면 탐색은 언제나 그 지름길을 고른다.
+        """
+        bpy.context.view_layer.update()
+        return (hand() - target).length + torso_hit() * 3.0
+
     best = None
     for ux, uy, uz in itertools.product(range(-90, 51, 20), range(-80, 81, 40), range(-60, 81, 20)):
         upper.rotation_euler = Euler((R(ux), R(uy), R(uz)), 'XYZ')
         for fx, fz in itertools.product(range(-110, 111, 25), range(-110, 111, 25)):
             fore.rotation_euler = Euler((R(fx), 0, R(fz)), 'XYZ')
-            d = (hand() - target).length
-            if best is None or d < best[0]:
-                best = (d, (ux, uy, uz), (fx, fz))
+            c = cost()
+            if best is None or c < best[0]:
+                best = (c, (ux, uy, uz), (fx, fz))
 
     (bu, bf) = best[1], best[2]
     for ux, uy, uz in itertools.product(*[range(v - 15, v + 16, 5) for v in bu]):
         upper.rotation_euler = Euler((R(ux), R(uy), R(uz)), 'XYZ')
         for fx, fz in itertools.product(range(bf[0] - 15, bf[0] + 16, 5), range(bf[1] - 15, bf[1] + 16, 5)):
             fore.rotation_euler = Euler((R(fx), 0, R(fz)), 'XYZ')
-            d = (hand() - target).length
-            if d < best[0]:
-                best = (d, (ux, uy, uz), (fx, fz))
+            c = cost()
+            if c < best[0]:
+                best = (c, (ux, uy, uz), (fx, fz))
 
     upper.rotation_euler = Euler((R(best[1][0]), R(best[1][1]), R(best[1][2])), 'XYZ')
     fore.rotation_euler = Euler((R(best[2][0]), 0, R(best[2][1])), 'XYZ')
@@ -91,7 +119,9 @@ def fit_arms(arm, side):
     if hand_b:
         hand_b.rotation_mode = 'XYZ'
         hand_b.rotation_euler = Euler((R(-15), 0, 0), 'XYZ')
-    print(f'  {side} 팔: 손↔무릎 {best[0]:.3f}m · 위팔{best[1]} 아래팔{best[2]}')
+    bpy.context.view_layer.update()
+    print(f'  {side} 팔: 비용 {best[0]:.3f} (손↔무릎 {(hand() - target).length:.3f}m · '
+          f'몸통관통 {torso_hit():.3f}) · 위팔{best[1]} 아래팔{best[2]}')
 
 
 def main(src, dst):
@@ -125,12 +155,17 @@ def main(src, dst):
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.context.view_layer.update()
 
-    # 발을 바닥에 붙인다 — 실제 최저점을 재서 내린다. 모델마다 크기가 달라 눈대중은 틀린다.
     body = max(meshes, key=lambda m: len(m.data.vertices))
-    dg = bpy.context.evaluated_depsgraph_get()
-    ev = body.evaluated_get(dg)
-    lo = min((body.matrix_world @ v.co).z for v in ev.data.vertices)
-    arm.location.z -= lo
+
+    """
+    **엉덩이를 의자 좌면에 맞춘다.**
+    발바닥을 바닥(0)에 맞췄더니 엉덩이 높이가 모델마다 달라 의자와 겹쳤다.
+    앉은 사람의 기준은 발이 아니라 **엉덩이가 닿는 면**이다.
+    방 에셋의 좌면은 원본 z≈-0.36, 배율 1.9 기준 바닥에서 0.455m 다.
+    """
+    SEAT_H = 0.455
+    hips_z = (arm.matrix_world @ arm.pose.bones['Hips'].head).z
+    arm.location.z += SEAT_H - hips_z
     bpy.context.view_layer.update()
 
     # **포즈를 레스트로 굳히지 않는다.**

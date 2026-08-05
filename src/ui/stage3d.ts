@@ -85,7 +85,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     // 필름 같은 계조. 없으면 하이라이트가 하얗게 타서 플라스틱처럼 보인다.
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 0.65
+    renderer.toneMappingExposure = 0.52
     // 호스트는 재사용되는 영속 노드다. **캔버스만** 치운다 —
     // `replaceChildren()` 로 통째로 비웠더니 호스트에 얹어 둔 말풍선까지 사라졌다.
     host.querySelectorAll('canvas').forEach((el) => el.remove())
@@ -133,7 +133,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
            * 피부·제복·벽돌·금속이 전부 같은 매트 표면이 되어 재질 구분이 사라졌다
            * (아트 디렉터 리뷰 4번). 색은 살리고 거칠기만 재질에 맞게 준다.
            */
-          mm.color.multiplyScalar(0.76)
+          mm.color.multiplyScalar(0.52)
           mm.roughness = Math.min(Math.max(mm.roughness, 0.68), 0.9)
           mm.metalness = Math.min(mm.metalness, 0.35)
           mm.envMapIntensity = 0.35
@@ -157,20 +157,26 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 벽에 "조명 범위 표시" 같은 검은 반원이 생겼다.
      * 각도를 넓히고 penumbra 를 올려 경계를 풀고, 강도는 낮춘다.
      */
-    const key = new THREE.SpotLight(0xffd9a0, 14, 6, Math.PI / 4.2, 0.9, 1.4)
+    /**
+     * 키라이트 — **더 좁고 더 어둡게.**
+     * 레퍼런스에서 무서웠던 이유는 인물이 잘 보여서가 아니라 **절반이 어둠에 잠겨서**였다.
+     * 나는 인물을 너무 잘 보여주려 하고 있었다. 콘을 좁히고 거리를 줄여
+     * 빛이 얼굴에만 닿고 몸은 어둠에 남게 한다 — 생성 모델의 결함도 함께 묻힌다.
+     */
+    const key = new THREE.SpotLight(0xffd0a0, 11, 4.2, Math.PI / 5.5, 0.82, 1.9)
     key.castShadow = true
     key.shadow.mapSize.set(matchMedia('(pointer: coarse)').matches ? 1024 : 2048, matchMedia('(pointer: coarse)').matches ? 1024 : 2048)
     key.shadow.bias = -0.0005
     key.shadow.normalBias = 0.02
     scene.add(key, key.target)
     // 환경광은 거의 죽인다 — 밝히면 취조실이 사무실이 된다
-    scene.add(new THREE.HemisphereLight(0x18202a, 0x050403, 0.12))
+    scene.add(new THREE.HemisphereLight(0x141b24, 0x030202, 0.055))
     /**
      * 카메라 쪽 필 — **그림자를 완전히 검게 막지 않기 위한 것**이다.
      * 이게 없으면 얼굴 그늘이 RGB 0 으로 뭉개져 형태 정보가 사라진다.
      * 차갑게(푸른기) 넣어 따뜻한 키라이트와 대비를 만든다. 키 대비 약 1/15.
      */
-    const fill = new THREE.DirectionalLight(0x8fa3b5, 0.75)
+    const fill = new THREE.DirectionalLight(0x7f93a8, 0.28)
     scene.add(fill, fill.target)
 
     /** 전경의 어깨 — 형사(=플레이어)의 것. 화면 아래를 검게 먹어 "내가 그 방에 있다" 를 만든다. */
@@ -227,7 +233,34 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
            */
           mm.emissive.setScalar(0)
           mm.emissiveMap = null
-          mm.needsUpdate = true
+
+          /**
+           * ## 피부 흉내 — 서브서피스 스캐터링이 없으면 무엇을 해도 플라스틱이다
+           *
+           * 실제 피부는 빛이 살짝 파고들었다 붉게 번져 나온다. 그게 없으면 아무리
+           * 텍스처가 좋아도 마네킹으로 읽힌다. `MeshPhysicalMaterial` 의 `sheen` 으로
+           * 흉내낸다 — 정식 SSS 는 아니지만 **스치는 빛에 따뜻한 테두리**를 만들어
+           * 실루엣 가장자리가 살아난다. 이 장면은 측면광이라 효과가 특히 크다.
+           *
+           * 진짜 `transmission` 은 렌더 패스를 하나 더 요구해 모바일에서 무겁다 —
+           * 마감 이틀 전에 낼 비용이 아니다.
+           */
+          const phys = new THREE.MeshPhysicalMaterial({
+            map: mm.map,
+            normalMap: mm.normalMap,
+            roughnessMap: mm.roughnessMap,
+            metalnessMap: mm.metalnessMap,
+            roughness: mm.roughness,
+            metalness: mm.metalness,
+            envMapIntensity: 0.25,
+            sheen: 0.45,
+            sheenColor: new THREE.Color(0xd98a6a),   // 피부 아래 혈색
+            sheenRoughness: 0.75,
+            clearcoat: 0.06,                          // 아주 얕은 유분기
+            clearcoatRoughness: 0.65,
+          })
+          if (phys.normalMap) phys.normalScale.set(1, 1)
+          m.material = phys
         }
       }
     })
@@ -475,7 +508,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       // 압박이 높으면 조명이 붉게 조여든다 — CSS 분위기 층과 같은 언어
       const heat = Math.min(1, pressure / 100)
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
-      key.intensity = (14 + heat * 5) * flick
+      key.intensity = (11 + heat * 4) * flick
 
       // 손을 뗀 지 1.2초가 지나면 다시 천천히 떠다닌다
       if (!dragging && performance.now() - idleSince > 1200) {

@@ -459,7 +459,7 @@ body::after {
 /* 화면 가장자리를 어둠으로 먹어 방이 이어지는 느낌을 준다 */
 .room3d::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(ellipse 86% 84% at 50% 44%, transparent 52%, rgba(0,0,0,.6) 100%);
+  background: radial-gradient(ellipse 78% 112% at 55% 46%, transparent 40%, rgba(0,0,0,.86) 100%);
 }
 @media (max-width: 900px) { .room3d { height: 240px; flex-basis: 240px; } }
 
