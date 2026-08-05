@@ -71,7 +71,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     renderer.shadowMap.type = THREE.PCFShadowMap
     // 필름 같은 계조. 없으면 하이라이트가 하얗게 타서 플라스틱처럼 보인다.
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.15
+    renderer.toneMappingExposure = 0.78
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
@@ -82,36 +82,90 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 눈높이를 상수로 박았더니 선 모델(1.56)과 앉은 모델(1.25)에서 각각 틀렸다 —
      * 정수리를 보거나 가슴을 봤다. 모델이 8개라 상수는 언제든 다시 틀린다.
      */
-    const camera = new THREE.PerspectiveCamera(30, w / h, 0.05, 50)
+    // 세로 화각. 뷰포트가 가로로 길어서 **세로가 병목**이다 —
+    // 30°/1.28m 로 뒀더니 세로 0.70m 만 담겨 테이블(바닥에서 0.74m)이 프레임 밖으로 잘렸다.
+    const camera = new THREE.PerspectiveCamera(36, w / h, 0.05, 50)
 
     /**
-     * 취조실 조명 — **머리 위 하나뿐**이다.
-     * 이 게임의 CSS 분위기 층(비네트·그레인)이 같은 전제로 만들어졌다.
+     * ## 취조실 — 테이블을 사이에 두고 마주 앉는다
+     *
+     * 처음엔 검은 벽 앞의 흉상이었다. "어두운 방은 상자 몇 개면 된다" 고 해 놓고
+     * 정작 상자를 안 만든 탓이다. 취조 장면은 **가구가 만든다** —
+     * 테이블이 없으면 심문이 아니라 증명사진이다.
+     *
+     * 카메라는 **형사의 자리**에 있다. 플레이어가 곧 취조하는 사람이므로,
+     * 테이블 이쪽 끝에서 약간 위에서 내려다본다.
+     */
+    const mat = (color: number, roughness = 0.9, metalness = 0) =>
+      new THREE.MeshStandardMaterial({ color, roughness, metalness })
+
+    // 테이블 — 화면 아래를 가로지른다. 이 한 덩어리가 장면의 성격을 정한다.
+    const TABLE_H = 0.74
+    const table = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.05, 0.85), mat(0x2b2119, 0.65))
+    table.position.set(0, TABLE_H, 0.52)
+    table.castShadow = true
+    table.receiveShadow = true
+    const legGeo = new THREE.BoxGeometry(0.05, TABLE_H, 0.05)
+    const LEGS: [number, number][] = [[-0.72, 0.16], [0.72, 0.16], [-0.72, 0.88], [0.72, 0.88]]
+    for (const [x, z] of LEGS) {
+      const leg = new THREE.Mesh(legGeo, mat(0x1d1713))
+      leg.position.set(x, TABLE_H / 2, z)
+      leg.castShadow = true
+      scene.add(leg)
+    }
+    scene.add(table)
+
+    // 의자 등받이 — 용의자 뒤로 살짝 보인다. 앉아 있다는 증거다.
+    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.5, 0.04), mat(0x1a1512))
+    chair.position.set(0, 0.72, -0.34)
+    chair.castShadow = true
+    scene.add(chair)
+
+    // 방 — 벽 셋. 열린 쪽이 형사의 등 뒤다.
+    const wallMat = mat(0x191315, 0.98)
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 3), wallMat)
+    back.position.set(0, 1.5, -1.15)
+    back.receiveShadow = true
+    const left = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), wallMat)
+    left.position.set(-1.7, 1.5, 0.35)
+    left.rotation.y = Math.PI / 2
+    left.receiveShadow = true
+    const right = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), wallMat)
+    right.position.set(1.7, 1.5, 0.35)
+    right.rotation.y = -Math.PI / 2
+    right.receiveShadow = true
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), mat(0x131013, 1))
+    floor.rotation.x = -Math.PI / 2
+    floor.receiveShadow = true
+    scene.add(back, left, right, floor)
+
+    /**
+     * 조명 — 테이블 위 갓등 **하나**. 취조실의 그 등이다.
      * 빛을 더 넣으면 사무실이 되고, 하나만 두면 취조실이 된다.
      */
-    const key = new THREE.SpotLight(0xffe2b4, 9, 6, Math.PI / 9, 0.7, 1.8)
+    const key = new THREE.SpotLight(0xffe2b4, 7.5, 7, Math.PI / 6.5, 0.5, 1.5)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
     key.shadow.bias = -0.0015
     scene.add(key, key.target)
-    // 바닥에서 올라오는 아주 약한 반사광 — 이게 없으면 턱 밑이 완전히 죽는다
-    // 반사광은 **거의 없다.** 밝히면 사무실이 되고, 어두워야 취조실이다.
-    scene.add(new THREE.HemisphereLight(0x2a1c20, 0x0a0806, 0.18))
+    // 갓등 자체도 보이게 — 광원이 화면에 있으면 방이 실재한다
+    const shade = new THREE.Mesh(
+      new THREE.ConeGeometry(0.17, 0.14, 20, 1, true),
+      new THREE.MeshStandardMaterial({ color: 0x2a2320, roughness: 0.7, side: THREE.DoubleSide }),
+    )
+    shade.position.set(0, 1.62, 0.1)
+    const bulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.035, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffe9c4 }),
+    )
+    bulb.position.set(0, 1.57, 0.1)
+    scene.add(shade, bulb)
 
-    // 방 — 상자 몇 개면 충분하다. 생성 모델을 쓸 이유가 없었다.
-    const wall = new THREE.Mesh(
-      new THREE.PlaneGeometry(9, 6),
-      new THREE.MeshStandardMaterial({ color: 0x1a1416, roughness: 0.95 }),
-    )
-    wall.position.set(0, 1.6, -0.75)
-    wall.receiveShadow = true
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(9, 9),
-      new THREE.MeshStandardMaterial({ color: 0x141013, roughness: 1 }),
-    )
-    floor.rotation.x = -Math.PI / 2
-    floor.receiveShadow = true
-    scene.add(wall, floor)
+    // 반사광은 거의 없다. 어두워야 취조실이다.
+    scene.add(new THREE.HemisphereLight(0x3a2830, 0x0a0806, 0.42))
+    // 테이블 상판에 떨어지는 빛 — 갓등 아래 원형 자국. 이게 있어야 '그 방' 이 된다.
+    const tableLight = new THREE.SpotLight(0xffdca8, 6, 3, Math.PI / 5, 0.8, 2)
+    scene.add(tableLight, tableLight.target)
 
     const draco = new DRACOLoader()
     draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/')
@@ -137,7 +191,15 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     const scale = size.y > 1.55 ? 1.72 / size.y : 1   // 서 있는 모델만 정규화
     model.scale.setScalar(scale)
     const box2 = new THREE.Box3().setFromObject(model)
-    model.position.y -= box2.min.y
+    const height = box2.max.y - box2.min.y
+    if (height < 1.15) {
+      // **흉상이다.** 이미지→3D 는 원본 사진이 흉상이면 흉상을 준다(그래서 리깅도 안 된다).
+      // 다리가 없으니 바닥 기준으로 놓으면 공중에 뜬다. 테이블 뒤 '앉은 사람의 가슴' 높이에 맞춘다.
+      // 이 구도에서는 다리가 보이지 않으므로 없어도 성립한다 — 테이블이 가려 준다.
+      model.position.y += 1.42 - box2.max.y
+    } else {
+      model.position.y -= box2.min.y
+    }
     model.position.x -= (box2.max.x + box2.min.x) / 2
 
     /** 뼈 이름은 리깅 도구마다 다르다. 패턴으로 찾고, 못 찾으면 모델 전체를 흔든다. */
@@ -161,13 +223,32 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     if (head) head.getWorldPosition(face)
     else {
       const bb = new THREE.Box3().setFromObject(model)
-      face.set(0, bb.max.y - 0.12, 0)   // 뼈를 못 찾으면 정수리에서 조금 내려온 지점
+      face.set(0, bb.max.y - 0.12, 0)
     }
     face.y += 0.06        // 머리 뼈는 목 위쪽이라 눈높이로 조금 올린다
-    camera.position.set(face.x + 0.1, face.y + 0.02, face.z + 0.66)
-    camera.lookAt(face)
-    key.target.position.copy(face)
-    key.position.set(face.x + 0.3, face.y + 0.95, face.z + 0.45)
+
+    /**
+     * 카메라는 **형사의 자리**다 — 테이블 건너편, 눈높이보다 조금 위.
+     * 플레이어가 취조하는 사람이므로 시점도 그래야 한다.
+     * 위치는 얼굴을 실측해 잡는다. 모델이 8개라 상수는 반드시 다시 틀린다.
+     */
+    /**
+     * 프레임에 **얼굴과 테이블이 함께** 들어와야 취조 장면이 된다.
+     * 필요한 세로 범위는 테이블 상판(0.74) ~ 정수리(얼굴+0.16) ≈ 0.75m.
+     * 화각 36° 에서 세로 0.75m 를 담으려면 거리 = 0.75 / (2·tan18°) ≈ 1.15m 이고,
+     * 여유를 둬 1.55m 로 물러선다. 시선은 얼굴과 테이블 사이를 겨눈다.
+     */
+    const aim = new THREE.Vector3(face.x, (face.y + TABLE_H) / 2 + 0.08, face.z)
+    camera.position.set(face.x + 0.1, face.y + 0.10, face.z + 1.55)
+    camera.lookAt(aim)
+
+    // 갓등은 테이블 위, 얼굴보다 조금 앞에 매단다
+    shade.position.set(0, face.y + 0.42, face.z + 0.34)
+    bulb.position.set(0, face.y + 0.37, face.z + 0.34)
+    key.position.copy(bulb.position)
+    key.target.position.set(face.x, face.y - 0.1, face.z)
+    tableLight.position.set(0, face.y + 0.37, face.z + 0.34)
+    tableLight.target.position.set(0, TABLE_H, face.z + 0.55)
     const rest = new Map<import('three').Object3D, import('three').Euler>()
     for (const b of [head, spine]) if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
 
@@ -205,7 +286,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       // 압박이 높으면 조명이 붉게 조여든다 — CSS 분위기 층과 같은 언어
       const heat = Math.min(1, pressure / 100)
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
-      key.intensity = 9 + heat * 4
+      key.intensity = 7.5 + heat * 3.5
 
       renderer.render(scene, camera)
     }

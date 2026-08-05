@@ -37,16 +37,61 @@ SEATED = {
     'Spine02': (2, 0, 0),
     'neck':    (-4, 0, 0),
     'Head':    (2, 0, 0),
-    # 팔 — 손이 허벅지 위에 놓인다 (탐색으로 찾은 값)
+    # 어깨만 고정. **팔은 모델마다 탐색한다** — 아래 fit_arms() 참조.
     'LeftShoulder':  (0, 0, 4),
     'RightShoulder': (0, 0, -4),
-    'LeftArm':       (-45, 60, 40),
-    'RightArm':      (-45, -60, -40),
-    'LeftForeArm':   (60, 0, -100),
-    'RightForeArm':  (60, 0, 100),
-    'LeftHand':      (-15, 0, 0),
-    'RightHand':     (-15, 0, 0),
 }
+
+
+def fit_arms(arm, side):
+    """
+    손이 무릎 위에 오도록 위팔·아래팔 각도를 **탐색으로** 찾는다.
+
+    각도를 상수로 박았다가 틀렸다: 그 값은 A포즈 레스트를 기준으로 한 상대값인데,
+    이미지→3D 로 만든 모델은 **T포즈 레스트**라 같은 값을 넣으면 팔이 벌어진 채 남는다.
+    포즈 회전은 언제나 레스트 포즈로부터의 델타이므로, 레스트가 바뀌면 값도 바뀐다.
+
+    그래서 각 모델에서 직접 잰다. 거친 격자 → 주변 정밀 탐색, 몇 초면 끝난다.
+    """
+    import itertools
+    pb = arm.pose.bones
+    upper, fore = pb[f'{side}Arm'], pb[f'{side}ForeArm']
+    upper.rotation_mode = fore.rotation_mode = 'XYZ'
+
+    def hand():
+        bpy.context.view_layer.update()
+        return arm.matrix_world @ pb[f'{side}Hand'].head
+
+    bpy.context.view_layer.update()
+    knee = (arm.matrix_world @ pb[f'{side}Leg'].head).copy()
+    target = knee.copy()
+    target.z += 0.06
+
+    best = None
+    for ux, uy, uz in itertools.product(range(-90, 51, 20), range(-80, 81, 40), range(-60, 81, 20)):
+        upper.rotation_euler = Euler((R(ux), R(uy), R(uz)), 'XYZ')
+        for fx, fz in itertools.product(range(-110, 111, 25), range(-110, 111, 25)):
+            fore.rotation_euler = Euler((R(fx), 0, R(fz)), 'XYZ')
+            d = (hand() - target).length
+            if best is None or d < best[0]:
+                best = (d, (ux, uy, uz), (fx, fz))
+
+    (bu, bf) = best[1], best[2]
+    for ux, uy, uz in itertools.product(*[range(v - 15, v + 16, 5) for v in bu]):
+        upper.rotation_euler = Euler((R(ux), R(uy), R(uz)), 'XYZ')
+        for fx, fz in itertools.product(range(bf[0] - 15, bf[0] + 16, 5), range(bf[1] - 15, bf[1] + 16, 5)):
+            fore.rotation_euler = Euler((R(fx), 0, R(fz)), 'XYZ')
+            d = (hand() - target).length
+            if d < best[0]:
+                best = (d, (ux, uy, uz), (fx, fz))
+
+    upper.rotation_euler = Euler((R(best[1][0]), R(best[1][1]), R(best[1][2])), 'XYZ')
+    fore.rotation_euler = Euler((R(best[2][0]), 0, R(best[2][1])), 'XYZ')
+    hand_b = pb.get(f'{side}Hand')
+    if hand_b:
+        hand_b.rotation_mode = 'XYZ'
+        hand_b.rotation_euler = Euler((R(-15), 0, 0), 'XYZ')
+    print(f'  {side} 팔: 손↔무릎 {best[0]:.3f}m · 위팔{best[1]} 아래팔{best[2]}')
 
 
 def main(src, dst):
@@ -74,6 +119,9 @@ def main(src, dst):
     if missing:
         print(f'  ! 없는 뼈 {len(missing)}개: {missing[:6]}')
 
+    for side in ('Left', 'Right'):
+        fit_arms(arm, side)
+
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.context.view_layer.update()
 
@@ -85,12 +133,10 @@ def main(src, dst):
     arm.location.z -= lo
     bpy.context.view_layer.update()
 
-    # 포즈를 레스트 포즈로 굳힌다. 안 하면 glTF 가 원래의 A포즈를 내보낸다.
-    bpy.context.view_layer.objects.active = arm
-    bpy.ops.object.mode_set(mode='POSE')
-    bpy.ops.pose.select_all(action='SELECT')
-    bpy.ops.pose.armature_apply(selected=False)
-    bpy.ops.object.mode_set(mode='OBJECT')
+    # **포즈를 레스트로 굳히지 않는다.**
+    # `pose.armature_apply()` 를 쓰면 아마추어의 레스트는 바뀌지만 스킨 메시의 바인드가
+    # 따라오지 않아 익스포트 결과가 원래 포즈로 되돌아간다 (실측: 폭 1.55m = 팔 벌린 T포즈).
+    # glTF 는 관절 노드의 TRS 를 그대로 싣기 때문에, **포즈를 켠 채 내보내면** 된다.
 
     # 본체 메시와 아마추어만. Meshy 출력에 딸려오는 잡동사니는 제외한다.
     bpy.ops.object.select_all(action='DESELECT')
@@ -98,9 +144,16 @@ def main(src, dst):
     body.select_set(True)
     bpy.context.view_layer.objects.active = arm
 
+    # **`export_rest_position_armature` 가 기본 True 다** — 그대로 두면 포즈를 무시하고
+    # 레스트 포즈(T/A포즈)를 내보낸다. 이걸 못 찾아서 두 번 헛돌았다:
+    # `pose.armature_apply()` 로 레스트를 바꿔 봤지만 스킨 바인드가 따라오지 않아 소용없었다.
+    # 정답은 굳히는 게 아니라 **현재 포즈를 그대로 싣는 것**이다.
     bpy.ops.export_scene.gltf(
         filepath=dst, export_format='GLB', use_selection=True,
         export_apply=False, export_animations=False, export_skins=True,
+        export_rest_position_armature=False,
+        export_current_frame=True,
+        export_reset_pose_bones=False,
     )
     print(f'  앉힘: {dst}')
 

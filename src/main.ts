@@ -49,6 +49,8 @@ interface UI {
   stamped: Set<string>
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
   scene: { slug: string; handle: Stage3D | null } | null
+  /** 재렌더 때 캔버스를 새로 만들지 않고 옮겨 붙이기 위한 보관 */
+  sceneCanvas: HTMLCanvasElement | null
 }
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -76,6 +78,7 @@ const ui: UI = {
   flash: null,
   stamped: new Set(),
   scene: null,
+  sceneCanvas: null,
 }
 
 const h = (tag: string, cls?: string, text?: string): HTMLElement => {
@@ -202,14 +205,24 @@ function stage(): HTMLElement {
   // 압박이 높으면 방이 좁아진다 — 조명이 붉게 조여든다 (분위기 층 ④)
   if (tense) box.classList.add('tense')
 
-  const p = h('div', 'portrait')
   const slug = SLUG_BY_JOB[sus.job]
   const use3d = !!slug && hasModel(slug)
+
+  // 3D 는 **장면**이지 인물 썸네일이 아니다. 취조실을 132px 상자에 담으면
+  // 테이블도 갓등도 안 보이고 그냥 어두운 흉상이 된다. 가로로 통째로 쓴다.
+  let big: HTMLElement | null = null
+  if (use3d) {
+    big = h('div', 'room3d')
+    box.appendChild(big)
+  }
+
+  const p = h('div', 'portrait')
   const shot = portraitFor(sus.job)
-  const big = h('div', use3d ? 'big scene3d' : `big ${shot ? 'photo' : 'plate'}${tense ? ' tense' : ''}`,
-    use3d || shot ? '' : sus.name[0]!)
-  if (!use3d && shot) big.style.backgroundImage = `url(${shot})`
-  p.appendChild(big)
+  if (!use3d) {
+    big = h('div', `big ${shot ? 'photo' : 'plate'}${tense ? ' tense' : ''}`, shot ? '' : sus.name[0]!)
+    if (shot) big.style.backgroundImage = `url(${shot})`
+    p.appendChild(big)
+  }
 
   // 3D 는 **비동기로 붙는다.** 붙기 전까지는 빈 자리이고, 실패하면 그대로 사진으로 돌아간다.
   // 재렌더마다 다시 만들면 매 행동에 모델을 새로 받는다 — 같은 인물이면 그대로 둔다.
@@ -217,21 +230,24 @@ function stage(): HTMLElement {
     if (ui.scene?.slug !== slug) {
       ui.scene?.handle?.dispose()
       ui.scene = { slug: slug!, handle: null }
-      const target = big
+      const target = big!
       void mount(target, slug!).then((handle) => {
         if (ui.scene?.slug !== slug) return handle?.dispose()
         ui.scene.handle = handle
-        if (!handle && shot) {
-          // 3D 가 실패했다 — 조용히 사진으로 되돌린다
-          target.className = `big photo${tense ? ' tense' : ''}`
-          target.style.backgroundImage = `url(${shot})`
+        ui.sceneCanvas = target.querySelector('canvas')
+        if (!handle) {
+          // 3D 가 실패했다 — 자리를 접고 사진으로 되돌린다
+          target.remove()
+          const fb = h('div', `big ${shot ? 'photo' : 'plate'}${tense ? ' tense' : ''}`, shot ? '' : sus.name[0]!)
+          if (shot) fb.style.backgroundImage = `url(${shot})`
+          p.prepend(fb)
         }
         handle?.setPressure(ui.game.pressure[s])
       })
     } else if (ui.scene.handle) {
       // 이미 붙어 있다면 캔버스를 새 DOM 으로 옮기고 상태만 갱신한다
-      const prev = document.querySelector('canvas.moved3d')
-      if (prev) big.appendChild(prev)
+      const prev = ui.sceneCanvas
+      if (prev && big) big.appendChild(prev)
       ui.scene.handle.setPressure(ui.game.pressure[s])
     }
   } else if (ui.scene) {
