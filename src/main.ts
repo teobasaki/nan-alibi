@@ -359,7 +359,10 @@ function board(): HTMLElement {
 
   col.appendChild(h('h2', undefined, '기록 조회'))
   const lookup = h('div', 'lookup')
-  const avail = availableEvidence(ui.game)
+  // 범행 시각 기록만이 사람을 지운다. 목록 맨 위로 올린다 —
+  // 규칙을 글로 아는 것과 목록에서 먼저 눈에 띄는 것은 다르다 (자동 리뷰 major/onboarding).
+  const avail = [...availableEvidence(ui.game)].sort(
+    (a, b) => (b.slot === CRIME_SLOT ? 1 : 0) - (a.slot === CRIME_SLOT ? 1 : 0))
   if (avail.length === 0) {
     lookup.appendChild(h('div', 'hintline', '지금 조회할 수 있는 기록이 없다. 심문으로 실마리를 열어야 한다.'))
   }
@@ -371,7 +374,9 @@ function board(): HTMLElement {
     // 규칙을 아는 것과 목록에서 알아보는 것은 다르다 (자동 리뷰 major/onboarding).
     const label = `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`
     const use = e.slot === CRIME_SLOT ? '후보 소거' : '해금·교차검증'
-    const b = h('button', undefined, `${label} — ${use} (조사 1회)`) as HTMLButtonElement
+    // 같은 시각·장소 기록이 두 장이면 조회 전에는 **완전히 똑같아 보여** 선택이 동전 던지기가 된다.
+    // 기록번호를 붙여 구분한다 — 내용을 흘리지 않으면서 "다른 문서" 임을 알린다 (자동 리뷰 minor/fairness).
+    const b = h('button', undefined, `[${e.id}] ${label} — ${use} (조사 1회)`) as HTMLButtonElement
     b.disabled = ui.game.investigationsLeft <= 0 || ui.busy
     b.onclick = () => act(() => lookupEvidence(ui.game, e.id))
     lookup.appendChild(b)
@@ -802,9 +807,16 @@ function coachLine(): string {
     // (자동 리뷰: 유망한 실마리를 쥔 채 예산이 끝났다).
     const sceneLocked = lockedRecords(g).some(
       (l) => l.evidence.slot === CRIME_SLOT && l.evidence.place === CRIME_PLACE)
+    const left = candidatesFrom(CASE, new Set(g.cards)).length
+    const openCrimeRecords = availableEvidence(g).filter((e) => e.slot === CRIME_SLOT).length
+    // **승패는 범인 적중이다.** 후보가 여럿이면 자물쇠보다 후보 소거가 먼저다.
+    if (left > 1 && openCrimeRecords > 0) {
+      return `④ 남은 조사 ${g.investigationsLeft}회 · 후보 ${left}명. 승패는 범인 적중입니다 — ` +
+        `먼저 ${SLOT_LABEL[CRIME_SLOT]} 기록 ${openCrimeRecords}건 중 하나를 열어 후보를 줄이십시오. 제시는 완주 보상 경로입니다.`
+    }
     return sceneLocked
-      ? `④ 남은 조사 ${g.investigationsLeft}회. 현장 기록은 아직 잠겨 있습니다 — 지금 결론을 내면 결정적 증거(20점)는 포기하는 것입니다.`
-      : `④ 남은 조사 ${g.investigationsLeft}회. 슬슬 결론을 낼 때입니다.`
+      ? `④ 남은 조사 ${g.investigationsLeft}회 · 후보 ${left}명. 현장 기록은 아직 잠겨 있습니다 — 지금 결론을 내면 결정적 증거(20점)는 포기하는 것입니다.`
+      : `④ 남은 조사 ${g.investigationsLeft}회 · 후보 ${left}명. 슬슬 결론을 낼 때입니다.`
   }
   return '④ 모순이 나온 인물에게 그 증거를 제시하면 새 진술이 열립니다.'
 }
