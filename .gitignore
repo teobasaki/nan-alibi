@@ -9,3 +9,4 @@ docs/.review-streak
 public/characters/*.rigged.glb
 public/characters/*.glb
 !public/characters/*.opt.glb
+public/characters/*.seated.glb

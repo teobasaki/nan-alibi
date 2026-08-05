@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run opt:chars && tsc --noEmit && vite build",
+    "build": "npm run pose:chars && npm run opt:chars && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,7 +18,8 @@
     "demo:seed": "node scripts/pick-demo-seed.mjs",
     "gen:chars": "node scripts/gen-characters.mjs",
     "opt:chars": "node scripts/opt-characters.mjs",
-    "gen:portraits": "node scripts/gen-portraits.mjs"
+    "gen:portraits": "node scripts/gen-portraits.mjs",
+    "pose:chars": "node scripts/pose-all.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260804.1",
