@@ -232,6 +232,8 @@ export interface Submission {
 export interface SubmitResult {
   state: GameState
   correct: { culprit: boolean; method: boolean; decisive: boolean }
+  /** 수단을 맞혔지만 판독 근거(결정적 증거 카드)가 없어 점수가 없는 경우 */
+  methodGuessed: boolean
   breakdown: { culprit: number; method: number; decisive: number; efficiency: number; insight: number }
   total: number
 }
@@ -245,14 +247,25 @@ export function submit(g: GameState, s: Submission): SubmitResult {
     method: s.method === g.case.method,
     decisive: s.decisiveEvidenceId === g.case.decisiveEvidenceId,
   }
+  /**
+   * **수단 점수는 판독한 사람만 받는다.**
+   *
+   * 수단은 결정적 증거 카드의 '발급 구분' 에 찍혀 있다 (ADR 014). 그런데 채점은
+   * 눈감고 찍은 5분의 1 적중에도 똑같이 20점을 주고 있었다 — 판독 가능하게 만든
+   * 설계를 채점이 배신한 것이다 (자동 리뷰 minor/fairness 지적).
+   * 카드를 쥐지 않았다면 맞아도 0점이다. 결과 화면이 그 이유를 밝힌다.
+   */
+  const hasDecisiveCard = g.cards.includes(g.case.decisiveEvidenceId)
+  const methodGuessed = correct.method && !hasDecisiveCard
+
   const breakdown = {
     culprit: correct.culprit ? 60 : 0,
-    method: correct.method ? 20 : 0,
+    method: correct.method && hasDecisiveCard ? 20 : 0,
     decisive: correct.decisive ? 20 : 0,
     efficiency: g.investigationsLeft * 5,
     insight: g.foundContradictions.length * 5,
   }
   const total = Object.values(breakdown).reduce((a, b) => a + b, 0)
 
-  return { state: { ...g, phase: 'result' }, correct, breakdown, total }
+  return { state: { ...g, phase: 'result' }, correct, methodGuessed, breakdown, total }
 }
