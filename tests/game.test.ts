@@ -192,7 +192,7 @@ describe('최종 채점 (Task 7 — 완료기준 B4·B5)', () => {
     const g = fresh(5009)
     const r = submit(g, { culprit: g.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음' })
     // 조사 0회 시점이므로 기록으로 좁혀진 게 없다 → 찍어서 맞힌 것이다
-    expect(r.candidatesLeft).toBeGreaterThan(1)
+    expect(r.candidatesLeft).toBeGreaterThan(3)
     expect(r.breakdown.culprit).toBe(40)
     expect(r.breakdown.method).toBe(0)
     expect(r.breakdown.decisive).toBe(0)
@@ -209,7 +209,7 @@ describe('최종 채점 (Task 7 — 완료기준 B4·B5)', () => {
     const guessed = submit(base, {
       culprit: base.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음',
     })
-    expect(guessed.breakdown.culprit).toBe(40)
+    expect(guessed.breakdown.culprit).toBe(40)   // 조사 0회 → 후보 5명
 
     // 결정적 증거는 범행 시각 현장에 범인을 못박는다 → 후보가 1명으로 확정된다
     const narrowed = submit(

@@ -127,7 +127,9 @@ function finish(g: GameState, seed: number, bot: string, log: string[], reacted?
   log.push(
     `제출 — 범인:${g.case.suspects[guess].name} / 수단:${readMethod}${decisiveCard ? '(카드 판독)' : '(추측)'} / 결정적증거:${(() => { const d = atScene ?? ownedEv[ownedEv.length - 1]; return d ? `${d.id} [${evLabel(g.case, d.id)}]` : '(없음)' })()}` +
     ` → 범인 ${r.correct.culprit ? '적중' : '오답'} · 수단 ${r.correct.method ? '적중' : '오답'} · 증거 ${r.correct.decisive ? '적중' : '오답'}` +
-    ` · 점수 ${r.total} (후보 ${cands.length}명 남음)`,
+    ` · 점수 ${r.total} = 범인 ${r.breakdown.culprit}(후보 ${r.candidatesLeft}명 남음)` +
+    ` + 수단 ${r.breakdown.method}${r.methodGuessed ? '(내용은 적중했으나 근거 카드 미확보로 0점)' : ''}` +
+    ` + 증거 ${r.breakdown.decisive} + 잔여조사 ${r.breakdown.efficiency} + 모순 ${r.breakdown.insight}`,
   )
   return {
     seed, bot, won: r.correct.culprit,

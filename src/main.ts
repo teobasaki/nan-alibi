@@ -645,8 +645,9 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
     sheet.appendChild(h('div', endCands.length === 1 ? 'contradiction' : 'hintline',
       endCands.length === 1
         ? '기록만으로 한 사람까지 좁힌 뒤 지목했습니다 — 추리가 완성된 판입니다.'
-        : `다만 기록으로는 아직 ${endCands.length}명이 남아 있었습니다. 좁혀서 맞힌 것이 아니라 ` +
-          `남은 후보 중에서 고른 것이라, 범인 점수는 60점이 아니라 40점입니다. ` +
+        : `다만 기록으로는 아직 ${endCands.length}명이 남아 있었습니다 — 좁혀서 맞힌 것이 아니라 ` +
+          `남은 후보 중에서 고른 것이라 범인 점수는 ${r.breakdown.culprit}점입니다` +
+          `(1명까지 좁히면 60 · 2~3명 50 · 4명 이상 40). ` +
           `${SLOT_LABEL[CRIME_SLOT]} 기록을 더 열었다면 지목이 필연이 됐을 것입니다.`))
   } else if (endCands.length > 1) {
     sheet.appendChild(h('div', 'hintline',

@@ -268,11 +268,19 @@ export function submit(g: GameState, s: Submission): SubmitResult {
    * 스스로와 모순이었다 (자동 리뷰가 세 판 연속 major/fairness 로 지적).
    *
    * 승리의 정의는 바꾸지 않는다 — 범인 적중이 곧 해결이다. 밸런스(상식 봇 64%)를
-   * 다시 재야 하기 때문이다. 대신 **점수로 구분한다**: 기록으로 한 사람까지 몰았으면
-   * 60점, 후보가 여럿 남은 채 고른 것이면 40점.
+   * 다시 재야 하기 때문이다. 대신 **좁힌 만큼 점수를 준다.**
+   *
+   * 처음엔 1명=60 / 그 외=40 의 두 칸이었는데, 후보 1명은 **결정적 증거를 얻어야만**
+   * 도달한다(현장 기록이 범인을 못박기 때문). 그러면 60·20·20 = 100점 전부가
+   * 도달률 26% 짜리 사슬 하나에 걸린다 — 점수를 한 곳에 몰아 놓은 셈이다
+   * (자동 리뷰: "60점 경로가 구조적으로 막혀 있다").
+   * 알리바이 기록으로 둘셋을 지운 플레이도 보상하도록 눈금을 나눈다.
    */
   const candidatesLeft = candidatesFrom(g.case, new Set(g.cards)).length
-  const culpritScore = !correct.culprit ? 0 : candidatesLeft === 1 ? 60 : 40
+  const culpritScore = !correct.culprit ? 0
+    : candidatesLeft === 1 ? 60
+    : candidatesLeft <= 3 ? 50
+    : 40
 
   const breakdown = {
     culprit: culpritScore,
