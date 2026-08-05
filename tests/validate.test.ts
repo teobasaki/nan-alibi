@@ -17,12 +17,24 @@ describe('해결 탐색기 (Task 4)', () => {
     expect(cand).toEqual([c.culprit])
   })
 
-  it('무고한 4명의 알리바이 물증만으로도 범인이 특정된다 (다른 해법 경로)', () => {
-    const c = generateCase(103)
-    const alibis = c.evidence
-      .filter((e) => e.slot === CRIME_SLOT && e.place !== CRIME_PLACE)
-      .map((e) => e.id)
-    expect(candidatesFrom(c, new Set(alibis))).toEqual([c.culprit])
+  it('★ 알리바이 기록만으로는 범인이 특정되지 않는다 (지름길 차단 — ADR 007)', () => {
+    // 초기 설계는 무고한 4명 전원에게 범행시각 기록을 줬고, 그래서 조회만 3~4번 하면
+    // 심문 없이 풀렸다 → 무작위 봇 승률이 52% 까지 올라갔다.
+    // 지금은 2~3곳만 커버하므로 알리바이 소거만으로는 후보가 2명 이상 남아야 한다.
+    for (const seed of [103, 1031, 1032, 1033]) {
+      const c = generateCase(seed)
+      const alibis = c.evidence
+        .filter((e) => e.slot === CRIME_SLOT && e.place !== CRIME_PLACE)
+        .map((e) => e.id)
+      expect(candidatesFrom(c, new Set(alibis)).length, `seed ${seed}`).toBeGreaterThanOrEqual(2)
+    }
+  })
+
+  it('그래도 결정적 증거를 얻으면 반드시 1명으로 수렴한다', () => {
+    for (const seed of [104, 1041, 1042]) {
+      const c = generateCase(seed)
+      expect(candidatesFrom(c, new Set([c.decisiveEvidenceId]))).toEqual([c.culprit])
+    }
   })
 
   it('최소 조사 수가 예산(6) 안에 있고 경로를 낸다', () => {

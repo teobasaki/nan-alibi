@@ -23,6 +23,13 @@ export interface Evidence {
   place: PlaceId
   /** 이 기록으로 위치가 확정되는 인물들 (CCTV는 여럿, 카드키는 1명) */
   subjects: SuspectId[]
+  /**
+   * 이 기록이 해당 시각·장소의 **인원을 남김없이** 담고 있는가.
+   * CCTV(구역 촬영)는 true — 안 찍혔으면 없었다는 뜻이다.
+   * 영수증·카드키·통화는 false — 결제/출입/통화를 안 했을 뿐일 수 있다.
+   * 이 구분이 "부재 모순"(그 기록에 저 사람이 없다)의 논리적 근거다.
+   */
+  exhaustive: boolean
   /** 범인을 직접 가리키는 결정적 증거인가 */
   decisive: boolean
   /** 이 항목들을 먼저 획득해야 조회 가능 (없으면 즉시 조회 가능) */

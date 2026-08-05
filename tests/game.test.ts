@@ -98,11 +98,20 @@ describe('해금 사슬 (Task 6)', () => {
     expect(availableEvidence(g).map((e) => e.id)).toContain(g.case.decisiveEvidenceId)
   })
 
-  it('해금 관계가 아닌 증거를 제시하면 거부된다 (예산 낭비 방지)', () => {
-    const g = fresh(5003)
+  it('★ 해금 관계가 없어도 제시할 수 있다 — 막으면 버튼 활성화가 정답을 유출한다', () => {
+    let g = fresh(5003)
     const ev = availableEvidence(g)[0]!
-    const wrong = SUSPECTS.find((s) => !g.case.presentUnlocks.some((u) => u.suspectId === s))
-    if (wrong) expect(() => presentEvidence(g, ev.id, wrong)).toThrow()
+    g = lookupEvidence(g, ev.id)
+    const notCulprit = SUSPECTS.find((s) => !g.case.presentUnlocks.some((u) => u.suspectId === s))!
+    const after = presentEvidence(g, ev.id, notCulprit)   // 던지지 않는다
+    expect(after.investigationsLeft).toBe(g.investigationsLeft - 1)   // 예산은 소모된다
+    expect(after.cards.length).toBe(g.cards.length)                  // 얻는 것은 없다
+    expect(after.pressure[notCulprit]).toBeGreaterThan(g.pressure[notCulprit])
+  })
+
+  it('보유하지 않은 증거는 제시할 수 없다', () => {
+    const g = fresh(5003)
+    expect(() => presentEvidence(g, 'E-없음', 'S1')).toThrow()
   })
 })
 
@@ -205,5 +214,60 @@ describe('한국어 조사 (UX 폴리시)', () => {
     expect(josa('고은채', '이/가')).toBe('고은채가')   // 받침 없음
     expect(josa('정민호', '은/는')).toBe('정민호는')
     expect(josa('한도윤', '을/를')).toBe('한도윤을')
+  })
+})
+
+describe('부재 모순 — "그 구역 기록에 저 사람이 없다" (플레이 테스트 지적)', () => {
+  it('CCTV(구역 촬영)에 없는데 그 장소를 주장하면 모순이다', () => {
+    let g = fresh(6001)
+    const cctv = g.case.evidence.find(
+      (e) => e.exhaustive && e.slot === CRIME_SLOT && !e.subjects.includes(g.case.culprit),
+    )
+    if (!cctv) return
+    const liar = SUSPECTS.find(
+      (s) => !cctv.subjects.includes(s) && g.case.suspects[s].claim[CRIME_SLOT] === cctv.place,
+    )
+    if (!liar) return
+    g = { ...g, cards: [...g.cards, cctv.id] }
+    const r = connect(g, cctv.id, claimCardId(liar, CRIME_SLOT))
+    expect(r.contradiction).toBe(true)
+    expect(r.message).toContain('구역 기록에 이 사람이 없다')
+  })
+
+  it('영수증·카드키에 없는 것은 모순이 아니다 — 결제/출입을 안 했을 뿐일 수 있다', () => {
+    let g = fresh(6002)
+    const receipt = g.case.evidence.find((e) => !e.exhaustive && !e.decisive)
+    if (!receipt) return
+    const other = SUSPECTS.find((s) => !receipt.subjects.includes(s))!
+    g = { ...g, cards: [...g.cards, receipt.id], case: {
+      ...g.case,
+      suspects: { ...g.case.suspects, [other]: {
+        ...g.case.suspects[other],
+        claim: g.case.suspects[other].claim.map((_, i) => i === receipt.slot ? receipt.place : g.case.suspects[other].claim[i]!),
+      } },
+    } }
+    g = { ...g, cards: [...g.cards, claimCardId(other, receipt.slot)] }
+    const r = connect(g, receipt.id, claimCardId(other, receipt.slot))
+    expect(r.contradiction).toBe(false)
+    expect(r.message).toContain('반박할 수 없다')
+  })
+
+  it('범행 시각 알리바이 기록은 전부 구역 촬영이다 (부재 추리가 성립하도록)', () => {
+    for (const seed of [6010, 6011, 6012]) {
+      const c = generateValidCase(seed).case
+      for (const e of c.evidence.filter((x) => x.slot === CRIME_SLOT && !x.decisive)) {
+        expect(e.exhaustive, `${seed}/${e.id}`).toBe(true)
+      }
+    }
+  })
+
+  it('잡음이 한 인물에게 몰리지 않는다 (인물당 최대 1건)', () => {
+    for (const seed of [6020, 6021, 6022, 6023]) {
+      const c = generateValidCase(seed).case
+      const noise = c.evidence.filter((e) => e.slot !== CRIME_SLOT && !e.decisive && e.requires.length === 0 && !e.exhaustive)
+      const per = new Map<string, number>()
+      for (const e of noise) for (const s of e.subjects) per.set(s, (per.get(s) ?? 0) + 1)
+      for (const [, n] of per) expect(n).toBeLessThanOrEqual(1)
+    }
   })
 })
