@@ -101,7 +101,11 @@ function finish(g: GameState, seed: number, bot: string, log: string[]): PlayRes
     method: g.case.method,
     decisiveEvidenceId: owned[owned.length - 1] ?? '',
   })
-  log.push(`제출: ${guess} (후보 ${cands.length}명, 모순대상 ${flagged.length}명) → ${r.correct.culprit ? '정답' : '오답'}`)
+  log.push(
+    `제출 — 범인:${g.case.suspects[guess].name} / 수단:${g.case.method} / 결정적증거:${owned[owned.length - 1] ?? '(없음)'}` +
+    ` → 범인 ${r.correct.culprit ? '적중' : '오답'} · 수단 ${r.correct.method ? '적중' : '오답'} · 증거 ${r.correct.decisive ? '적중' : '오답'}` +
+    ` · 점수 ${r.total} (후보 ${cands.length}명 남음)`,
+  )
   return {
     seed, bot, won: r.correct.culprit,
     actionsUsed: 6 - g.investigationsLeft,
