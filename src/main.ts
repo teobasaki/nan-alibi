@@ -367,8 +367,11 @@ function board(): HTMLElement {
     // 기록실 색인처럼 **무엇을 여는지**는 보여주고 **누가 찍혔는지**는 감춘다.
     // 라벨이 전부 "영수증 조회" 로 같으면 플레이어는 찍기밖에 못 하고,
     // 그 순간 "무엇을 먼저 볼 것인가" 라는 이 게임의 전략이 사라진다.
+    // 범행 시각 기록만이 사람을 지운다. 그 사실을 **조회 전에** 밝힌다 —
+    // 규칙을 아는 것과 목록에서 알아보는 것은 다르다 (자동 리뷰 major/onboarding).
     const label = `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`
-    const b = h('button', undefined, `${label} (조사 1회)`) as HTMLButtonElement
+    const use = e.slot === CRIME_SLOT ? '후보 소거' : '해금·교차검증'
+    const b = h('button', undefined, `${label} — ${use} (조사 1회)`) as HTMLButtonElement
     b.disabled = ui.game.investigationsLeft <= 0 || ui.busy
     b.onclick = () => act(() => lookupEvidence(ui.game, e.id))
     lookup.appendChild(b)
@@ -629,6 +632,27 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   sheet.appendChild(fileHeader(r.correct.culprit ? '사건\n해결' : '미제\n편철', !r.correct.culprit))
   sheet.appendChild(h('div', `verdict ${r.correct.culprit ? 'ok' : 'no'}`,
     r.correct.culprit ? '범인을 맞혔습니다.' : '범인이 아닙니다.'))
+
+  /**
+   * **맞힌 것과 좁힌 것은 다르다.**
+   * 후보가 넷 남은 채 찍어 맞힌 판과 기록으로 한 사람까지 몬 판이
+   * 같은 문장으로 끝나고 있었다 (자동 리뷰 major/feedback).
+   * 점수는 건드리지 않는다 — 승리 조건을 바꾸면 밸런스를 다시 재야 한다.
+   * 대신 무엇을 한 것인지 정확히 적는다.
+   */
+  const endCands = candidatesFrom(CASE, new Set(ui.game.cards))
+  if (r.correct.culprit) {
+    sheet.appendChild(h('div', endCands.length === 1 ? 'contradiction' : 'hintline',
+      endCands.length === 1
+        ? '기록만으로 한 사람까지 좁힌 뒤 지목했습니다 — 추리가 완성된 판입니다.'
+        : `다만 기록으로는 아직 ${endCands.length}명이 남아 있었습니다. 좁혀서 맞힌 것이 아니라 ` +
+          `남은 후보 중에서 고른 것이라, 범인 점수는 60점이 아니라 40점입니다. ` +
+          `${SLOT_LABEL[CRIME_SLOT]} 기록을 더 열었다면 지목이 필연이 됐을 것입니다.`))
+  } else if (endCands.length > 1) {
+    sheet.appendChild(h('div', 'hintline',
+      `제출 시점에 기록으로 좁혀진 후보는 ${endCands.length}명이었습니다. ` +
+      `사람을 지우는 건 ${SLOT_LABEL[CRIME_SLOT]} 기록뿐입니다 — 진술과 인장은 의심의 근거이지 소거가 아닙니다.`))
+  }
   sheet.appendChild(h('p', undefined,
     `진범은 ${CASE.suspects[CASE.culprit].name}(${CASE.suspects[CASE.culprit].job}). 동기는 ${CASE.motive}, 수단은 ${CASE.method}.`))
 
@@ -669,7 +693,8 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   const line = (label: string, v: number, cls?: string): void => {
     sc.appendChild(h('div', cls, label)); sc.appendChild(h('div', cls, String(v)))
   }
-  line('범인', r.breakdown.culprit)
+  line(r.correct.culprit && r.candidatesLeft > 1 ? `범인 (후보 ${r.candidatesLeft}명 중 지목)` : '범인',
+    r.breakdown.culprit)
   line('범행 수단', r.breakdown.method)
   line('결정적 증거', r.breakdown.decisive)
   line(`남은 조사 ${ui.game.investigationsLeft}회`, r.breakdown.efficiency)

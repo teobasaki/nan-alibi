@@ -191,10 +191,33 @@ describe('최종 채점 (Task 7 — 완료기준 B4·B5)', () => {
   it('범인만 맞히면 부분 점수다 (B4)', () => {
     const g = fresh(5009)
     const r = submit(g, { culprit: g.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음' })
-    expect(r.breakdown.culprit).toBe(60)
+    // 조사 0회 시점이므로 기록으로 좁혀진 게 없다 → 찍어서 맞힌 것이다
+    expect(r.candidatesLeft).toBeGreaterThan(1)
+    expect(r.breakdown.culprit).toBe(40)
     expect(r.breakdown.method).toBe(0)
     expect(r.breakdown.decisive).toBe(0)
     expect(r.total).toBeLessThan(100 + INVESTIGATION_BUDGET * 5)
+  })
+
+  /**
+   * ★ 찍어 맞힌 것과 좁혀서 맞힌 것은 점수가 다르다.
+   * 수단에는 "근거 없이 맞히면 0점" 을 적용해 놓고 범인에는 적용하지 않아
+   * 스스로와 모순이었다 (자동 리뷰가 세 판 연속 지적).
+   */
+  it('★ 기록으로 한 사람까지 좁혀야 범인 60점이다', () => {
+    const base = fresh(5008)
+    const guessed = submit(base, {
+      culprit: base.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음',
+    })
+    expect(guessed.breakdown.culprit).toBe(40)
+
+    // 결정적 증거는 범행 시각 현장에 범인을 못박는다 → 후보가 1명으로 확정된다
+    const narrowed = submit(
+      { ...base, cards: [...base.cards, base.case.decisiveEvidenceId] },
+      { culprit: base.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음' },
+    )
+    expect(narrowed.candidatesLeft).toBe(1)
+    expect(narrowed.breakdown.culprit).toBe(60)
   })
 
   it('남은 조사 1회당 +5점이 반영된다 (B5)', () => {
