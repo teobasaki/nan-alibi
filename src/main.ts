@@ -16,6 +16,9 @@ import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './ui/josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { record, stats } from './ui/records'
+import { portraitFor } from './ui/portraits'
+import { hasModel, mount, type Stage3D } from './ui/stage3d'
+import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
 import { candidatesFrom } from './engine/solver'
@@ -44,6 +47,8 @@ interface UI {
   flash: string | null
   /** 이미 화면에 찍힌 인장 — 재렌더 때 전부 다시 찍히는 걸 막는다 */
   stamped: Set<string>
+  /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
+  scene: { slug: string; handle: Stage3D | null } | null
 }
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -70,6 +75,7 @@ const ui: UI = {
   busy: false,
   flash: null,
   stamped: new Set(),
+  scene: null,
 }
 
 const h = (tag: string, cls?: string, text?: string): HTMLElement => {
@@ -124,7 +130,11 @@ function suspectColumn(): HTMLElement {
     const row = h('div', 'row')
     // 이모지 얼굴(👤/🙂/😰)은 어느 게임에나 붙는 기본값이었고, 다섯 명이 전부 같은 얼굴이라
     // 인물의 정체성을 오히려 지웠다. 놋쇠 문패에 새긴 성(姓) 으로 바꾼다 — 호텔의 물건이다.
-    row.appendChild(h('div', 'face plate', sus.name[0]!))
+    // 사진이 있으면 사진, 없으면 놋쇠 명패. 에셋 0장에서도 화면이 깨지지 않는다.
+    const shot = portraitFor(sus.job)
+    const face = h('div', shot ? 'face photo' : 'face plate', shot ? '' : sus.name[0]!)
+    if (shot) face.style.backgroundImage = `url(${shot})`
+    row.appendChild(face)
     const info = h('div')
     info.appendChild(h('div', 'name', sus.name))
     info.appendChild(h('div', 'job', sus.job))
@@ -189,9 +199,45 @@ function stage(): HTMLElement {
   const sus = CASE.suspects[s]
   const persona = personaById(sus.personaId)
   const tense = ui.game.pressure[s] >= 60
+  // 압박이 높으면 방이 좁아진다 — 조명이 붉게 조여든다 (분위기 층 ④)
+  if (tense) box.classList.add('tense')
 
   const p = h('div', 'portrait')
-  p.appendChild(h('div', `big plate${tense ? ' tense' : ''}`, sus.name[0]!))
+  const slug = SLUG_BY_JOB[sus.job]
+  const use3d = !!slug && hasModel(slug)
+  const shot = portraitFor(sus.job)
+  const big = h('div', use3d ? 'big scene3d' : `big ${shot ? 'photo' : 'plate'}${tense ? ' tense' : ''}`,
+    use3d || shot ? '' : sus.name[0]!)
+  if (!use3d && shot) big.style.backgroundImage = `url(${shot})`
+  p.appendChild(big)
+
+  // 3D 는 **비동기로 붙는다.** 붙기 전까지는 빈 자리이고, 실패하면 그대로 사진으로 돌아간다.
+  // 재렌더마다 다시 만들면 매 행동에 모델을 새로 받는다 — 같은 인물이면 그대로 둔다.
+  if (use3d) {
+    if (ui.scene?.slug !== slug) {
+      ui.scene?.handle?.dispose()
+      ui.scene = { slug: slug!, handle: null }
+      const target = big
+      void mount(target, slug!).then((handle) => {
+        if (ui.scene?.slug !== slug) return handle?.dispose()
+        ui.scene.handle = handle
+        if (!handle && shot) {
+          // 3D 가 실패했다 — 조용히 사진으로 되돌린다
+          target.className = `big photo${tense ? ' tense' : ''}`
+          target.style.backgroundImage = `url(${shot})`
+        }
+        handle?.setPressure(ui.game.pressure[s])
+      })
+    } else if (ui.scene.handle) {
+      // 이미 붙어 있다면 캔버스를 새 DOM 으로 옮기고 상태만 갱신한다
+      const prev = document.querySelector('canvas.moved3d')
+      if (prev) big.appendChild(prev)
+      ui.scene.handle.setPressure(ui.game.pressure[s])
+    }
+  } else if (ui.scene) {
+    ui.scene.handle?.dispose()
+    ui.scene = null
+  }
   const meta = h('div')
   meta.appendChild(h('div', 'name', `${sus.name} · ${sus.job}`))
   meta.appendChild(h('div', 'hint', `읽힌 성향: ${persona.label} — ${persona.hint}`))

@@ -4,3 +4,8 @@ dist
 .wrangler
 .dev.vars
 docs/.review-streak
+
+# 원본 3D (크고 번들에 안 들어간다). 최적화본(.opt.glb)만 커밋한다.
+public/characters/*.rigged.glb
+public/characters/*.glb
+!public/characters/*.opt.glb

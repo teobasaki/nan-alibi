@@ -350,3 +350,101 @@ input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* 격자에 인장이 찍힐 때 — 그 칸만 잠깐 붉게 */
 .agrid .cell.fresh::after { animation: press .3s cubic-bezier(.2, 1.4, .4, 1) backwards; }
+
+/* ══════════════════════════════════════════════════════════════
+   분위기 층 — 에셋 0장, 크레딧 0
+   공포는 무엇을 보여주는가보다 **어떻게 보이는가**에서 온다.
+   이 게임의 무대는 22:20, 불이 반쯤 나간 호텔이고 화면은 그 층의 감시 단말이다.
+   전부 `pointer-events: none` 이라 조작을 가리지 않는다.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ① 비네트 — 화면 가장자리가 어둠에 먹힌다 */
+body::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 5;
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 45%, transparent 40%, rgba(0,0,0,.55) 100%);
+}
+
+/* ② 필름 그레인 — 낡은 기록물의 입자. 아주 옅게, 아주 느리게. */
+body::after {
+  content: ''; position: fixed; inset: -50%; pointer-events: none; z-index: 6;
+  opacity: .05;
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'>\
+<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter>\
+<rect width='180' height='180' filter='url(%23n)'/></svg>");
+  animation: grain 7s steps(6) infinite;
+}
+@keyframes grain {
+  0%   { transform: translate(0, 0); }
+  20%  { transform: translate(-3%, 2%); }
+  40%  { transform: translate(2%, -3%); }
+  60%  { transform: translate(-2%, -2%); }
+  80%  { transform: translate(3%, 1%); }
+  100% { transform: translate(0, 0); }
+}
+
+/* ③ 심문석 — 취조실 조명. 인물 위로만 빛이 떨어지고 나머지는 어둠에 잠긴다. */
+.stage .portrait {
+  position: relative;
+  background:
+    radial-gradient(ellipse 70% 220% at 42px 50%, rgba(200,145,47,.13), transparent 70%);
+}
+
+/* ④ 압박이 오르면 방이 좁아진다 — 취조의 물리적 은유 */
+.stage.tense::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background: radial-gradient(ellipse 95% 80% at 50% 40%, transparent 30%, rgba(120,20,14,.16) 100%);
+  animation: breathe 3.4s ease-in-out infinite;
+}
+@keyframes breathe { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+.stage { position: relative; }
+
+/* ⑤ 감시 단말의 주사선 — 심문 중에만. 이 화면은 '실황' 이라는 신호. */
+.stage .log::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom, rgba(255,255,255,.028) 0 1px, transparent 1px 3px);
+}
+.stage .log { position: relative; }
+
+/* ⑥ 정전 깜빡임 — 아주 가끔. 자주 하면 장식이 되고, 드물어야 사건이 된다. */
+@keyframes flicker {
+  0%, 96.5%, 100% { opacity: 1; }
+  97%   { opacity: .72; }
+  97.6% { opacity: 1; }
+  98.2% { opacity: .55; }
+  98.6% { opacity: 1; }
+}
+.topbar h1 { animation: flicker 19s linear infinite; }
+
+/* 움직임을 줄여 달라고 한 사용자에게는 분위기도 정지시킨다 */
+@media (prefers-reduced-motion: reduce) {
+  body::after, .stage.tense::before, .topbar h1 { animation: none !important; }
+}
+
+/* ══ 인물 사진 — '증거 사진' 처리 ══
+   원본이 매끈한 스튜디오 사진이어도 조서 서식과 싸우지 않게 만든다.
+   채도를 죽이고 대비를 올리고, 위에 입자를 얹는다. */
+.face.photo, .portrait .big.photo {
+  background-size: cover; background-position: center top;
+  border: 1px solid var(--line); position: relative; overflow: hidden;
+  filter: grayscale(.72) contrast(1.18) brightness(.82);
+}
+.face.photo::after, .portrait .big.photo::after {
+  content: ''; position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, rgba(200,145,47,.09), transparent 55%),
+    repeating-linear-gradient(to bottom, rgba(0,0,0,.14) 0 1px, transparent 1px 2px);
+}
+.portrait .big.photo { filter: grayscale(.62) contrast(1.22) brightness(.86); }
+/* 압박이 높으면 사진도 붉게 달아오른다 */
+.portrait .big.photo.tense { filter: grayscale(.3) contrast(1.3) brightness(.9) sepia(.25) hue-rotate(-18deg); }
+/* 심문석 3D — 사진 자리를 그대로 쓰되 더 크게. 얼굴이 안 보이면 3D 를 넣은 의미가 없다. */
+.portrait .big.scene3d {
+  width: 132px; height: 168px; flex: 0 0 132px;
+  background: #0d0a0b; border: 1px solid var(--line); border-radius: 4px;
+  overflow: hidden; position: relative;
+}
+.portrait .big.scene3d canvas { display: block; width: 100%; height: 100%; }
+@media (pointer: coarse) { .portrait .big.scene3d { width: 108px; height: 138px; flex: 0 0 108px; } }
