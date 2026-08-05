@@ -1,0 +1,6 @@
+# 두 머신이 각자 끝에 붙이는 append-only 파일. union이 아니면 pull마다 충돌난다.
+DEVLOG.md merge=union
+.devlog/transcripts/index.jsonl merge=union
+
+# 전문 아카이브는 gzip 바이너리. 파일명이 세션 UUID라 머신 간 충돌은 없다.
+*.jsonl.gz binary
