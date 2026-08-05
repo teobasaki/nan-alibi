@@ -168,3 +168,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .verdict { font-family: var(--serif); font-size: 19px; margin-bottom: 6px; }
 .verdict.ok { color: var(--green); }
 .verdict.no { color: var(--red); }
+
+/* 키보드 포커스 — 마우스 없이도 플레이 가능해야 한다 */
+[role="button"]:focus-visible,
+button:focus-visible,
+input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
