@@ -86,8 +86,15 @@ function suspectColumn(): HTMLElement {
 
   for (const s of SUSPECTS) {
     const sus = CASE.suspects[s]
+    // div+onclick 이 아니라 버튼 시맨틱을 준다 — 키보드만으로도 게임의 첫 행동이 가능해야 한다
     const card = h('div', `suspect${ui.active === s ? ' active' : ''}`)
-    card.onclick = () => { ui.active = s; render() }
+    card.setAttribute('role', 'button')
+    card.tabIndex = 0
+    card.setAttribute('aria-pressed', String(ui.active === s))
+    card.setAttribute('aria-label', `${sus.name} ${sus.job} 심문하기`)
+    const choose = (): void => { ui.active = s; render() }
+    card.onclick = choose
+    card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
 
     const row = h('div', 'row')
     row.appendChild(h('div', 'face', '👤'))
@@ -192,7 +199,13 @@ function askBox(s: SuspectId): HTMLElement {
   const send = h('button', undefined, '심문') as HTMLButtonElement
   send.disabled = ui.busy || ui.game.investigationsLeft <= 0
   send.onclick = () => { void doAsk(s, input.value) }
-  input.onkeydown = (e) => { if (e.key === 'Enter') void doAsk(s, input.value) }
+  input.onkeydown = (e) => {
+    // 한글 IME: 조합 확정용 Enter 와 전송용 Enter 는 다르다.
+    // isComposing 을 안 보면 "안녕하세" 상태에서 질문이 잘린 채 전송되고,
+    // 조사 1회가 그대로 날아간다 (되돌릴 수 없는 자원이다).
+    if (e.isComposing) return
+    if (e.key === 'Enter') void doAsk(s, input.value)
+  }
   row.appendChild(send)
   row.appendChild(h('span', 'cost', `조사 ${ui.game.investigationsLeft} → ${Math.max(0, ui.game.investigationsLeft - 1)}`))
   wrap.appendChild(row)
@@ -226,7 +239,11 @@ function board(): HTMLElement {
     lookup.appendChild(h('div', 'hintline', '지금 조회할 수 있는 기록이 없다. 심문으로 실마리를 열어야 한다.'))
   }
   for (const e of avail) {
-    const b = h('button', undefined, `${labelOfKind(e.kind)} 조회 (조사 1회)`) as HTMLButtonElement
+    // 기록실 색인처럼 **무엇을 여는지**는 보여주고 **누가 찍혔는지**는 감춘다.
+    // 라벨이 전부 "영수증 조회" 로 같으면 플레이어는 찍기밖에 못 하고,
+    // 그 순간 "무엇을 먼저 볼 것인가" 라는 이 게임의 전략이 사라진다.
+    const label = `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`
+    const b = h('button', undefined, `${label} (조사 1회)`) as HTMLButtonElement
     b.disabled = ui.game.investigationsLeft <= 0 || ui.busy
     b.onclick = () => act(() => lookupEvidence(ui.game, e.id))
     lookup.appendChild(b)
@@ -250,7 +267,12 @@ function board(): HTMLElement {
     const card = renderCard(CASE, id)
     if (ui.selected.includes(id)) card.classList.add('sel')
     if (ui.flash === id) card.classList.add('flash')
+    card.setAttribute('role', 'button')
+    card.tabIndex = 0
+    card.setAttribute('aria-pressed', String(ui.selected.includes(id)))
+    card.setAttribute('aria-label', `${cardSummary(CASE, id)} — 연결하려면 선택`)
     card.onclick = () => pickCard(id)
+    card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCard(id) } }
     col.appendChild(card)
   }
   return col
