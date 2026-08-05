@@ -124,12 +124,27 @@ export function generateCase(seed: number): CaseFile {
 
   // 무고한 사람 중 2~3명이 개인 비밀 때문에 거짓말한다 (V6).
   // 이게 없으면 "거짓말하는 사람 = 범인" 이 되어 추리가 사라진다.
+  //
+  // **거짓말 칸 수를 범인과 맞춘다 (1~2칸).** 실측에서 범인만 2칸이고 무고한 사람은 1칸이라
+  // "모순이 가장 많이 걸린 사람 = 범인" 이 성립했고, 무작위 봇 승률이 52% 까지 올라갔다
+  // (기대치 20%). 추리가 아니라 카운팅이 되는 순간이다 (ADR 007).
   const liarCount = randInt(rng, 2, 3)
   for (const s of sample(rng, innocents, liarCount)) {
     const sus = suspects[s]
-    const slot = pick(rng, SLOTS)
-    sus.claim[slot] = otherPlace(rng, sus.truth[slot]!)
-    sus.lieSlots.push(slot)
+    // **거짓말은 범행 시각에 몰아야 한다.** 물증이 대부분 범행 시각에 있으므로,
+    // 다른 시각의 거짓말은 사실상 들키지 않는다. 그러면 "모순이 걸린 사람 = 범인" 이 성립하고
+    // 기획서의 핵심 주제("거짓말하는 사람과 범인은 같지 않다")가 작동하지 않는다.
+    // 실측: 후보 수가 같아도 무작위 봇이 기대치를 10~20%p 이겼다 (ADR 007).
+    const slots: Slot[] = rng.next() < 0.65 ? [CRIME_SLOT] : sample(rng, SLOTS, 1)
+    if (rng.next() < 0.4) {
+      const extra = pick(rng, SLOTS.filter((x) => !slots.includes(x)))
+      slots.push(extra)
+    }
+    for (const slot of slots) {
+      if (sus.lieSlots.includes(slot)) continue
+      sus.claim[slot] = otherPlace(rng, sus.truth[slot]!)
+      sus.lieSlots.push(slot)
+    }
     sus.lieReason = pick(rng, SECRETS)
   }
 
@@ -174,6 +189,7 @@ export function generateCase(seed: number): CaseFile {
     slot: 1,
     place: suspects[culprit].truth[1]!,
     subjects: [culprit],
+    exhaustive: true,
     decisive: false,
     requires: chain === 'short' ? [] : [witnessTestimony],
   }
@@ -187,6 +203,7 @@ export function generateCase(seed: number): CaseFile {
     slot: CRIME_SLOT,
     place: CRIME_PLACE,
     subjects: [culprit],
+    exhaustive: false,   // 카드키는 출입만 증명한다
     decisive: true,
     requires: chain === 'double' ? [slipId, witnessTestimony] : [slipId],
   }
@@ -199,22 +216,42 @@ export function generateCase(seed: number): CaseFile {
     const p = suspects[s].truth[CRIME_SLOT]!
     byPlace.set(p, [...(byPlace.get(p) ?? []), s])
   }
-  for (const [place, group] of byPlace) {
+  // 범행 시각의 알리바이 기록은 **전부 CCTV(구역 촬영)** 로 둔다.
+  // 그래야 "그 시간 그 장소 기록에 저 사람이 없다" 는 **부재 모순** 이 성립한다 —
+  // 사람이 가장 먼저 떠올리는 추리인데, 영수증으로는 논리적으로 성립하지 않는다.
+  // **전원 커버 금지.** 무고한 4명 전부에게 범행시각 기록을 주면
+  // 조회만 3~4번 하면 심문 없이 범인이 남는다 → 무작위 조사로도 54% 가 풀린다 (ADR 007).
+  // 일부만 남겨서 "기록으로 지울 수 있는 사람" 과 "심문으로만 알 수 있는 사람" 을 갈라놓는다.
+  // 제약은 **장소 수가 아니라 인원 수** 에 건다.
+  // 한 장소에 2명이 묶이면 2곳만으로도 무고한 4명이 전부 커버돼 지름길이 다시 열린다
+  // (실측: 시드 1031 에서 알리바이만으로 후보가 1명이 됐다).
+  const maxCovered = randInt(rng, 2, 3)
+  const covered: PlaceId[] = []
+  let coveredCount = 0
+  for (const place of shuffle(rng, [...byPlace.keys()])) {
+    const n = byPlace.get(place)!.length
+    if (coveredCount + n > maxCovered) continue
+    covered.push(place)
+    coveredCount += n
+  }
+  for (const place of covered) {
     evidence.push({
       id: evId(),
-      kind: group.length > 1 ? 'cctv' : pick(rng, ['keycard', 'call', 'receipt'] as const),
+      kind: 'cctv',
       slot: CRIME_SLOT,
       place,
-      subjects: group,
+      subjects: byPlace.get(place)!,
+      exhaustive: true,
       decisive: false,
       requires: [],
     })
   }
 
   // ④ 잡음 — 사건과 무관한 시각의 진짜 기록. 조사 횟수를 낭비시키는 함정.
+  // **인물당 최대 1건**으로 분산한다. 한 사람에게 몰리면(실측: 8건 중 3건이 동일인)
+  // 조회 목록의 절반이 같은 사람의 무의미한 기록이 되어 낭비 확률이 치솟는다.
   const noise = randInt(rng, NOISE_EVIDENCE_MIN, NOISE_EVIDENCE_MAX)
-  for (let i = 0; i < noise; i++) {
-    const s = pick(rng, innocents)
+  for (const s of sample(rng, innocents, Math.min(noise, innocents.length))) {
     const slot = pick(rng, SLOTS.filter((x) => x !== CRIME_SLOT))
     evidence.push({
       id: evId(),
@@ -222,6 +259,7 @@ export function generateCase(seed: number): CaseFile {
       slot,
       place: suspects[s].truth[slot]!,
       subjects: [s],
+      exhaustive: false,
       decisive: false,
       requires: [],
     })

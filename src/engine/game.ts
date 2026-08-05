@@ -11,6 +11,7 @@
 
 import {
   CRIME_SLOT,
+  PLACE_LABEL,
   SUSPECTS,
   type CaseFile,
   type Evidence,
@@ -103,13 +104,27 @@ export function interview(g: GameState, s: SuspectId): GameState {
   return spend(g, [...claims, ...g.case.suspects[s].testimonies], [s, 10])
 }
 
-/** 증거 제시 — 해금 관계가 있어야만 성립한다 (무의미한 제시로 예산이 날아가지 않게) */
+/**
+ * 증거 제시 — **누구에게든 제시할 수 있고, 언제나 조사 1회를 소모한다.**
+ *
+ * 초기 구현은 "해금 관계가 없으면 거부" 였는데, 그게 **정답 유출 경로**였다:
+ * 해금 쌍은 범인에게만 존재하므로, 카드를 하나 들고 다섯 명을 훑으면
+ * 버튼이 켜지는 사람이 곧 범인이었다 — 조사 0회로 답이 새어나간다.
+ *
+ * 그래서 "낭비 방지" 를 포기하고 **낭비할 자유** 를 준다.
+ * 헛된 제시는 인물의 회피 반응만 얻고 조사 1회를 잃는다 — 그게 자원 게임의 긴장이다.
+ */
 export function presentEvidence(g: GameState, evId: string, s: SuspectId): GameState {
   assertCanAct(g)
   if (!g.cards.includes(evId)) throw new Error(`보유하지 않은 증거: ${evId}`)
   const unlock = g.case.presentUnlocks.find((u) => u.evidenceId === evId && u.suspectId === s)
-  if (!unlock) throw new Error(`${s} 에게 ${evId} 를 제시할 근거가 없다`)
-  return spend(g, [unlock.yieldsTestimonyId], [s, 35])
+  // 해금이 없으면 얻는 것 없이 압박만 오른다
+  return spend(g, unlock ? [unlock.yieldsTestimonyId] : [], [s, unlock ? 35 : 12])
+}
+
+/** 이 제시가 실제로 무언가를 열었는가 — UI 가 사후에 알려주기 위한 것 (사전 노출 금지) */
+export function presentYields(g: GameState, evId: string, s: SuspectId): boolean {
+  return g.case.presentUnlocks.some((u) => u.evidenceId === evId && u.suspectId === s)
 }
 
 export interface ConnectResult {
@@ -137,13 +152,30 @@ export function connect(g: GameState, a: string, b: string): ConnectResult {
   if (!ev || !claim) {
     return { state: { ...g, connections }, contradiction: false, message: '연결했지만 모순은 아니다' }
   }
-  if (!ev.subjects.includes(claim.suspect) || ev.slot !== claim.slot) {
-    return { state: { ...g, connections }, contradiction: false, message: '서로 다른 인물·시각이라 비교 대상이 아니다' }
+  if (ev.slot !== claim.slot) {
+    return { state: { ...g, connections }, contradiction: false, message: '시각이 달라 비교 대상이 아니다' }
   }
 
-  const claimed = g.case.suspects[claim.suspect].claim[claim.slot]
-  if (claimed === ev.place) {
-    return { state: { ...g, connections }, contradiction: false, message: '진술과 기록이 일치한다' }
+  const claimed = g.case.suspects[claim.suspect].claim[claim.slot]!
+  const inRecord = ev.subjects.includes(claim.suspect)
+
+  let why: string | null = null
+  if (inRecord && claimed !== ev.place) {
+    // ① 대면 모순 — 기록에 찍힌 장소와 본인 진술이 다르다
+    why = `기록에는 ${PLACE_LABEL[ev.place]}인데 본인은 ${PLACE_LABEL[claimed]}이라 했다`
+  } else if (!inRecord && claimed === ev.place && ev.exhaustive) {
+    // ② 부재 모순 — 그 구역을 남김없이 담은 기록에 그 사람이 없다.
+    //    사람이 가장 먼저 떠올리는 추리다. exhaustive 가 아닌 기록(영수증·카드키)에는
+    //    적용하지 않는다 — 결제/출입을 안 했을 뿐일 수 있으므로 논리적으로 성립하지 않는다.
+    why = `${PLACE_LABEL[ev.place]} 구역 기록에 이 사람이 없다`
+  }
+
+  if (!why) {
+    return {
+      state: { ...g, connections },
+      contradiction: false,
+      message: inRecord ? '진술과 기록이 일치한다' : '이 기록으로는 그 진술을 반박할 수 없다',
+    }
   }
 
   const key = `${ev.id}|${claim.suspect}|${claim.slot}`
@@ -154,7 +186,7 @@ export function connect(g: GameState, a: string, b: string): ConnectResult {
   return {
     state: { ...g, connections, foundContradictions },
     contradiction: true,
-    message: `${claim.suspect} 의 진술과 ${ev.id} 기록이 어긋난다`,
+    message: `${g.case.suspects[claim.suspect].name}: ${why}`,
   }
 }
 

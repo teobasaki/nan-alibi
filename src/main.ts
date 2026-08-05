@@ -213,13 +213,14 @@ function askBox(s: SuspectId): HTMLElement {
 
   if (ui.selected.length === 1) {
     const evId = ui.selected[0]!
-    const can = CASE.presentUnlocks.some((u) => u.evidenceId === evId && u.suspectId === s)
-    const present = h('button', undefined, '선택한 카드를 제시 (조사 1회)') as HTMLButtonElement
-    present.disabled = ui.busy || !can || ui.game.investigationsLeft <= 0
+    // 버튼을 조건부로 비활성화하면 **활성화 자체가 정답을 유출한다** (해금 쌍은 범인에게만 있다).
+    // 항상 누를 수 있게 두고, 헛수고의 책임은 플레이어가 진다.
+    const present = h('button', undefined, '선택한 카드를 들이민다 (조사 1회)') as HTMLButtonElement
+    present.disabled = ui.busy || ui.game.investigationsLeft <= 0
     present.style.marginTop = '7px'
     present.onclick = () => { void doPresent(s, evId) }
     wrap.appendChild(present)
-    if (!can) wrap.appendChild(h('div', 'hintline', '이 사람에게 이 카드를 들이밀 근거가 없다 — 조사만 낭비된다.'))
+    wrap.appendChild(h('div', 'hintline', '엉뚱한 상대에게 들이밀면 조사만 소모된다.'))
   }
   return wrap
 }
