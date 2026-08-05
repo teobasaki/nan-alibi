@@ -21,6 +21,10 @@ export interface Stage3D {
   setPressure(v: number): void
   /** 말하는 중 — 미세하게 고개가 움직인다 */
   setSpeaking(v: boolean): void
+  /** 얼굴의 화면상 위치(0~1). 말풍선을 머리 옆에 붙이는 데 쓴다. */
+  facePoint(): { x: number; y: number }
+  /** 탁자가 삐걱일 만한 순간인지 — 등이 크게 흔들리는 지점에서 true 를 한 번 준다 */
+  onCreak(cb: () => void): void
   dispose(): void
 }
 
@@ -76,7 +80,9 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     // 필름 같은 계조. 없으면 하이라이트가 하얗게 타서 플라스틱처럼 보인다.
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 0.78
-    host.replaceChildren()      // 호스트는 재사용되는 영속 노드다 — 이전 캔버스를 치운다
+    // 호스트는 재사용되는 영속 노드다. **캔버스만** 치운다 —
+    // `replaceChildren()` 로 통째로 비웠더니 호스트에 얹어 둔 말풍선까지 사라졌다.
+    host.querySelectorAll('canvas').forEach((el) => el.remove())
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
@@ -164,12 +170,20 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     scene.add(model)
 
     /**
-     * 인물을 **방의 의자 자리**에 앉힌다.
-     * 방 에셋 기준으로 테이블은 원점 부근을 가로지르고, 안쪽(-Z) 끝이 용의자 자리다.
-     * 실측으로 잡은 값이며, 카메라도 여기서 파생된다.
+     * 인물을 **방의 실제 의자**에 앉힌다.
+     *
+     * 좌표는 방 GLB 를 블렌더로 열어 좌면 높이(원본 z≈-0.36)의 버텍스를 XY 로 군집화해
+     * 뽑았다. 의자는 두 줄이다 — 원본 x≈-0.28 에 4개, x≈0.42 에 2개. 테이블의 긴 축이
+     * Y 이므로 두 줄이 테이블을 사이에 두고 마주본다. 용의자는 x≈0.42 쪽에 앉힌다.
+     *
+     * **축 변환**: 블렌더는 Z-up, three.js 는 Y-up 이다. glTF 의 (x,y,z) 는
+     * 블렌더에서 (x, -z, y) 로 들어온다. 그래서 블렌더 (x, y) → three (x, ·, -y).
+     * 여기에 방 배율 1.9 를 곱한다.
      */
-    const SEAT = new THREE.Vector3(0.06, 0, -0.62)
-    const LAMP = new THREE.Vector3(0.02, 1.72, -0.10)   // 방 갓등 아래
+    const SEAT = new THREE.Vector3(0.42 * ROOM_SCALE, 0, 0.03 * ROOM_SCALE)
+    /** 용의자는 -X 쪽(맞은편 의자)을 본다. 카메라도 그 방향에서 들어온다. */
+    const FACE_YAW = -Math.PI / 2
+    const LAMP = new THREE.Vector3(-0.2 * ROOM_SCALE, 1.62, 0.02 * ROOM_SCALE)
 
     const box = new THREE.Box3().setFromObject(model)
     const size = box.getSize(new THREE.Vector3())
@@ -185,8 +199,11 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     } else {
       model.position.y -= box2.min.y
     }
-    model.position.x += SEAT.x - (box2.max.x + box2.min.x) / 2
-    model.position.z += SEAT.z - (box2.max.z + box2.min.z) / 2
+    model.rotation.y = FACE_YAW
+    model.updateMatrixWorld(true)
+    const box3 = new THREE.Box3().setFromObject(model)
+    model.position.x += SEAT.x - (box3.max.x + box3.min.x) / 2
+    model.position.z += SEAT.z - (box3.max.z + box3.min.z) / 2
 
     /** 뼈 이름은 리깅 도구마다 다르다. 패턴으로 찾고, 못 찾으면 모델 전체를 흔든다. */
     const findBone = (re: RegExp): import('three').Object3D | null => {
@@ -229,14 +246,33 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 형사의 어깨가 왼쪽 아래를 검게 먹는다.** 그걸 다 담으려면 물러서고 넓혀야 한다.
      * 얼굴만 크게 잡으면 조명은 좋아도 '방' 이 사라진다 — 두 번 그렇게 만들었다.
      */
-    const aim = new THREE.Vector3(face.x + 0.04, face.y - 0.20, face.z)
-    camera.position.set(face.x + 0.20, face.y + 0.26, face.z + 1.55)
+    /**
+     * 카메라는 **맞은편 의자 자리**다 — 인물이 바라보는 방향에서 들어온다.
+     * 처음엔 1.5m 였는데 방의 갓등이 바로 머리 위에 걸려 갓이 화면 절반을 덮었다.
+     * 물러서고(2.05m) 옆으로 비껴서(측면 0.34m) 등을 화면 위쪽 구석에 남긴다 —
+     * 레퍼런스처럼 **보이되 가리지 않게**.
+     */
+    const DIST = 2.05
+    const aim = new THREE.Vector3(face.x, face.y - 0.14, face.z)
+    const fwd = new THREE.Vector3(Math.sin(FACE_YAW), 0, Math.cos(FACE_YAW))
+    const side = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize()
+    camera.position.copy(face)
+      .addScaledVector(fwd, DIST)
+      .addScaledVector(side, 0.34)
+    camera.position.y = face.y + 0.10
     camera.lookAt(aim)
     key.position.copy(LAMP)
     key.target.position.set(face.x, face.y - 0.15, face.z)
 
     // 전경 어깨 — 카메라 바로 앞 왼쪽 아래
-    shoulder.position.set(camera.position.x - 0.58, camera.position.y - 0.48, camera.position.z - 0.34)
+    {
+      const toFace = new THREE.Vector3().subVectors(aim, camera.position).normalize()
+      const rightV = new THREE.Vector3().crossVectors(toFace, new THREE.Vector3(0, 1, 0)).normalize()
+      shoulder.position.copy(camera.position)
+        .addScaledVector(rightV, -0.52)
+        .addScaledVector(toFace, 0.34)
+      shoulder.position.y -= 0.48
+    }
     const rest = new Map<import('three').Object3D, import('three').Euler>()
     for (const b of [head, spine]) if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
 
@@ -248,6 +284,9 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     // 감시견 블록에 함께 뒀다가 TDZ 로 mount 가 통째로 실패했다 —
     // 정지를 막으려던 코드가 3D 를 죽여서 정지 화면이 됐다. 정확히 반대 효과였다.
     let lastFrame = performance.now()
+    /** 삐걱 콜백 — 등이 진폭 최대에 닿는 순간마다 한 번씩 부른다 */
+    let creakCb: (() => void) | null = null
+    let lastCreak = 0
 
     const tick = (): void => {
       raf = requestAnimationFrame(tick)
@@ -290,6 +329,12 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       key.target.position.set(face.x + sx * 0.55, face.y - 0.15, face.z)
       const flick = 1 + Math.sin(t * 11.3) * 0.03 + Math.sin(t * 27.7) * 0.015
 
+      // 등이 한쪽 끝에 닿을 때 탁자가 삐걱인다 — 소리와 그림이 같은 박자를 탄다
+      if (creakCb && Math.abs(sx) > swingA * 0.94 && t - lastCreak > 3.2) {
+        lastCreak = t
+        creakCb()
+      }
+
       // 압박이 높으면 조명이 붉게 조여든다 — CSS 분위기 층과 같은 언어
       const heat = Math.min(1, pressure / 100)
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
@@ -324,6 +369,11 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     return {
       setPressure: (v) => { pressure = Math.max(0, Math.min(100, v)) },
       setSpeaking: (v) => { speaking = v },
+      facePoint: () => {
+        const v = face.clone().project(camera)
+        return { x: (v.x + 1) / 2, y: (1 - v.y) / 2 }
+      },
+      onCreak: (cb) => { creakCb = cb },
       dispose: () => {
         cancelAnimationFrame(raf)
         clearInterval(watchdog)
