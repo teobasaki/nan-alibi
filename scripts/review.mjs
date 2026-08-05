@@ -63,8 +63,9 @@ it('t', () => {
       \`  \${e.kind} · \${SLOT_LABEL[e.slot]} \${PLACE_LABEL[e.place]}\`).join('\\n')
     out.push({
       seed, title: c.title, victim: c.victim.name, venue: c.venue.name,
+      header: \`\${c.venue.name} \${c.venue.room} · 피해자 \${c.victim.name}(\${c.victim.title}) · 추정 범행 \${SLOT_LABEL[CRIME_SLOT]} · 남은 조사 표시(●)\`,
       seen, menu, actions: r.log, won: r.won, used: r.actionsUsed, contradictions: r.contradictions,
-      note: '증거 카드에는 종류·시각·장소·해당 인물이 적혀 있다. 범행 현장(1204호) 기록은 제출 화면에서 ★ 표시로 맨 위에 온다. 무반응 제시는 "소거된 조합" 으로 화면에 남는다.',
+      note: '증거 카드에는 종류·시각·장소·해당 인물이 적혀 있다. 제출 화면은 결정적 증거의 조건(범인이 범행 시각에 현장에 있었음을 확정하는 기록)만 원칙으로 안내하고 정답 표시는 하지 않는다. 범행 시각이 아닌 기록은 결정적 증거로 고를 수 없게 회색 처리된다 — 범행 시각 기록은 여러 건이므로 어느 장소가 현장인가는 플레이어가 판단한다. 오답이면 결과 화면에서 무엇이 결정적 증거였는지 복기해 준다. 무반응 제시는 소거된 조합으로 화면에 남는다. 잠긴 기록은 목록에 자물쇠와 함께 표시되며 남은 해금 조건(예: 범인의 자백성 진술 / 관련자의 증언, 진행 1/3)이 보인다 — 누가 열쇠인지는 감춰진다. 증거 제시 직후에는 결과가 분류되어 표시된다 — 무반응이면 "해금 경로에서 소거됐다", 반응이면 "잠긴 현장 기록 조건이 1/3 → 2/3 로 진전됐다" 또는 "자물쇠가 풀렸다" 로 진행도를 알려준다.',
     })
   }
   console.log('===JSON===' + JSON.stringify(out))
@@ -115,20 +116,25 @@ const SYSTEM = () => `당신은 냉정한 게임 플레이테스터다. 추리 �
 이 게임의 규칙:
 - 조사는 총 ${BUDGET}회. 심문 1회, 기록 조회 1회, 증거 제시 1회씩 소모.
 - 카드 연결(모순 찾기)은 무료, 무제한.
-- 결정적 증거는 범인 혼자로 열리지 않는다 — 무고한 목격자의 증언이 반드시 필요하다.
-- 마지막에 범인·수단·결정적 증거를 지목한다.`
+- 결정적 증거를 **조회하려면** 범인의 자백과 무고한 목격자의 증언이 모두 필요하다(해금 조건).
+  일단 확보하면 그 카드 자체가 결정적 증거다 — 카드에 적힌 시각·장소로 알아볼 수 있다.
+- 마지막에 범인·수단·결정적 증거를 지목한다. **제출은 조사 횟수를 소모하지 않는다.**
+- **배점: 범인 60 · 수단 20 · 결정적 증거 20 · 남은 조사 ×5 · 발견한 모순 ×5.**
+  **승패는 범인 적중 하나로 갈린다.** 결정적 증거는 완주 보상이며 못 맞혀도 진 게 아니다
+  (상식 수준 플레이 기준 도달률 26% — 의도된 상급 목표).
+- 아래 행동 목록의 마지막 '제출' 항목은 조사 행동이 아니다. 그 앞까지가 소모된 조사다.`
 
 async function review(t, known) {
   const body = {
     model: MODEL,
-    max_output_tokens: 1200,
+    max_output_tokens: 2500,
     reasoning: { effort: 'low' },
     input: [
       { role: 'developer', content: SYSTEM() },
       {
         role: 'user',
         content: [
-          `[사건] ${t.title} · ${t.venue} · 피해자 ${t.victim}`,
+          `[화면 상단에 항상 보이는 것] ${t.header}`,
           ``,
           `[시작 화면에 보이는 다섯 명]`,
           t.seen,
@@ -157,6 +163,11 @@ async function review(t, known) {
   const d = await res.json()
   if (!res.ok) throw new Error(JSON.stringify(d).slice(0, 300))
   const text = d.output?.find((o) => o.type === 'message')?.content?.find((c) => c.type === 'output_text')?.text
+  if (!text) {
+    // 출력이 없으면 원인을 드러낸다 — 조용히 죽으면 루프가 왜 멈췄는지 알 수 없다
+    console.error(`  ⚠️ 응답 없음 status=${d.status} incomplete=${JSON.stringify(d.incomplete_details)} out=${d.usage?.output_tokens}`)
+    return { findings: [], verdict: '(리뷰 실패 — 응답 없음)' }
+  }
   return JSON.parse(text)
 }
 
