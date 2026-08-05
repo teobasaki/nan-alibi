@@ -10,3 +10,6 @@ public/characters/*.rigged.glb
 public/characters/*.glb
 !public/characters/*.opt.glb
 public/characters/*.seated.glb
+
+# 3D 원본(대용량). 최적화본만 public/ 에 둔다 — Pages 는 25MB 초과 파일을 거부한다.
+assets-src/
