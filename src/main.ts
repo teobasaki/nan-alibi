@@ -17,7 +17,7 @@ import { josa } from './ui/josa'
 import { personaById } from './data/personas'
 import { ask } from './api'
 import {
-  CRIME_SLOT, PLACE_LABEL, SLOT_LABEL, SUSPECTS,
+  CRIME_PLACE, CRIME_SLOT, PLACE_LABEL, SLOT_LABEL, SUSPECTS,
   type CaseFile, type Slot, type SuspectId,
 } from './types'
 import { INVESTIGATION_BUDGET, METHODS } from './data/config'
@@ -264,6 +264,15 @@ function board(): HTMLElement {
       `${CASE.suspects[sid].name}의 ${SLOT_LABEL[slot]} 진술이 ${parts[0]} 기록과 어긋난다.`))
   }
 
+  if (ui.game.ruledOut.length) {
+    col.appendChild(h('h2', undefined, `소거된 조합 (${ui.game.ruledOut.length})`))
+    for (const k of ui.game.ruledOut) {
+      const [evId, sid] = k.split('|') as [string, SuspectId]
+      col.appendChild(h('div', 'hintline',
+        `${CASE.suspects[sid].name}에게 ${evId}를 들이밀었으나 반응 없음 — 이 조합은 아니다.`))
+    }
+  }
+
   col.appendChild(h('h2', undefined, `보유 카드 (${ui.game.cards.length})`))
   for (const id of ui.game.cards) {
     const card = renderCard(CASE, id)
@@ -358,8 +367,11 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   })
   if (r.fallback) ui.game = before
 
+  const opened = advanced.cards.length > before.cards.length
   ui.chats[s] = [...ui.chats[s]!, {
-    q: `[증거 제시] ${cardSummary(CASE, evId)}`, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell,
+    q: `[증거 제시] ${cardSummary(CASE, evId)}`,
+    a: r.reply.speech + (opened ? '\n\n▸ 새로운 진술이 열렸다.' : '\n\n▸ 아무것도 열리지 않았다 — 이 조합은 아니다.'),
+    fallback: r.fallback, tell: r.reply.tell,
   }]
   ui.busy = false
   ui.selected = []
@@ -390,9 +402,23 @@ function openSubmit(): void {
   for (const m of METHODS) method.appendChild(opt(m, m))
 
   const dec = h('select') as HTMLSelectElement
-  const owned = ui.game.cards.filter((x) => CASE.evidence.some((e) => e.id === x))
+  // 결정적 증거는 "범행 시각 · 범행 현장" 기록이다. 카드 앞면에 이미 적혀 있는 정보이므로
+  // 위로 올려 눈에 띄게 한다 — 정답을 알려주는 게 아니라 **읽기 쉽게** 하는 것이다 (ADR 010).
+  const owned = ui.game.cards
+    .filter((x) => CASE.evidence.some((e) => e.id === x))
+    .sort((a, b) => {
+      const at = (id: string) => {
+        const e = CASE.evidence.find((x) => x.id === id)!
+        return e.slot === CRIME_SLOT && e.place === CRIME_PLACE ? 0 : 1
+      }
+      return at(a) - at(b)
+    })
   if (owned.length === 0) dec.appendChild(opt('', '(확보한 물증이 없다)'))
-  for (const id of owned) dec.appendChild(opt(id, cardSummary(CASE, id)))
+  for (const id of owned) {
+    const e = CASE.evidence.find((x) => x.id === id)!
+    const mark = e.slot === CRIME_SLOT && e.place === CRIME_PLACE ? '★ 범행 현장 · ' : ''
+    dec.appendChild(opt(id, mark + cardSummary(CASE, id)))
+  }
 
   sheet.appendChild(h('label', undefined, '범인')); sheet.appendChild(who)
   sheet.appendChild(h('label', undefined, '범행 수단')); sheet.appendChild(method)

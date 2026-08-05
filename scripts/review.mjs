@@ -21,6 +21,14 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 
 const N = Number(process.argv[2] ?? 3)
+/** 규칙 문구에 숫자를 하드코딩하지 않는다. 두 번 틀렸다:
+ *  ① 제출 3요소·채점을 로그에서 빼먹어 "안 보인다" 는 가짜 지적을 받았고
+ *  ② 예산을 6으로 박아둬서 9회 예산을 규칙 위반으로 읽혔다.
+ *  **리뷰어는 내가 준 맥락만큼만 볼 수 있다.** */
+const BUDGET = Number(
+  /INVESTIGATION_BUDGET = (\d+)/.exec(readFileSync('src/data/config.ts', 'utf-8'))?.[1] ?? 0,
+)
+if (!BUDGET) throw new Error('config.ts 에서 INVESTIGATION_BUDGET 를 못 읽었다')
 const KNOWN_PATH = 'docs/playtest-known.json'
 const MODEL = 'gpt-5.6-terra'
 
@@ -56,6 +64,7 @@ it('t', () => {
     out.push({
       seed, title: c.title, victim: c.victim.name, venue: c.venue.name,
       seen, menu, actions: r.log, won: r.won, used: r.actionsUsed, contradictions: r.contradictions,
+      note: '증거 카드에는 종류·시각·장소·해당 인물이 적혀 있다. 범행 현장(1204호) 기록은 제출 화면에서 ★ 표시로 맨 위에 온다. 무반응 제시는 "소거된 조합" 으로 화면에 남는다.',
     })
   }
   console.log('===JSON===' + JSON.stringify(out))
@@ -94,7 +103,7 @@ const SCHEMA = {
   additionalProperties: false,
 }
 
-const SYSTEM = `당신은 냉정한 게임 플레이테스터다. 추리 게임 "FIVE ALIBIS" 를 처음 하는 사람의 눈으로 본다.
+const SYSTEM = () => `당신은 냉정한 게임 플레이테스터다. 추리 게임 "FIVE ALIBIS" 를 처음 하는 사람의 눈으로 본다.
 
 규칙:
 - 칭찬하지 마라. 좋은 점은 적지 마라. 문제만 적는다.
@@ -104,8 +113,9 @@ const SYSTEM = `당신은 냉정한 게임 플레이테스터다. 추리 게임 
 - "AI 대사가 어떻다" 는 이 로그에 없으니 논하지 마라. 구조·정보·페이스만 본다.
 
 이 게임의 규칙:
-- 조사는 6회뿐. 심문 1회, 기록 조회 1회, 증거 제시 1회씩 소모.
+- 조사는 총 ${BUDGET}회. 심문 1회, 기록 조회 1회, 증거 제시 1회씩 소모.
 - 카드 연결(모순 찾기)은 무료, 무제한.
+- 결정적 증거는 범인 혼자로 열리지 않는다 — 무고한 목격자의 증언이 반드시 필요하다.
 - 마지막에 범인·수단·결정적 증거를 지목한다.`
 
 async function review(t, known) {
@@ -114,7 +124,7 @@ async function review(t, known) {
     max_output_tokens: 1200,
     reasoning: { effort: 'low' },
     input: [
-      { role: 'developer', content: SYSTEM },
+      { role: 'developer', content: SYSTEM() },
       {
         role: 'user',
         content: [
@@ -126,8 +136,10 @@ async function review(t, known) {
           `[열 수 있는 기록 목록 — 누가 찍혔는지는 열어야 보인다]`,
           t.menu,
           ``,
-          `[플레이어가 한 행동 순서 (조사 ${t.used}/6 소모)]`,
+          `[플레이어가 한 행동 순서 (조사 ${t.used}/${BUDGET} 소모)]`,
           t.actions.map((a, i) => `  ${i + 1}. ${a}`).join('\n'),
+          ``,
+          `[화면이 제공하는 것] ${t.note}`,
           ``,
           `[결과] ${t.won ? '범인 적중' : '오답'} · 발견한 모순 ${t.contradictions}건`,
           ``,
@@ -155,7 +167,7 @@ const transcripts = collectTranscripts(N)
 const all = []
 for (const t of transcripts) {
   const r = await review(t, known)
-  console.log(`── 시드 ${t.seed} (${t.won ? '승' : '패'}, 조사 ${t.used}/6) ──`)
+  console.log(`── 시드 ${t.seed} (${t.won ? '승' : '패'}, 조사 ${t.used}/${BUDGET}) ──`)
   console.log(`   총평: ${r.verdict}`)
   for (const f of r.findings) {
     console.log(`   [${f.severity}/${f.area}] ${f.problem}`)

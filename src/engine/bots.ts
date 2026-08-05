@@ -98,14 +98,17 @@ function finish(g: GameState, seed: number, bot: string, log: string[], reacted?
   const flagged = contradictedSuspects(g).filter((s) => cands.includes(s))
   const guess = cands.length === 1 ? cands[0]!
     : (reactedList[0] ?? odd[0] ?? flagged[0] ?? cands[0] ?? 'S1')
-  const owned = g.cards.filter((id) => g.case.evidence.some((e) => e.id === id))
+  // 결정적 증거는 "범행 시각 · 범행 현장" 기록이다 — 카드 앞면에 다 적혀 있다.
+  // 이전에는 마지막 획득 카드를 냈는데, 그건 봇의 실수지 게임의 결함이 아니었다 (ADR 010).
+  const ownedEv = g.case.evidence.filter((e) => g.cards.includes(e.id))
+  const atScene = ownedEv.find((e) => e.slot === CRIME_SLOT && e.place === CRIME_PLACE)
   const r = submit(g, {
     culprit: guess,
     method: g.case.method,
-    decisiveEvidenceId: owned[owned.length - 1] ?? '',
+    decisiveEvidenceId: (atScene ?? ownedEv[ownedEv.length - 1])?.id ?? '',
   })
   log.push(
-    `제출 — 범인:${g.case.suspects[guess].name} / 수단:${g.case.method} / 결정적증거:${owned[owned.length - 1] ?? '(없음)'}` +
+    `제출 — 범인:${g.case.suspects[guess].name} / 수단:${g.case.method} / 결정적증거:${(atScene ?? ownedEv[ownedEv.length - 1])?.id ?? '(없음)'}` +
     ` → 범인 ${r.correct.culprit ? '적중' : '오답'} · 수단 ${r.correct.method ? '적중' : '오답'} · 증거 ${r.correct.decisive ? '적중' : '오답'}` +
     ` · 점수 ${r.total} (후보 ${cands.length}명 남음)`,
   )

@@ -38,6 +38,8 @@ export interface GameState {
   connections: [string, string][]
   /** 발견한 모순 키 `evId|suspect|slot` */
   foundContradictions: string[]
+  /** 들이밀었지만 아무 반응이 없던 (증거|인물) 조합 — 소거된 경우의 수 */
+  ruledOut: string[]
   /** 인물별 동요 수치 0~100 */
   pressure: Record<SuspectId, number>
   phase: Phase
@@ -55,6 +57,7 @@ export function createGame(c: CaseFile, budget = INVESTIGATION_BUDGET): GameStat
     cards,
     connections: [],
     foundContradictions: [],
+    ruledOut: [],
     pressure,
     phase: 'investigate',
   }
@@ -119,8 +122,10 @@ export function presentEvidence(g: GameState, evId: string, s: SuspectId): GameS
   assertCanAct(g)
   if (!g.cards.includes(evId)) throw new Error(`보유하지 않은 증거: ${evId}`)
   const unlock = g.case.presentUnlocks.find((u) => u.evidenceId === evId && u.suspectId === s)
-  // 해금이 없으면 얻는 것 없이 압박만 오른다
-  return spend(g, unlock ? [unlock.yieldsTestimonyId] : [], [s, unlock ? 35 : 12])
+  const next = spend(g, unlock ? [unlock.yieldsTestimonyId] : [], [s, unlock ? 35 : 12])
+  // 무반응도 정보다 — "이 조합은 아니다" 를 기록해 같은 실수를 반복하지 않게 한다.
+  // 조사 1회를 잃고 아무것도 안 남으면 그건 벌이지 소거가 아니다 (ADR 010).
+  return unlock ? next : { ...next, ruledOut: [...next.ruledOut, `${evId}|${s}`] }
 }
 
 /** 이 제시가 실제로 무언가를 열었는가 — UI 가 사후에 알려주기 위한 것 (사전 노출 금지) */
