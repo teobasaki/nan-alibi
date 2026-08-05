@@ -34,6 +34,13 @@ export type Trajectory = PlaceId[]   // 길이 5 (Slot 별)
 
 export interface Suspect {
   id: SuspectId
+  /** 표시용 이름 */
+  name: string
+  job: string
+  /** 피해자와의 관계 — 용의자 카드에 노출된다 */
+  relation: string
+  /** 배정된 페르소나 id (data/personas.ts). 클라이언트가 바꿀 수 없다 — 사건이 소유한다. */
+  personaId: string
   isCulprit: boolean
   /** 실제 궤적 — 코드만 안다 */
   truth: Trajectory
@@ -69,6 +76,9 @@ export interface PresentUnlock {
 
 export interface CaseFile {
   seed: number
+  title: string
+  victim: { name: string; title: string }
+  venue: { name: string; room: string }
   culprit: SuspectId
   motive: string
   method: string

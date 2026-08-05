@@ -98,3 +98,41 @@ describe('사건 생성기 (Task 3)', () => {
     }
   })
 })
+
+describe('표면 데이터 (Task 10 준비)', () => {
+  it('용의자 5명 모두 이름·직업·관계·페르소나를 갖는다', () => {
+    const c = generateCase(4001)
+    for (const s of SUSPECTS) {
+      const x = c.suspects[s]
+      expect(x.name.length).toBeGreaterThanOrEqual(2)
+      expect(x.job.length).toBeGreaterThan(1)
+      expect(x.relation.length).toBeGreaterThan(1)
+      expect(x.personaId.length).toBeGreaterThan(1)
+    }
+  })
+
+  it('이름과 직업이 서로 겹치지 않는다', () => {
+    const c = generateCase(4002)
+    expect(new Set(SUSPECTS.map((s) => c.suspects[s].name)).size).toBe(5)
+    expect(new Set(SUSPECTS.map((s) => c.suspects[s].job)).size).toBe(5)
+  })
+
+  it('페르소나 5종이 서로 다르고 충돌 조합이 함께 나오지 않는다', async () => {
+    const { PERSONA_CONFLICTS } = await import('../src/data/personas')
+    for (const seed of [4010, 4011, 4012, 4013, 4014]) {
+      const c = generateCase(seed)
+      const ids = SUSPECTS.map((s) => c.suspects[s].personaId)
+      expect(new Set(ids).size).toBe(5)
+      for (const [a, b] of PERSONA_CONFLICTS) {
+        expect(ids.includes(a) && ids.includes(b)).toBe(false)
+      }
+    }
+  })
+
+  it('사건 제목·피해자·장소가 채워진다', () => {
+    const c = generateCase(4003)
+    expect(c.title.length).toBeGreaterThan(2)
+    expect(c.victim.name.length).toBeGreaterThan(1)
+    expect(c.venue.room).toBe('1204호')
+  })
+})
