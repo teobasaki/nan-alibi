@@ -100,8 +100,11 @@ function finish(g: GameState, seed: number, bot: string, log: string[], reacted?
     : (reactedList[0] ?? odd[0] ?? flagged[0] ?? cands[0] ?? 'S1')
   // 결정적 증거는 "범행 시각 · 범행 현장" 기록이다 — 카드 앞면에 다 적혀 있다.
   // 이전에는 마지막 획득 카드를 냈는데, 그건 봇의 실수지 게임의 결함이 아니었다 (ADR 010).
-  const ownedEv = g.case.evidence.filter((e) => g.cards.includes(e.id))
-  const atScene = ownedEv.find((e) => e.slot === CRIME_SLOT && e.place === CRIME_PLACE)
+  // **UI 와 같은 제약을 건다** — 제출 화면은 범행 시각 기록만 고를 수 있다.
+  // 봇이 22:10 기록을 제출하는 로그가 남아 자동 리뷰가 blocker 로 올렸다. 정당한 지적이었다:
+  // 봇이 화면 규칙을 우회하면 그 로그는 게임을 대표하지 못한다.
+  const ownedEv = g.case.evidence.filter((e) => g.cards.includes(e.id) && e.slot === CRIME_SLOT)
+  const atScene = ownedEv.find((e) => e.place === CRIME_PLACE)
   const r = submit(g, {
     culprit: guess,
     method: g.case.method,

@@ -90,6 +90,33 @@ export function availableEvidence(g: GameState): Evidence[] {
   )
 }
 
+export interface LockedRecord {
+  evidence: Evidence
+  /** 충족한 선행 조건 수 */
+  met: number
+  total: number
+  /** 아직 필요한 것의 종류 (누구인지는 밝히지 않는다) */
+  missing: string[]
+}
+
+/**
+ * 잠긴 기록과 **그 자물쇠의 모양**을 돌려준다.
+ *
+ * 초기 구현은 잠긴 기록을 목록에서 통째로 감췄다. 그랬더니 플레이어는
+ * "왜 갑자기 새 기록이 열렸는지", "아직 뭐가 부족한지" 를 알 수 없었다
+ * (자동 리뷰가 3판 연속 지적). 자물쇠는 보여주고 열쇠의 주인만 감춘다.
+ */
+export function lockedRecords(g: GameState): LockedRecord[] {
+  return g.case.evidence
+    .filter((e) => !g.cards.includes(e.id) && !e.requires.every((r) => g.cards.includes(r)))
+    .map((e) => {
+      const missing = e.requires
+        .filter((r) => !g.cards.includes(r))
+        .map((r) => (r === 'T-SLIP' ? '범인의 자백성 진술' : '관련자의 증언'))
+      return { evidence: e, met: e.requires.length - missing.length, total: e.requires.length, missing }
+    })
+}
+
 export function lookupEvidence(g: GameState, evId: string): GameState {
   assertCanAct(g)
   const e = g.case.evidence.find((x) => x.id === evId)

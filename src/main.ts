@@ -9,7 +9,7 @@
 import './style.css'
 import { generateValidCase } from './engine/validate'
 import {
-  availableEvidence, connect, createGame, interview, lookupEvidence,
+  availableEvidence, connect, createGame, interview, lockedRecords, lookupEvidence,
   presentEvidence, submit, type GameState,
 } from './engine/game'
 import { cardSummary, renderCard } from './ui/cards'
@@ -252,6 +252,19 @@ function board(): HTMLElement {
   }
   col.appendChild(lookup)
 
+  // 잠긴 기록 — 자물쇠는 보여주고 열쇠의 주인만 감춘다 (ADR 010)
+  const locked = lockedRecords(ui.game)
+  if (locked.length) {
+    col.appendChild(h('h2', undefined, `잠긴 기록 (${locked.length})`))
+    for (const l of locked) {
+      const row = h('div', 'hintline')
+      row.appendChild(h('div', undefined,
+        `🔒 ${labelOfKind(l.evidence.kind)} · ${SLOT_LABEL[l.evidence.slot]} ${PLACE_LABEL[l.evidence.place]}`))
+      row.appendChild(h('div', undefined, `   조건 ${l.met}/${l.total} — 필요: ${l.missing.join(', ')}`))
+      col.appendChild(row)
+    }
+  }
+
   col.appendChild(h('h2', undefined, `발견한 모순 (${ui.game.foundContradictions.length})`))
   if (ui.game.foundContradictions.length === 0) {
     col.appendChild(h('div', 'hintline', '카드 두 장을 눌러 연결하십시오. 연결은 조사를 소모하지 않습니다.'))
@@ -370,13 +383,35 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   const opened = advanced.cards.length > before.cards.length
   ui.chats[s] = [...ui.chats[s]!, {
     q: `[증거 제시] ${cardSummary(CASE, evId)}`,
-    a: r.reply.speech + (opened ? '\n\n▸ 새로운 진술이 열렸다.' : '\n\n▸ 아무것도 열리지 않았다 — 이 조합은 아니다.'),
+    a: r.reply.speech + unlockNote(before, advanced, opened),
     fallback: r.fallback, tell: r.reply.tell,
   }]
   ui.busy = false
   ui.selected = []
   render()
   animateLast(r.reply.speech)
+}
+
+/**
+ * 제시 직후 **무슨 일이 일어났는지** 를 분류해 알려준다.
+ *
+ * 이전에는 "열렸다 / 아무것도 아니다" 두 줄뿐이라, 반응을 얻고도 다음에 뭘 할지
+ * 모르고 무반응이 무엇을 배제했는지도 알 수 없었다 (자동 리뷰 minor 2건).
+ * 정답은 여전히 감춘다 — 알려주는 건 **자물쇠의 진행도**뿐이다.
+ */
+function unlockNote(before: GameState, after: GameState, opened: boolean): string {
+  if (!opened) {
+    return '\n\n▸ 이 사람은 이 기록에 대해 열어줄 진술이 없다 — 해금 경로에서 소거됐다.' +
+      ' (알리바이 판정은 기록과 진술을 직접 연결해서 한다)'
+  }
+  const key = (g: GameState) => {
+    const l = lockedRecords(g).find((x) => x.evidence.slot === CRIME_SLOT && x.evidence.place === CRIME_PLACE)
+    return l ? `${l.met}/${l.total}` : null
+  }
+  const b = key(before), a = key(after)
+  if (b && !a) return '\n\n▸ 새로운 진술이 열렸고, **잠겨 있던 현장 기록의 자물쇠가 풀렸다.** 기록 목록을 보라.'
+  if (b && a && b !== a) return `\n\n▸ 새로운 진술이 열렸다 — 잠긴 현장 기록 조건이 ${b} → ${a} 로 진전됐다.`
+  return '\n\n▸ 새로운 진술이 열렸다.'
 }
 
 function animateLast(text: string): void {
@@ -402,27 +437,33 @@ function openSubmit(): void {
   for (const m of METHODS) method.appendChild(opt(m, m))
 
   const dec = h('select') as HTMLSelectElement
-  // 결정적 증거는 "범행 시각 · 범행 현장" 기록이다. 카드 앞면에 이미 적혀 있는 정보이므로
-  // 위로 올려 눈에 띄게 한다 — 정답을 알려주는 게 아니라 **읽기 쉽게** 하는 것이다 (ADR 010).
+  // 시각 순으로만 정렬한다. **범행 현장 기록에 ★ 를 달았더니 추리를 건너뛰게 됐다**
+  // (자동 리뷰 major 지적: 무반응 제시로 실패한 플레이어가 ★ 만 보고 정답을 골랐다).
+  // 카드에 시각·장소가 이미 적혀 있으므로, 판별은 플레이어의 몫으로 남긴다 (ADR 010).
   const owned = ui.game.cards
     .filter((x) => CASE.evidence.some((e) => e.id === x))
     .sort((a, b) => {
-      const at = (id: string) => {
-        const e = CASE.evidence.find((x) => x.id === id)!
-        return e.slot === CRIME_SLOT && e.place === CRIME_PLACE ? 0 : 1
-      }
+      const at = (id: string) => CASE.evidence.find((x) => x.id === id)!.slot
       return at(a) - at(b)
     })
   if (owned.length === 0) dec.appendChild(opt('', '(확보한 물증이 없다)'))
+  // 조건("범행 시각")은 이미 화면에 적혀 있고 카드 앞면에 시각이 있다.
+  // 그 조건을 목록에도 반영한다 — 정답 유출이 아니라 **사무 실수 제거**다.
+  // 범행 시각 기록은 여러 건이므로 "어느 장소가 현장인가" 라는 진짜 판단은 남는다
+  // (자동 리뷰 minor/clarity: 22:10 기록을 결정적 증거로 골라 오답이 났다).
   for (const id of owned) {
     const e = CASE.evidence.find((x) => x.id === id)!
-    const mark = e.slot === CRIME_SLOT && e.place === CRIME_PLACE ? '★ 범행 현장 · ' : ''
-    dec.appendChild(opt(id, mark + cardSummary(CASE, id)))
+    const ok = e.slot === CRIME_SLOT
+    dec.appendChild(opt(id, cardSummary(CASE, id) + (ok ? '' : `  — ${SLOT_LABEL[CRIME_SLOT]} 기록이 아니다`)))
+    if (!ok) (dec.lastElementChild as HTMLOptionElement).disabled = true
   }
 
   sheet.appendChild(h('label', undefined, '범인')); sheet.appendChild(who)
   sheet.appendChild(h('label', undefined, '범행 수단')); sheet.appendChild(method)
-  sheet.appendChild(h('label', undefined, '결정적 증거')); sheet.appendChild(dec)
+  sheet.appendChild(h('label', undefined, '결정적 증거'))
+  sheet.appendChild(h('div', 'hintline',
+    '범인이 범행 시각에 현장에 있었음을 확정하는 기록이어야 한다. 진술이나 알리바이 기록은 해당하지 않는다. — 배점 20점, 못 맞혀도 범인만 맞히면 해결이다.'))
+  sheet.appendChild(dec)
 
   const go = h('button', undefined, '제출') as HTMLButtonElement
   go.style.marginTop = '16px'
@@ -446,6 +487,16 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
     r.correct.culprit ? '범인을 맞혔습니다.' : '범인이 아닙니다.'))
   sheet.appendChild(h('p', undefined,
     `진범은 ${CASE.suspects[CASE.culprit].name}(${CASE.suspects[CASE.culprit].job}). 동기는 ${CASE.motive}, 수단은 ${CASE.method}.`))
+
+  if (!r.correct.decisive) {
+    const d = CASE.evidence.find((e) => e.decisive)!
+    const had = ui.game.cards.includes(d.id)
+    sheet.appendChild(h('div', 'hintline',
+      had
+        ? `결정적 증거는 ${d.id}(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]})였다. 손에 쥐고도 고르지 못했다.`
+        : `결정적 증거(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]} 기록)를 끝내 확보하지 못했다. ` +
+          `그것은 범인의 자백과 무고한 목격자의 증언이 모두 모여야 열린다.`))
+  }
 
   sheet.appendChild(h('h2', undefined, '사건 재구성'))
   const tl = h('ul', 'timeline')
