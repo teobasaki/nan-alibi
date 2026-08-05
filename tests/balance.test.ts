@@ -40,9 +40,139 @@ describe('★ 밸런스 — 봇 승률 (조사 예산 판정 근거)', () => {
     expect(rate('common') - rate('random')).toBeGreaterThanOrEqual(0.08)
   })
 
-  // 목표 60~75% 는 아직 미달이다. 숨기지 않고 남긴다 (ADR 008).
-  // 증거 순서 무작위화로 "먼저 걸린 모순 = 범인" 누설을 없앤 뒤 상식 봇이 78% → 44% 로 떨어졌다.
-  // 누설이 승률을 떠받치고 있었다는 뜻이며, 게임은 공정해졌지만 이 봇으로는 목표 구간을 못 맞춘다.
-  // 결정은 유저에게 넘긴 상태 — 예산 상향 / 사슬 단축 / 중반 힌트 / 현 수치 수용 중 택일.
-  it.todo('★ 상식 봇 승률이 목표 구간(60~75%)에 있다 — 현재 44%, ADR 008 참조')
+  /**
+   * ★ 목표 구간 60~75%.
+   *
+   * 한때 44% 로 떨어져 todo 로 잠갔던 항목이다. 증거 순서 무작위화로
+   * "먼저 걸린 모순 = 범인" 누설을 없앴더니 78% → 44% 가 됐다 — 누설이 승률을
+   * 떠받치고 있었다는 뜻이다. 예산 6 → 9 (ADR 009) 로 올려 64% 가 됐고
+   * 이제 구간 안이다. **잠금을 풀어 회귀를 감시한다.**
+   */
+  it('★ 상식 봇 승률이 목표 구간(60~75%)에 있다', () => {
+    const r = rate('common')
+    expect(r).toBeGreaterThanOrEqual(0.6)
+    expect(r).toBeLessThanOrEqual(0.75)
+  })
+})
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ★ 완료기준 E1 — 행동 수를 **실제 소요시간**으로 환산한다.
+ *
+ * 왜 필요한가: 예산 9회는 "행동 9번" 일 뿐 시간이 아니다. 심문 1회와 조회 1회는
+ * 같은 1회지만 벽시계로는 4배 넘게 차이 난다(LLM 왕복 vs 로컬 조회).
+ * 그래서 "숙련자 5분" 은 평균 행동 수가 아니라 **행동 구성**으로 판정해야 한다.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 환산 상수 — 전부 여기 모으고 근거를 남긴다. 테스트를 통과시키려고 만지지 말 것.
+ *
+ * ⚠️ 이 상수들은 **측정 대체물이지 측정값이 아니다.** 실제 브라우저 계측이 붙으면 갱신한다.
+ */
+const TIME = {
+  /**
+   * LLM 응답 대기 3초. 근거: docs/STATE.md 프로덕션 실측 12회 1.35~2.71초,
+   * ADR 005 성능 목표 p95 ≤3.5초. 그 사이의 보수적 대표값으로 3초를 쓴다.
+   * (타이핑 연출이 붙으므로 "첫 토큰" 이 아니라 "다 읽을 수 있게 되기까지" 에 가깝다)
+   */
+  LLM_WAIT_SEC: 3,
+  /**
+   * 답변 읽는 시간 6초. 근거: 페르소나 응답은 2~3문장 · 한국어 60~90자 규모이고,
+   * 한국어 묵독 속도 대략 500~600자/분 ≈ 9~10자/초 → 8~10초.
+   * 여기에 플레이어가 문장 전체를 정독하지 않고 시각·장소만 훑는 실제 행동을 반영해 6초로 잡는다.
+   */
+  LLM_READ_SEC: 6,
+  /** 기록 조회 2초. 네트워크 없음(로컬 상태 전이) + 카드 한 장 훑기. */
+  LOOKUP_SEC: 2,
+  /**
+   * 카드 연결(무료 행동) 판당 20초. 근거: 봇의 connectAll 은 매 행동마다 전 조합을 돌지만
+   * 사람은 새 카드가 들어올 때만 관심 조합 몇 개를 클릭한다. 판당 8~12회 클릭 × 2초 ≈ 20초.
+   * **행동 수에 비례시키지 않는 것이 중요하다** — 연결은 조사 예산을 안 쓰므로
+   * 행동 수로 환산하면 시간이 이중 계상된다.
+   */
+  CONNECT_SEC_PER_GAME: 20,
+  /** 초회 플레이어 온보딩 — 규칙 읽기 + 용의자 5명 카드 정독 + 기록 목록 훑기. */
+  FIRST_TIME_OVERHEAD_SEC: 90,
+
+  /** 완료기준 E1 상한 */
+  SKILLED_LIMIT_SEC: 5 * 60,
+  FIRST_TIME_LIMIT_SEC: 6 * 60 + 30,
+} as const
+
+/** 심문·증거 제시는 둘 다 LLM 왕복이다 — 대기 + 읽기 */
+const LLM_TURN_SEC = TIME.LLM_WAIT_SEC + TIME.LLM_READ_SEC
+
+interface ActionMix { interview: number; lookup: number; present: number }
+
+/**
+ * 봇 로그 한 줄 → 행동 종류. 로그 접두사는 bots.ts 가 소유한다:
+ *   `심문 S3 (모순 대상)` / `조회 E2 (해금됨)` / `제시 E2→S3 ★반응` / `제출 — ...`
+ * '제출' 은 조사 행동이 아니다(예산을 안 쓴다).
+ */
+function classify(log: string[]): ActionMix {
+  const mix: ActionMix = { interview: 0, lookup: 0, present: 0 }
+  for (const line of log) {
+    if (line.startsWith('심문')) mix.interview++
+    else if (line.startsWith('조회')) mix.lookup++
+    else if (line.startsWith('제시')) mix.present++
+    else if (line.startsWith('제출')) continue
+    else throw new Error(`분류 못 한 로그 줄: "${line}" — bots.ts 로그 포맷이 바뀌었다`)
+  }
+  return mix
+}
+
+const skilledSec = (m: ActionMix) =>
+  (m.interview + m.present) * LLM_TURN_SEC + m.lookup * TIME.LOOKUP_SEC + TIME.CONNECT_SEC_PER_GAME
+
+const mmss = (s: number) => `${Math.floor(s / 60)}분 ${String(Math.round(s % 60)).padStart(2, '0')}초`
+
+describe('★ E1 시간 — 행동 구성을 벽시계로 환산', () => {
+  const runs = SEEDS.map((seed) => commonsenseBot(generateValidCase(seed).case, botRng(seed)))
+  const mixes = runs.map((r) => classify(r.log))
+  const skilled = mixes.map(skilledSec)
+  const firstTime = skilled.map((s) => s + TIME.FIRST_TIME_OVERHEAD_SEC)
+
+  const sorted = [...skilled].sort((a, b) => a - b)
+  const p = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+
+  it('로그 줄 수가 실제 소모 조사 수와 일치한다 — 환산의 전제', () => {
+    // 이게 깨지면 시간 숫자는 전부 거짓말이 된다. 먼저 잠근다.
+    runs.forEach((r, i) => {
+      const m = mixes[i]!
+      expect(m.interview + m.lookup + m.present, `seed ${r.seed}`).toBe(r.actionsUsed)
+    })
+  })
+
+  it('통계 출력', () => {
+    const m = { interview: mean(mixes.map((x) => x.interview)), lookup: mean(mixes.map((x) => x.lookup)), present: mean(mixes.map((x) => x.present)) }
+    console.log(`\n  [E1 시간 환산] 상식봇 ${SEEDS.length}판 · 예산 ${INVESTIGATION_BUDGET}회`)
+    console.log(`  상수: LLM 왕복 ${LLM_TURN_SEC}초(대기 ${TIME.LLM_WAIT_SEC} + 읽기 ${TIME.LLM_READ_SEC}) · 조회 ${TIME.LOOKUP_SEC}초 · 연결 ${TIME.CONNECT_SEC_PER_GAME}초/판 · 초회 +${TIME.FIRST_TIME_OVERHEAD_SEC}초`)
+    console.log(`  평균 행동 구성: 심문 ${m.interview.toFixed(1)} · 제시 ${m.present.toFixed(1)} · 조회 ${m.lookup.toFixed(1)}`)
+    console.log(`  숙련  평균 ${mmss(mean(skilled))} · 중앙 ${mmss(p(0.5))} · p95 ${mmss(p(0.95))} · 최악 ${mmss(Math.max(...skilled))}  (상한 ${mmss(TIME.SKILLED_LIMIT_SEC)})`)
+    console.log(`  초회  평균 ${mmss(mean(firstTime))} · p95 ${mmss(p(0.95) + TIME.FIRST_TIME_OVERHEAD_SEC)} · 최악 ${mmss(Math.max(...firstTime))}  (상한 ${mmss(TIME.FIRST_TIME_LIMIT_SEC)})`)
+
+    // ⚠️ 이 모델이 **빼먹고 있는 것**: 심문 질문을 사람이 직접 작문·타이핑하는 시간.
+    //   봇은 대상만 고르면 되지만 사람은 한글 IME 로 한 문장을 친다. 이게 실제로는 최대 항일 수 있다.
+    //   상한 판정은 위 가정(과제 명시)대로 두되, 민감도를 같이 남긴다 — 숫자를 숨기지 않기 위해서.
+    for (const typing of [10, 20, 30]) {
+      const w = mixes.map((x, i) => skilled[i]! + x.interview * typing)
+      console.log(`   └ 민감도: 심문당 작문·타이핑 ${typing}초 가정 → 숙련 평균 ${mmss(mean(w))} · 최악 ${mmss(Math.max(...w))} · 초회 최악 ${mmss(Math.max(...w) + TIME.FIRST_TIME_OVERHEAD_SEC)}`)
+    }
+  })
+
+  it('숙련자 1판이 5분 안에 끝난다 — 최악의 시드에서도', () => {
+    expect(Math.max(...skilled)).toBeLessThanOrEqual(TIME.SKILLED_LIMIT_SEC)
+  })
+
+  it('초회 플레이어 1판이 6분 30초 안에 끝난다 — 최악의 시드에서도', () => {
+    expect(Math.max(...firstTime)).toBeLessThanOrEqual(TIME.FIRST_TIME_LIMIT_SEC)
+  })
+
+  it('예산을 전부 소진해도 상한을 넘지 않는다 — 상한 자체의 안전 여유 확인', () => {
+    // 최악의 이론값: 9회 전부 LLM 왕복 + 연결
+    const worst = INVESTIGATION_BUDGET * LLM_TURN_SEC + TIME.CONNECT_SEC_PER_GAME
+    console.log(`  이론 최악(예산 ${INVESTIGATION_BUDGET}회 전부 심문/제시): ${mmss(worst)} · 초회 ${mmss(worst + TIME.FIRST_TIME_OVERHEAD_SEC)}`)
+    expect(worst).toBeLessThanOrEqual(TIME.SKILLED_LIMIT_SEC)
+    expect(worst + TIME.FIRST_TIME_OVERHEAD_SEC).toBeLessThanOrEqual(TIME.FIRST_TIME_LIMIT_SEC)
+  })
 })
