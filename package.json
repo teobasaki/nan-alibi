@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run opt:chars && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -15,15 +15,23 @@
     "audit:persona": "node scripts/persona-audit.mjs",
     "gen:pool": "node scripts/gen-pool.mjs",
     "review": "node scripts/review.mjs",
-    "demo:seed": "node scripts/pick-demo-seed.mjs"
+    "demo:seed": "node scripts/pick-demo-seed.mjs",
+    "gen:chars": "node scripts/gen-characters.mjs",
+    "opt:chars": "node scripts/opt-characters.mjs",
+    "gen:portraits": "node scripts/gen-portraits.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260804.1",
+    "@gltf-transform/cli": "^4.4.2",
     "@types/node": "^26.1.2",
     "happy-dom": "^15.11.7",
     "typescript": "^5.9.3",
     "vite": "^6.4.3",
     "vitest": "^2.1.9",
     "wrangler": "^4.118.0"
+  },
+  "dependencies": {
+    "@types/three": "^0.185.4",
+    "three": "^0.185.1"
   }
 }
