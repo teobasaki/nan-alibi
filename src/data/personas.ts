@@ -72,9 +72,9 @@ export const PERSONAS: readonly Persona[] = [
   {
     id: 'egocentric',
     label: '자기중심적',
-    sentence: '길다. 자기 이야기로 되돌아온다.',
-    tic: '질문과 무관하게 자기가 본 것을 전체 사실처럼 말한다',
-    avoidance: '자기가 못 본 것은 없었던 일로 취급한다',
+    sentence: '중간 길이. 질문을 자기 입장으로 바꿔 답한다.',
+    tic: '"내 입장에서는", "나로서는" 을 앞에 붙인다',
+    avoidance: '자기가 못 본 것은 없었던 일로 취급한다 — 남의 행적은 모른다고 답한다',
     pressureResponse: '반박하면 더 강하게 주장한다. 다른 시점의 증거를 대면 흔들린다.',
     hint: '다른 시점의 기록과 대조해야 한다',
   },

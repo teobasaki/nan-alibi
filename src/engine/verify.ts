@@ -16,6 +16,7 @@ export type RejectReason =
   | 'unknown-fact'   // 지식 시트 밖 factId
   | 'phantom-time'   // 사건에 없는 시각
   | 'phantom-place'  // 사건에 없는 장소
+  | 'time-range'     // 구간 표현 — 목록에 없는 주장이 된다
   | 'too-long'       // 길이 초과
 
 export interface VerifyOk {
@@ -88,6 +89,13 @@ export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResu
   const badTime = extractTimes(speech).find((t) => !timeMatchesCase(t))
   if (badTime) {
     return { ok: false, reason: 'phantom-time', detail: `사건에 없는 시각: ${badTime}` }
+  }
+
+  // ── 검사 2a: 구간 표현 금지 ──
+  // "22:00부터 22:30까지 로비" 는 슬롯별로 장소가 다른 사건 모델에서 **없는 주장**이다.
+  // 검사 2 는 시각의 존재만 보므로 이걸 못 잡는다 — 플레이어가 가짜 단서로 한 판을 날린다.
+  if (/\d{1,2}\s*[:시]\s*\d{1,2}\s*분?\s*(부터|에서)[\s\S]{0,12}?\d{1,2}\s*[:시]\s*\d{1,2}\s*분?\s*(까지|사이)/.test(speech)) {
+    return { ok: false, reason: 'time-range', detail: '시각 구간 표현' }
   }
 
   // ── 검사 2b: 본문의 장소가 사건에 실재하는가 ──
