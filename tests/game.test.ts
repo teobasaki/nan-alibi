@@ -30,16 +30,16 @@ describe('조사 예산 (Task 6 — 완료기준 B1·B2)', () => {
     const g = fresh()
     const ev = availableEvidence(g)[0]!
     const g2 = lookupEvidence(g, ev.id)
-    expect(g2.investigationsLeft).toBe(5)
+    expect(g2.investigationsLeft).toBe(INVESTIGATION_BUDGET - 1)
     expect(g2.cards).toContain(ev.id)
-    expect(g.investigationsLeft).toBe(6) // 원본 불변
+    expect(g.investigationsLeft).toBe(INVESTIGATION_BUDGET) // 원본 불변
   })
 
   it('심문은 조사 1회를 소모하고 그 인물의 진술 궤적을 연다', () => {
     const g = fresh()
     const s = SUSPECTS.find((x) => !g.case.suspects[x].isCulprit)!
     const g2 = interview(g, s)
-    expect(g2.investigationsLeft).toBe(5)
+    expect(g2.investigationsLeft).toBe(INVESTIGATION_BUDGET - 1)
     expect(g2.cards.filter((c) => c.startsWith(`C:${s}:`)).length).toBe(5)
   })
 
