@@ -14,7 +14,7 @@
  *   solved / filed  사건 해결 / 미제 편철
  */
 
-type Voice = 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'filed'
+type Voice = 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'filed' | 'creak' | 'doorOpen'
 
 const KEY = 'nan-alibi:muted'
 
@@ -120,6 +120,38 @@ export function play(v: Voice): void {
       tone(t, 392, 0.5, 0.14, 'sine')
       tone(t + 0.09, 523.25, 0.5, 0.13, 'sine')
       tone(t + 0.18, 659.25, 0.7, 0.12, 'sine')
+      break
+    case 'creak':
+      /**
+       * 탁자가 삐걱인다 — 나무·금속이 뒤틀리는 소리.
+       * 낮은 톱니파를 아주 느리게 미끄러뜨리고 잡음을 얹으면 '뒤틀림' 이 된다.
+       * 순음으로는 절대 안 난다.
+       */
+      if (ctx) {
+        const o = ctx.createOscillator()
+        const g = ctx.createGain()
+        const f = ctx.createBiquadFilter()
+        o.type = 'sawtooth'
+        o.frequency.setValueAtTime(58, t)
+        o.frequency.linearRampToValueAtTime(41, t + 0.5)
+        f.type = 'bandpass'
+        f.frequency.setValueAtTime(320, t)
+        f.Q.setValueAtTime(7, t)
+        g.gain.setValueAtTime(0, t)
+        g.gain.linearRampToValueAtTime(0.075, t + 0.12)
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.62)
+        o.connect(f).connect(g).connect(ctx.destination)
+        o.start(t)
+        o.stop(t + 0.65)
+      }
+      noise(t + 0.02, 0.3, 0.05, 900)
+      break
+    case 'doorOpen':
+      // 문이 열리고 방이 드러난다 — 금속 걸쇠 + 긴 여운
+      noise(t, 0.05, 0.4, 2600)
+      tone(t + 0.02, 210, 0.09, 0.13, 'square')
+      noise(t + 0.1, 0.45, 0.16, 700)
+      tone(t + 0.14, 82, 0.7, 0.1, 'sine')
       break
     case 'filed':
       // 미제 편철 — 서류가 닫힌다

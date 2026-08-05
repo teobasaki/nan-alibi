@@ -95,6 +95,47 @@ const ui: UI = {
 const roomEl = document.createElement('div')
 roomEl.className = 'room3d'
 
+/**
+ * 말풍선 — 3D 인물의 **머리 옆**에 뜬다.
+ * 아래 로그에도 대사가 남지만, 심문 중 눈은 얼굴에 가 있다.
+ * 얼굴 옆에서 말이 나와야 "이 사람이 말하고 있다" 가 된다.
+ */
+const bubbleEl = document.createElement('div')
+bubbleEl.className = 'bubble3d'
+roomEl.appendChild(bubbleEl)
+
+/** 얼굴 위치를 따라 말풍선을 옮긴다. 3D 는 매 프레임 움직이므로 계속 따라가야 한다. */
+let bubbleRaf = 0
+function trackBubble(): void {
+  cancelAnimationFrame(bubbleRaf)
+  const step = (): void => {
+    bubbleRaf = requestAnimationFrame(step)
+    const h = ui.scene?.handle
+    if (!h || !bubbleEl.classList.contains('on')) return
+    const p = h.facePoint()
+    bubbleEl.style.left = `${Math.min(78, Math.max(6, p.x * 100 + 12))}%`
+    bubbleEl.style.top = `${Math.min(74, Math.max(4, p.y * 100 - 16))}%`
+  }
+  step()
+}
+
+function say(text: string): void {
+  bubbleEl.textContent = text
+  bubbleEl.classList.add('on')
+  // rAF 가 안 도는 상황(숨김 탭 등)에서도 최소 한 번은 자리를 잡아 둔다
+  const h0 = ui.scene?.handle
+  if (h0) {
+    const p0 = h0.facePoint()
+    bubbleEl.style.left = `${Math.min(78, Math.max(6, p0.x * 100 + 12))}%`
+    bubbleEl.style.top = `${Math.min(74, Math.max(4, p0.y * 100 - 16))}%`
+  }
+  trackBubble()
+}
+function hush(): void {
+  bubbleEl.classList.remove('on')
+  cancelAnimationFrame(bubbleRaf)
+}
+
 const h = (tag: string, cls?: string, text?: string): HTMLElement => {
   const n = document.createElement(tag)
   if (cls) n.className = cls
@@ -140,7 +181,7 @@ function suspectColumn(): HTMLElement {
     card.setAttribute('aria-pressed', String(ui.active === s))
     card.setAttribute('aria-label', `${sus.name} ${sus.job} 심문하기`)
     focusKey(card, `suspect:${s}`)
-    const choose = (): void => { ui.active = s; render() }
+    const choose = (): void => { hush(); ui.active = s; render() }
     card.onclick = choose
     card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
 
@@ -248,6 +289,14 @@ function stage(): HTMLElement {
       void mount(target, slug!).then((handle) => {
         if (ui.scene?.slug !== slug) return handle?.dispose()
         ui.scene.handle = handle
+        if (handle) {
+          // 문이 열리고 방이 드러난다
+          roomEl.classList.remove('opening')
+          void roomEl.offsetWidth        // 리플로우 강제 — 같은 인물을 다시 열어도 연출이 돈다
+          roomEl.classList.add('opening')
+          play('doorOpen')
+          handle.onCreak(() => play('creak'))
+        }
         if (!handle) {
           // 3D 가 실패했다 — 자리를 접고 사진으로 되돌린다
           roomEl.remove()
@@ -270,7 +319,7 @@ function stage(): HTMLElement {
   meta.appendChild(h('div', 'hint', `읽힌 성향: ${persona.label} — ${persona.hint}`))
   p.appendChild(meta)
   const back = focusKey(h('button', 'backbtn', '← 대조표'), 'back') as HTMLButtonElement
-  back.onclick = () => { ui.active = null; render() }
+  back.onclick = () => { hush(); ui.active = null; render() }
   p.appendChild(back)
   box.appendChild(p)
 
@@ -593,6 +642,10 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   ui.busy = false
   render()
   animateLast(r.reply.speech)
+  // 3D 인물 옆에도 띄운다 — 심문 중 눈은 아래 로그가 아니라 얼굴에 가 있다
+  say(r.reply.speech)
+  ui.scene?.handle?.setSpeaking(true)
+  setTimeout(() => ui.scene?.handle?.setSpeaking(false), Math.min(9000, r.reply.speech.length * 90))
 }
 
 async function doPresent(s: SuspectId, evId: string): Promise<void> {
@@ -628,6 +681,9 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   ui.selected = []
   render()
   animateLast(r.reply.speech)
+  say(r.reply.speech)
+  ui.scene?.handle?.setSpeaking(true)
+  setTimeout(() => ui.scene?.handle?.setSpeaking(false), Math.min(9000, r.reply.speech.length * 90))
 }
 
 /**

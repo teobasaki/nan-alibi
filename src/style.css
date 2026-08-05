@@ -462,3 +462,31 @@ body::after {
   background: radial-gradient(ellipse 86% 84% at 50% 44%, transparent 52%, rgba(0,0,0,.6) 100%);
 }
 @media (max-width: 900px) { .room3d { height: 240px; flex-basis: 240px; } }
+
+/* ══ 말풍선 — 3D 인물의 머리 옆 ══ */
+.bubble3d {
+  position: absolute; z-index: 3; max-width: 42%;
+  padding: 9px 12px; border-radius: 10px 10px 10px 2px;
+  background: rgba(18, 13, 12, .88); border: 1px solid var(--amber);
+  color: var(--ink); font-size: 12.5px; line-height: 1.55;
+  box-shadow: 0 6px 22px rgba(0,0,0,.6);
+  opacity: 0; transform: translateY(6px) scale(.96); pointer-events: none;
+  transition: opacity .22s, transform .22s;
+}
+.bubble3d.on { opacity: 1; transform: translateY(0) scale(1); }
+.bubble3d::after {
+  content: ''; position: absolute; left: 10px; bottom: -7px;
+  border: 7px solid transparent; border-top-color: var(--amber); border-bottom: 0;
+}
+
+/* ══ 방이 열린다 — 문틈이 벌어지듯 ══ */
+.room3d.opening canvas { animation: doorOpen 1.05s cubic-bezier(.16,.85,.3,1); }
+@keyframes doorOpen {
+  0%   { clip-path: inset(0 50% 0 50%); filter: brightness(.25); }
+  55%  { clip-path: inset(0 8% 0 8%);   filter: brightness(.7); }
+  100% { clip-path: inset(0 0 0 0);     filter: brightness(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room3d.opening canvas { animation: none; }
+  .bubble3d { transition: none; }
+}
