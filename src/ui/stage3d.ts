@@ -40,6 +40,10 @@ const MODELS = import.meta.glob('/public/characters/*.opt.glb', {
   import: 'default',
 }) as Record<string, string>
 
+const ROOM_URL = (Object.values(
+  import.meta.glob('/public/room/room.opt.glb', { eager: true, query: '?url', import: 'default' }),
+)[0] as string ?? '').replace(/^\/public/, '')
+
 const BY_SLUG = new Map<string, string>()
 for (const [path, url] of Object.entries(MODELS)) {
   const name = path.split('/').pop()?.replace(/\.opt\.glb$/, '')
@@ -72,6 +76,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     // 필름 같은 계조. 없으면 하이라이트가 하얗게 타서 플라스틱처럼 보인다.
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 0.78
+    host.replaceChildren()      // 호스트는 재사용되는 영속 노드다 — 이전 캔버스를 치운다
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
@@ -87,156 +92,60 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     const camera = new THREE.PerspectiveCamera(46, w / h, 0.05, 50)
 
     /**
-     * ## 취조실 — 테이블을 사이에 두고 마주 앉는다
+     * ## 취조실 — **완성된 에셋을 쓴다**
      *
-     * 처음엔 검은 벽 앞의 흉상이었다. "어두운 방은 상자 몇 개면 된다" 고 해 놓고
-     * 정작 상자를 안 만든 탓이다. 취조 장면은 **가구가 만든다** —
-     * 테이블이 없으면 심문이 아니라 증명사진이다.
+     * 처음에는 상자와 평면으로 방을 지었다. 테이블·의자·갓등·편면거울·문이 모두 들어 있는
+     * 기성 모델이 생기면서 그 전부를 걷어냈다 — 손으로 만든 상자가 이길 수 있는 물건이 아니다.
      *
-     * 카메라는 **형사의 자리**에 있다. 플레이어가 곧 취조하는 사람이므로,
-     * 테이블 이쪽 끝에서 약간 위에서 내려다본다.
+     * 배율 1.9: 원본은 천장 높이가 1.06 단위다. 테이블 상판과 의자 좌면의 높이 비가
+     * 실제 가구(0.74m / 0.45m = 1.64)와 일치(1.63)해서, 테이블을 0.74m 로 맞추는
+     * 배율을 역산했다. 눈대중이 아니라 그 비율에서 나온 숫자다.
      */
-    const mat = (color: number, roughness = 0.9, metalness = 0) =>
-      new THREE.MeshStandardMaterial({ color, roughness, metalness })
-
-    /**
-     * 얼룩진 콘크리트 — **캔버스로 만든다.** 레퍼런스의 벽은 평평한 회색이 아니라
-     * 물자국과 곰팡이가 얼룩덜룩한 면이고, 빛이 훑고 지나갈 때 그 얼룩이 드러나는 것이
-     * 이 장면의 공포를 만든다. 평면 색으로 두면 스튜디오가 된다.
-     * 결정론적 노이즈다 — 이 프로젝트는 Math.random() 을 금지한다.
-     */
-    const concrete = (() => {
-      const c = document.createElement('canvas')
-      c.width = c.height = 512
-      const g = c.getContext('2d')!
-      g.fillStyle = '#6b6560'
-      g.fillRect(0, 0, 512, 512)
-      let x = 0x1a2b3c4d
-      const rnd = () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return ((x >>> 0) / 0xffffffff) }
-      for (let i = 0; i < 2600; i++) {
-        const px = rnd() * 512, py = rnd() * 512
-        const r = 6 + rnd() * 54
-        const dark = rnd() < 0.62
-        const a = 0.03 + rnd() * 0.1
-        const grd = g.createRadialGradient(px, py, 0, px, py, r)
-        grd.addColorStop(0, dark ? `rgba(24,20,18,${a})` : `rgba(150,145,138,${a * 0.7})`)
-        grd.addColorStop(1, 'rgba(0,0,0,0)')
-        g.fillStyle = grd
-        g.beginPath(); g.arc(px, py, r, 0, Math.PI * 2); g.fill()
+    const ROOM_SCALE = 1.9
+    const roomGltf = await new GLTFLoader().setDRACOLoader(
+      new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/'),
+    ).loadAsync(ROOM_URL)
+    const room = roomGltf.scene
+    room.scale.setScalar(ROOM_SCALE)
+    room.traverse((o) => {
+      const m = o as import('three').Mesh
+      if (m.isMesh) {
+        m.receiveShadow = true
+        m.castShadow = true
+        const mm = m.material as import('three').MeshStandardMaterial
+        if (mm?.isMeshStandardMaterial) {
+          // 에셋이 밝은 사무실 톤이다. 어둡게 눌러 취조실로 만든다.
+          mm.color.multiplyScalar(0.42)
+          mm.roughness = Math.max(mm.roughness, 0.85)
+          mm.metalness = Math.min(mm.metalness, 0.15)
+        }
       }
-      // 세로로 흘러내린 물자국
-      for (let i = 0; i < 90; i++) {
-        const px = rnd() * 512
-        g.fillStyle = `rgba(20,16,14,${0.02 + rnd() * 0.05})`
-        g.fillRect(px, rnd() * 200, 1 + rnd() * 4, 120 + rnd() * 300)
-      }
-      const t = new THREE.CanvasTexture(c)
-      t.wrapS = t.wrapT = THREE.RepeatWrapping
-      t.repeat.set(2, 1.6)
-      return t
-    })()
-
-    // 테이블 — 화면 아래를 가로지른다. 이 한 덩어리가 장면의 성격을 정한다.
-    const TABLE_H = 0.74
-    const table = new THREE.Mesh(
-      new THREE.BoxGeometry(1.9, 0.05, 1.0),
-      new THREE.MeshStandardMaterial({ color: 0x3a322b, roughness: 0.55, metalness: 0.25, map: concrete }),
-    )
-    table.position.set(0, TABLE_H, 0.52)
-    table.castShadow = true
-    table.receiveShadow = true
-    const legGeo = new THREE.BoxGeometry(0.05, TABLE_H, 0.05)
-    const LEGS: [number, number][] = [[-0.72, 0.16], [0.72, 0.16], [-0.72, 0.88], [0.72, 0.88]]
-    for (const [x, z] of LEGS) {
-      const leg = new THREE.Mesh(legGeo, mat(0x1d1713))
-      leg.position.set(x, TABLE_H / 2, z)
-      leg.castShadow = true
-      scene.add(leg)
-    }
-    scene.add(table)
-
-    // 의자 등받이 — 용의자 뒤로 살짝 보인다. 앉아 있다는 증거다.
-    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.5, 0.04), mat(0x1a1512))
-    chair.position.set(0, 0.72, -0.34)
-    chair.castShadow = true
-    scene.add(chair)
-
-    // 방 — 벽 셋. 열린 쪽이 형사의 등 뒤다.
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x2e2724, roughness: 1, map: concrete,
     })
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 3), wallMat)
-    back.position.set(0, 1.5, -1.15)
-    back.receiveShadow = true
-    const left = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), wallMat)
-    left.position.set(-1.7, 1.5, 0.35)
-    left.rotation.y = Math.PI / 2
-    left.receiveShadow = true
-    const right = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), wallMat)
-    right.position.set(1.7, 1.5, 0.35)
-    right.rotation.y = -Math.PI / 2
-    right.receiveShadow = true
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(6, 6),
-      new THREE.MeshStandardMaterial({ color: 0x191512, roughness: 1, map: concrete }),
-    )
-    floor.rotation.x = -Math.PI / 2
-    floor.receiveShadow = true
-    scene.add(back, left, right, floor)
+    // 원본 바닥이 z=-0.53 단위 → 월드 0 으로 내린다
+    room.position.y = 0.53 * ROOM_SCALE
+    scene.add(room)
+
+    const TABLE_H = 0.74
 
     /**
-     * 전경의 어깨 — **형사(=플레이어)의 것**이다.
-     * 레퍼런스에서 왼쪽 아래를 채운 검은 실루엣이 이 장면을 "보는 그림" 이 아니라
-     * "내가 앉아 있는 방" 으로 바꾼다. 완전한 검정이라 형태만 있으면 된다.
+     * 조명 — 방 에셋의 갓등 **아래에** 실제 광원을 매단다.
+     * 에셋에는 조명이 없다(LIGHT 0개). 등은 형상일 뿐이라 빛은 우리가 넣어야 한다.
+     * 흔들림도 여기서 만든다 — 빛이 얼굴을 훑는 것이 이 장면의 핵심이다.
      */
+    const key = new THREE.SpotLight(0xffd9a0, 22, 9, Math.PI / 5.5, 0.6, 1.4)
+    key.castShadow = true
+    key.shadow.mapSize.set(1024, 1024)
+    key.shadow.bias = -0.002
+    scene.add(key, key.target)
+    scene.add(new THREE.HemisphereLight(0x2c2429, 0x0a0806, 0.35))
+
+    /** 전경의 어깨 — 형사(=플레이어)의 것. 화면 아래를 검게 먹어 "내가 그 방에 있다" 를 만든다. */
     const shoulder = new THREE.Mesh(
       new THREE.SphereGeometry(0.42, 20, 16),
       new THREE.MeshBasicMaterial({ color: 0x000000 }),
     )
     shoulder.scale.set(1.15, 1.7, 0.7)
     scene.add(shoulder)
-
-    /**
-     * 조명 — 테이블 위 갓등 **하나**. 취조실의 그 등이다.
-     * 빛을 더 넣으면 사무실이 되고, 하나만 두면 취조실이 된다.
-     */
-    const key = new THREE.SpotLight(0xffe2b4, 7.5, 7, Math.PI / 6.5, 0.5, 1.5)
-    key.castShadow = true
-    key.shadow.mapSize.set(1024, 1024)
-    key.shadow.bias = -0.0015
-    scene.add(key, key.target)
-    /**
-     * 갓등 — **화면 안에 보이고, 흔들린다.**
-     * 레퍼런스의 핵심은 등이 흔들리며 빛이 얼굴을 훑는 것이다. 고정된 조명은
-     * 아무리 어두워도 정물이 되고, 흔들리는 순간 방이 살아 있는 공간이 된다.
-     * 줄까지 그린다 — 매달린 게 보여야 흔들림이 납득된다.
-     */
-    const lamp = new THREE.Group()
-    const cord = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.006, 0.006, 0.85, 6),
-      new THREE.MeshStandardMaterial({ color: 0x120e0c, roughness: 1 }),
-    )
-    cord.position.y = -0.425
-    const shade = new THREE.Mesh(
-      new THREE.ConeGeometry(0.21, 0.12, 24, 1, true),
-      new THREE.MeshStandardMaterial({
-        color: 0x4a4038, roughness: 0.45, metalness: 0.6, side: THREE.DoubleSide,
-      }),
-    )
-    const bulb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 14, 14),
-      new THREE.MeshBasicMaterial({ color: 0xffeccd }),
-    )
-    shade.position.y = -0.85
-    bulb.position.y = -0.9
-    lamp.add(cord, shade, bulb)
-    scene.add(lamp)
-
-    // 반사광은 거의 없다. 어두워야 취조실이다.
-    scene.add(new THREE.HemisphereLight(0x3a2830, 0x0a0806, 0.42))
-    // 테이블 상판에 떨어지는 빛 — 갓등 아래 원형 자국. 이게 있어야 '그 방' 이 된다.
-    const tableLight = new THREE.SpotLight(0xffdca8, 6, 3, Math.PI / 5, 0.8, 2)
-    scene.add(tableLight, tableLight.target)
 
     const draco = new DRACOLoader()
     draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/')
@@ -254,9 +163,14 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     })
     scene.add(model)
 
-    // 발이 바닥에 닿고 가슴이 화면 중앙에 오도록 맞춘다 — 모델마다 크기가 다르다
-    // 앉은 모델은 세로가 1.36m 다. 선 키(1.72)로 정규화하면 26% 커진다.
-    // 실제 세로를 그대로 두고(이미 미터 단위) 크기 보정은 하지 않는다.
+    /**
+     * 인물을 **방의 의자 자리**에 앉힌다.
+     * 방 에셋 기준으로 테이블은 원점 부근을 가로지르고, 안쪽(-Z) 끝이 용의자 자리다.
+     * 실측으로 잡은 값이며, 카메라도 여기서 파생된다.
+     */
+    const SEAT = new THREE.Vector3(0.06, 0, -0.62)
+    const LAMP = new THREE.Vector3(0.02, 1.72, -0.10)   // 방 갓등 아래
+
     const box = new THREE.Box3().setFromObject(model)
     const size = box.getSize(new THREE.Vector3())
     const scale = size.y > 1.55 ? 1.72 / size.y : 1   // 서 있는 모델만 정규화
@@ -271,7 +185,8 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     } else {
       model.position.y -= box2.min.y
     }
-    model.position.x -= (box2.max.x + box2.min.x) / 2
+    model.position.x += SEAT.x - (box2.max.x + box2.min.x) / 2
+    model.position.z += SEAT.z - (box2.max.z + box2.min.z) / 2
 
     /** 뼈 이름은 리깅 도구마다 다르다. 패턴으로 찾고, 못 찾으면 모델 전체를 흔든다. */
     const findBone = (re: RegExp): import('three').Object3D | null => {
@@ -314,24 +229,14 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 형사의 어깨가 왼쪽 아래를 검게 먹는다.** 그걸 다 담으려면 물러서고 넓혀야 한다.
      * 얼굴만 크게 잡으면 조명은 좋아도 '방' 이 사라진다 — 두 번 그렇게 만들었다.
      */
-    const aim = new THREE.Vector3(face.x + 0.06, face.y - 0.16, face.z)
-    camera.position.set(face.x + 0.24, face.y + 0.30, face.z + 1.62)
+    const aim = new THREE.Vector3(face.x + 0.04, face.y - 0.20, face.z)
+    camera.position.set(face.x + 0.20, face.y + 0.26, face.z + 1.55)
     camera.lookAt(aim)
+    key.position.copy(LAMP)
+    key.target.position.set(face.x, face.y - 0.15, face.z)
 
-    // 갓등은 테이블 위, 얼굴보다 조금 앞에 매단다
-    shade.position.set(0, face.y + 0.42, face.z + 0.34)
-    bulb.position.set(0, face.y + 0.37, face.z + 0.34)
-    key.position.copy(bulb.position)
-    key.target.position.set(face.x, face.y - 0.1, face.z)
-    // 등은 **화면 왼쪽 위**에 비스듬히 — 레퍼런스처럼 정중앙이 아니다.
-    // 중앙에 두면 증명사진 조명이 되고, 비스듬해야 빛이 얼굴을 '훑는다'.
-    const PIVOT = new THREE.Vector3(face.x - 0.42, face.y + 1.05, face.z + 0.52)
-    lamp.position.copy(PIVOT)
-    tableLight.position.set(face.x, face.y + 0.5, face.z + 0.5)
-    tableLight.target.position.set(face.x, TABLE_H, face.z + 0.6)
-
-    // 전경 어깨 — 카메라 바로 앞 왼쪽 아래. 화면의 3분의 1을 검게 먹는다.
-    shoulder.position.set(camera.position.x - 0.60, camera.position.y - 0.50, camera.position.z - 0.34)
+    // 전경 어깨 — 카메라 바로 앞 왼쪽 아래
+    shoulder.position.set(camera.position.x - 0.58, camera.position.y - 0.48, camera.position.z - 0.34)
     const rest = new Map<import('three').Object3D, import('three').Euler>()
     for (const b of [head, spine]) if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
 
@@ -339,10 +244,15 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     let speaking = false
     let raf = 0
     let t0 = performance.now()
+    // ⚠️ `tick()` 안에서 쓰므로 **tick 정의보다 먼저** 선언해야 한다.
+    // 감시견 블록에 함께 뒀다가 TDZ 로 mount 가 통째로 실패했다 —
+    // 정지를 막으려던 코드가 3D 를 죽여서 정지 화면이 됐다. 정확히 반대 효과였다.
+    let lastFrame = performance.now()
 
     const tick = (): void => {
       raf = requestAnimationFrame(tick)
-      const t = (performance.now() - t0) / 1000
+      lastFrame = performance.now()
+      const t = (lastFrame - t0) / 1000
       // 압박이 오르면 호흡이 빨라지고 얕아진다 — 굳는 것이지 커지는 게 아니다
       const rate = 1.0 + (pressure / 100) * 1.6
       const depth = 0.022 * (1 - (pressure / 100) * 0.45)
@@ -367,34 +277,40 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       }
 
       /**
-       * **등이 흔들린다.** 두 주기를 겹쳐 진자처럼 — 하나는 크고 느리게, 하나는
-       * 작고 빠르게. 단일 사인파는 기계처럼 보인다.
-       * 압박이 오르면 진폭이 커진다: 방이 흔들리는 게 아니라 심문이 거칠어지는 것이다.
+       * **빛이 흔들린다.** 방 에셋의 갓등은 고정 형상이지만, 그 아래 광원을 흔들면
+       * 그림자가 벽을 쓸고 얼굴을 훑는다 — 레퍼런스의 핵심이 그것이다.
+       * 두 주기를 겹친다: 단일 사인파는 기계처럼 보인다.
+       * 압박이 오르면 진폭이 커진다 — 방이 아니라 심문이 거칠어지는 것이다.
        */
       const heat0 = Math.min(1, pressure / 100)
-      const swingA = 0.16 + heat0 * 0.14
+      const swingA = 0.13 + heat0 * 0.12
       const sx = Math.sin(t * 0.62) * swingA + Math.sin(t * 1.37) * swingA * 0.28
-      const sz = Math.cos(t * 0.48) * swingA * 0.55
-      lamp.rotation.set(sz, 0, sx)
-      // 등이 기울면 광원도 같이 간다 — 줄 길이 0.85m 끝에 매달린 전구의 위치
-      const LEN = 0.85
-      bulb.getWorldPosition(key.position)
-      key.position.y = PIVOT.y - LEN * Math.cos(sx) * Math.cos(sz)
-      key.position.x = PIVOT.x + LEN * Math.sin(sx)
-      key.position.z = PIVOT.z + LEN * Math.sin(sz)
-      // 빛이 훑고 지나가되 겨냥은 얼굴 언저리에 남는다
-      key.target.position.set(face.x + sx * 0.5, face.y - 0.12, face.z)
-      // 흔들리는 전구는 미세하게 깜빡인다
+      const sz = Math.cos(t * 0.48) * swingA * 0.5
+      key.position.set(LAMP.x + Math.sin(sx) * 0.7, LAMP.y, LAMP.z + Math.sin(sz) * 0.7)
+      key.target.position.set(face.x + sx * 0.55, face.y - 0.15, face.z)
       const flick = 1 + Math.sin(t * 11.3) * 0.03 + Math.sin(t * 27.7) * 0.015
 
       // 압박이 높으면 조명이 붉게 조여든다 — CSS 분위기 층과 같은 언어
       const heat = Math.min(1, pressure / 100)
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
-      key.intensity = (7.5 + heat * 3.5) * flick
+      key.intensity = (22 + heat * 8) * flick
 
       renderer.render(scene, camera)
     }
     tick()
+
+    /**
+     * 감시견 — 루프가 멈추면 되살린다.
+     * 한 번 정지 화면으로 배포된 적이 있다(rAF 0회). 원인을 구조로 없앴지만,
+     * 탭 전환·컨텍스트 복구 같은 브라우저 사정으로도 끊길 수 있어 방어선을 남긴다.
+     */
+    const watchdog = setInterval(() => {
+      if (document.hidden) return
+      if (performance.now() - lastFrame > 1500) {
+        cancelAnimationFrame(raf)
+        tick()
+      }
+    }, 2000)
 
     const onResize = (): void => {
       const nw = host.clientWidth || w
@@ -410,6 +326,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       setSpeaking: (v) => { speaking = v },
       dispose: () => {
         cancelAnimationFrame(raf)
+        clearInterval(watchdog)
         removeEventListener('resize', onResize)
         renderer.dispose()
         draco.dispose()

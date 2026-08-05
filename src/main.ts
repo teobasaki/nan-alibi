@@ -81,6 +81,20 @@ const ui: UI = {
   sceneCanvas: null,
 }
 
+/**
+ * 취조실 3D 호스트 — **한 번 만들고 재렌더에 살아남는다.**
+ *
+ * `render()` 는 `app.replaceChildren()` 로 트리를 통째로 갈아치운다. 그 안에서
+ * 캔버스를 만들면 재렌더마다 WebGL 컨텍스트가 생겼다 사라지고, 비동기 `mount()` 와
+ * 경합해 루프가 취소된 채 캔버스만 남는다 — 실제로 그렇게 **정지 화면**이 됐다
+ * (rAF 1초에 0회, 픽셀 변화 0). 그래서 2D 처럼 보였다.
+ *
+ * 노드를 모듈 스코프에 두고 매 렌더에 `appendChild` 로 **옮기기만** 하면
+ * 컨텍스트도 렌더 루프도 그대로 살아 있다.
+ */
+const roomEl = document.createElement('div')
+roomEl.className = 'room3d'
+
 const h = (tag: string, cls?: string, text?: string): HTMLElement => {
   const n = document.createElement(tag)
   if (cls) n.className = cls
@@ -212,8 +226,8 @@ function stage(): HTMLElement {
   // 테이블도 갓등도 안 보이고 그냥 어두운 흉상이 된다. 가로로 통째로 쓴다.
   let big: HTMLElement | null = null
   if (use3d) {
-    big = h('div', 'room3d')
-    box.appendChild(big)
+    big = roomEl              // 새로 만들지 않는다 — 옮겨 붙일 뿐이다
+    box.appendChild(roomEl)
   }
 
   const p = h('div', 'portrait')
@@ -234,10 +248,9 @@ function stage(): HTMLElement {
       void mount(target, slug!).then((handle) => {
         if (ui.scene?.slug !== slug) return handle?.dispose()
         ui.scene.handle = handle
-        ui.sceneCanvas = target.querySelector('canvas')
         if (!handle) {
           // 3D 가 실패했다 — 자리를 접고 사진으로 되돌린다
-          target.remove()
+          roomEl.remove()
           const fb = h('div', `big ${shot ? 'photo' : 'plate'}${tense ? ' tense' : ''}`, shot ? '' : sus.name[0]!)
           if (shot) fb.style.backgroundImage = `url(${shot})`
           p.prepend(fb)
@@ -245,9 +258,7 @@ function stage(): HTMLElement {
         handle?.setPressure(ui.game.pressure[s])
       })
     } else if (ui.scene.handle) {
-      // 이미 붙어 있다면 캔버스를 새 DOM 으로 옮기고 상태만 갱신한다
-      const prev = ui.sceneCanvas
-      if (prev && big) big.appendChild(prev)
+      // 호스트가 영속 노드라 캔버스를 옮길 필요가 없다. 상태만 갱신한다.
       ui.scene.handle.setPressure(ui.game.pressure[s])
     }
   } else if (ui.scene) {
