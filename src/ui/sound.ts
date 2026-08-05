@@ -121,31 +121,48 @@ export function play(v: Voice): void {
       tone(t + 0.09, 523.25, 0.5, 0.13, 'sine')
       tone(t + 0.18, 659.25, 0.7, 0.12, 'sine')
       break
-    case 'creak':
+    case 'creak': {
       /**
-       * 탁자가 삐걱인다 — 나무·금속이 뒤틀리는 소리.
-       * 낮은 톱니파를 아주 느리게 미끄러뜨리고 잡음을 얹으면 '뒤틀림' 이 된다.
-       * 순음으로는 절대 안 난다.
+       * 탁자가 삐걱인다 — **stick-slip**(붙었다 미끄러졌다) 소리다.
+       *
+       * 처음엔 41~58Hz 톱니파를 320Hz 밴드패스(Q=7)에 통과시켰다. 통과대역이 기음보다
+       * 한참 위라 거의 아무것도 안 나왔다 — 게인도 0.075 로 너무 작았다. 안 들린 게 당연하다.
+       *
+       * 삐걱임의 정체는 **떨리는 진폭**이다. 나무가 붙었다 미끄러지길 반복하면서
+       * 소리가 잘게 끊긴다. 그래서 LFO 로 게인을 흔든다 — 이게 없으면 그냥 낮은 웅웅거림이다.
        */
-      if (ctx) {
-        const o = ctx.createOscillator()
-        const g = ctx.createGain()
-        const f = ctx.createBiquadFilter()
-        o.type = 'sawtooth'
-        o.frequency.setValueAtTime(58, t)
-        o.frequency.linearRampToValueAtTime(41, t + 0.5)
-        f.type = 'bandpass'
-        f.frequency.setValueAtTime(320, t)
-        f.Q.setValueAtTime(7, t)
-        g.gain.setValueAtTime(0, t)
-        g.gain.linearRampToValueAtTime(0.075, t + 0.12)
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.62)
-        o.connect(f).connect(g).connect(ctx.destination)
-        o.start(t)
-        o.stop(t + 0.65)
-      }
-      noise(t + 0.02, 0.3, 0.05, 900)
+      const o = ctx.createOscillator()
+      o.type = 'sawtooth'
+      o.frequency.setValueAtTime(190, t)
+      o.frequency.exponentialRampToValueAtTime(96, t + 0.55)
+
+      const f = ctx.createBiquadFilter()
+      f.type = 'bandpass'
+      f.frequency.setValueAtTime(760, t)
+      f.frequency.exponentialRampToValueAtTime(380, t + 0.55)
+      f.Q.setValueAtTime(3.2, t)
+
+      // stick-slip — 게인을 빠르게 떨어 '삐걱' 을 만든다
+      const wob = ctx.createOscillator()
+      wob.type = 'triangle'
+      wob.frequency.setValueAtTime(23, t)
+      wob.frequency.linearRampToValueAtTime(13, t + 0.55)
+      const wobAmt = ctx.createGain()
+      wobAmt.gain.setValueAtTime(0.55, t)
+
+      const env = ctx.createGain()
+      env.gain.setValueAtTime(0, t)
+      env.gain.linearRampToValueAtTime(0.42, t + 0.07)
+      env.gain.exponentialRampToValueAtTime(0.0001, t + 0.7)
+
+      wob.connect(wobAmt).connect(env.gain)   // 진폭 변조
+      o.connect(f).connect(env).connect(ctx.destination)
+      o.start(t); wob.start(t)
+      o.stop(t + 0.72); wob.stop(t + 0.72)
+
+      noise(t + 0.02, 0.26, 0.12, 1400)
       break
+    }
     case 'doorOpen':
       // 문이 열리고 방이 드러난다 — 금속 걸쇠 + 긴 여운
       noise(t, 0.05, 0.4, 2600)
