@@ -14,6 +14,7 @@
 
 import { CRIME_SLOT, SLOT_LABEL, SUSPECTS, type CaseFile } from '../types'
 import { play } from './sound'
+import { josa } from './josa'
 
 const FILES = import.meta.glob('/public/intro/*.{webp,png,jpg}', {
   eager: true,
@@ -39,7 +40,7 @@ function panels(c: CaseFile): Panel[] {
   return [
     { key: '어젯밤', line: `어젯밤, ${c.venue.name}.` },
     { key: SLOT_LABEL[CRIME_SLOT], line: `${SLOT_LABEL[CRIME_SLOT]}. 12층 복도의 불이 반쯤 나가 있었다.` },
-    { key: c.venue.room, line: `${c.venue.room}에서 ${c.victim.title} ${c.victim.name}이(가) 숨진 채 발견됐다.` },
+    { key: c.venue.room, line: `${c.venue.room}에서 ${c.victim.title} ${josa(c.victim.name, '이/가')} 숨진 채 발견됐다.` },
     { key: '다섯', line: `호텔에 남아 있던 다섯 사람 — ${five}.` },
     { key: '한 명', line: '다섯 모두 그 시간엔 다른 곳에 있었다고 말한다. 그중 한 명이 범인이다.' },
   ]
