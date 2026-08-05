@@ -140,6 +140,11 @@ function suspectColumn(): HTMLElement {
  * 구조화 출력의 부분 JSON 파싱 없이 스트리밍과 같은 체감을 얻는 방법 (ADR 005).
  */
 function typeInto(node: HTMLElement, text: string): void {
+  // CSS 미디어 쿼리로는 못 잡는 JS 애니메이션이다. 여기서 직접 존중한다.
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    node.textContent = text
+    return
+  }
   node.textContent = ''
   let i = 0
   const tick = (): void => {
@@ -527,8 +532,15 @@ function animateLast(text: string): void {
 /* ─────────── 제출 · 결과 ─────────── */
 function openSubmit(): void {
   const ov = h('div', 'overlay')
-  const sheet = h('div', 'sheet')
+  const sheet = h('div', 'sheet casefile')
+  sheet.appendChild(fileHeader('송치\n의견'))
   sheet.appendChild(h('h2', undefined, '범인 지목'))
+  // 지금까지 손에 쥔 것을 한 줄로 상기시킨다 — 지목은 기억이 아니라 근거로 하는 것이다.
+  const held = ui.game.cards.filter((id) => CASE.evidence.some((e) => e.id === id)).length
+  sheet.appendChild(h('div', 'tally',
+    `조사 ${INVESTIGATION_BUDGET - ui.game.investigationsLeft}회 소모 · ` +
+    `확보한 기록 ${held}건 · 찾아낸 인장 ${ui.game.foundContradictions.length}건` +
+    (ui.game.ruledOut.length ? ` · 소거한 조합 ${ui.game.ruledOut.length}건` : '')))
   sheet.appendChild(h('p', undefined, '범인만 맞혀도 부분 점수가 있습니다. 수단과 결정적 증거까지 맞히면 만점입니다.'))
 
   const opt = (v: string, t: string): HTMLOptionElement => {
@@ -586,7 +598,9 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   ui.game = r.state
 
   const ov = h('div', 'overlay')
-  const sheet = h('div', 'sheet')
+  const sheet = h('div', 'sheet casefile')
+  // 붉은 인장은 '확정' 의 색이다. 못 맞혔으면 색을 빼야 한다 — 색이 곧 판정이다.
+  sheet.appendChild(fileHeader(r.correct.culprit ? '사건\n해결' : '미제\n편철', !r.correct.culprit))
   sheet.appendChild(h('div', `verdict ${r.correct.culprit ? 'ok' : 'no'}`,
     r.correct.culprit ? '범인을 맞혔습니다.' : '범인이 아닙니다.'))
   sheet.appendChild(h('p', undefined,
@@ -640,6 +654,17 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   document.body.appendChild(ov)
 }
 
+/**
+ * 사건 파일 서식 머리 — 브리핑·제출·결과가 **같은 서류철**로 읽히게 한다.
+ * 사건번호는 시드다. 재현 가능한 게임이라는 사실이 세계관 안에서도 말이 된다.
+ */
+function fileHeader(stamp: string, cold = false): HTMLElement {
+  const hd = h('div', 'filehd')
+  hd.appendChild(h('div', 'kicker', `사건번호 ${String(CASE.seed).padStart(5, '0')} · 강력 3팀`))
+  hd.appendChild(h('div', `stamp${cold ? ' cold' : ''}`, stamp))
+  return hd
+}
+
 /* ─────────── 오프닝 브리핑 (기획서 §5.1) ─────────── */
 /**
  * 플레이 테스트 지적: "어디부터 해야 되는지, 뭘 조사해야 되는지 모르겠다."
@@ -647,9 +672,9 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
  */
 function openBriefing(): void {
   const ov = h('div', 'overlay')
-  const sheet = h('div', 'sheet')
+  const sheet = h('div', 'sheet casefile')
 
-  sheet.appendChild(h('div', 'kicker', '사건 브리핑'))
+  sheet.appendChild(fileHeader('수사\n개시'))
   sheet.appendChild(h('h2', undefined, CASE.title))
   sheet.appendChild(h('p', undefined,
     `어젯밤 ${SLOT_LABEL[CRIME_SLOT]}, ${CASE.venue.name} ${CASE.venue.room}에서 ` +
@@ -662,11 +687,16 @@ function openBriefing(): void {
   sheet.appendChild(h('h2', undefined, '당신이 할 일'))
   const ol = h('ol', 'steps')
   for (const [t, d] of [
-    ['다섯 명의 진술을 읽는다', '왼쪽 카드에 각자의 22:20 주장이 적혀 있다. 무료다.'],
-    ['심문하거나 기록을 조회한다', `조사는 총 ${INVESTIGATION_BUDGET}회뿐. 이게 이 게임의 유일한 자원이다.`],
-    ['카드를 연결해 모순을 찾는다', '기록과 진술이 어긋나는 지점 — 연결은 몇 번을 해도 무료다.'],
-    ['모순을 들이민다', '증거를 당사자에게 제시하면 새로운 진술이 열린다.'],
-    ['범인·수단·결정적 증거를 지목한다', '범인만 맞혀도 점수는 있다. 남은 조사도 점수가 된다.'],
+    ['대조표를 읽는다',
+      `가운데 표가 수사의 전부다. 가로가 시각, 세로가 사람이고, ${SLOT_LABEL[CRIME_SLOT]} 열이 범행 시각이다. 읽는 건 무료다.`],
+    ['심문하거나 기록을 조회한다',
+      `조사는 총 ${INVESTIGATION_BUDGET}회뿐 — 이 게임의 유일한 자원이다. 심문하면 그 사람의 나머지 시각이 표에 채워진다.`],
+    ['기록과 진술을 맞춰 본다',
+      '오른쪽 기록 한 장과 표의 칸 하나를 누르면 대조된다. 어긋나면 그 칸에 붉은 인장이 찍힌다. 대조는 무료다.'],
+    ['인장이 찍힌 사람에게 그 기록을 들이민다',
+      '당사자가 흔들리면 새 진술이 열리고, 잠긴 기록의 자물쇠가 한 칸 풀린다.'],
+    ['범인·수단·결정적 증거를 지목한다',
+      '범인만 맞혀도 해결이다(60점). 남은 조사와 찾아낸 인장도 점수가 된다.'],
   ] as [string, string][]) {
     const li = h('li')
     li.appendChild(h('b', undefined, t))
