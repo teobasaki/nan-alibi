@@ -85,7 +85,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     // 필름 같은 계조. 없으면 하이라이트가 하얗게 타서 플라스틱처럼 보인다.
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 0.52
+    renderer.toneMappingExposure = 0.6
     // 호스트는 재사용되는 영속 노드다. **캔버스만** 치운다 —
     // `replaceChildren()` 로 통째로 비웠더니 호스트에 얹어 둔 말풍선까지 사라졌다.
     host.querySelectorAll('canvas').forEach((el) => el.remove())
@@ -133,7 +133,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
            * 피부·제복·벽돌·금속이 전부 같은 매트 표면이 되어 재질 구분이 사라졌다
            * (아트 디렉터 리뷰 4번). 색은 살리고 거칠기만 재질에 맞게 준다.
            */
-          mm.color.multiplyScalar(0.52)
+          mm.color.multiplyScalar(0.68)
           mm.roughness = Math.min(Math.max(mm.roughness, 0.68), 0.9)
           mm.metalness = Math.min(mm.metalness, 0.35)
           mm.envMapIntensity = 0.35
@@ -163,20 +163,30 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 나는 인물을 너무 잘 보여주려 하고 있었다. 콘을 좁히고 거리를 줄여
      * 빛이 얼굴에만 닿고 몸은 어둠에 남게 한다 — 생성 모델의 결함도 함께 묻힌다.
      */
-    const key = new THREE.SpotLight(0xffd0a0, 11, 4.2, Math.PI / 5.5, 0.82, 1.9)
+    /**
+     * 키라이트 — 갓등 아래 따뜻한 빛. 색을 너무 주황으로 밀었더니 제복·피부·벽이
+     * 전부 한 색으로 눌렸다(사용자 지적: "옷들이 다 단색으로"). 중성 쪽으로 되돌린다.
+     */
+    const key = new THREE.SpotLight(0xffe2bd, 15, 6.5, Math.PI / 4.6, 0.75, 1.6)
     key.castShadow = true
     key.shadow.mapSize.set(matchMedia('(pointer: coarse)').matches ? 1024 : 2048, matchMedia('(pointer: coarse)').matches ? 1024 : 2048)
     key.shadow.bias = -0.0005
     key.shadow.normalBias = 0.02
     scene.add(key, key.target)
     // 환경광은 거의 죽인다 — 밝히면 취조실이 사무실이 된다
-    scene.add(new THREE.HemisphereLight(0x141b24, 0x030202, 0.055))
+        // 환경광 — 방을 둘러볼 때 벽과 가구가 형태로 읽힐 만큼만
+    scene.add(new THREE.HemisphereLight(0x243040, 0x08060a, 0.16))
     /**
      * 카메라 쪽 필 — **그림자를 완전히 검게 막지 않기 위한 것**이다.
      * 이게 없으면 얼굴 그늘이 RGB 0 으로 뭉개져 형태 정보가 사라진다.
      * 차갑게(푸른기) 넣어 따뜻한 키라이트와 대비를 만든다. 키 대비 약 1/15.
      */
-    const fill = new THREE.DirectionalLight(0x7f93a8, 0.28)
+    /**
+     * 차가운 필 — **따뜻한 키와 대비를 만든다.** 단일 광원만 있으면 밝은 곳과
+     * 검은 곳뿐이라 재질이 안 읽힌다. 푸른 필이 그늘에 정보를 남기고,
+     * 그 색 대비가 "단색으로 눌림" 을 푼다.
+     */
+    const fill = new THREE.DirectionalLight(0x7d96b8, 0.55)
     scene.add(fill, fill.target)
 
     /** 전경의 어깨 — 형사(=플레이어)의 것. 화면 아래를 검게 먹어 "내가 그 방에 있다" 를 만든다. */
@@ -253,8 +263,8 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
             roughness: mm.roughness,
             metalness: mm.metalness,
             envMapIntensity: 0.25,
-            sheen: 0.45,
-            sheenColor: new THREE.Color(0xd98a6a),   // 피부 아래 혈색
+            sheen: 0.28,
+            sheenColor: new THREE.Color(0xc98f78),   // 피부 아래 혈색 — 너무 붉으면 옷까지 물든다
             sheenRoughness: 0.75,
             clearcoat: 0.06,                          // 아주 얕은 유분기
             clearcoatRoughness: 0.65,
@@ -508,7 +518,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       // 압박이 높으면 조명이 붉게 조여든다 — CSS 분위기 층과 같은 언어
       const heat = Math.min(1, pressure / 100)
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
-      key.intensity = (11 + heat * 4) * flick
+      key.intensity = (15 + heat * 5) * flick
 
       // 손을 뗀 지 1.2초가 지나면 다시 천천히 떠다닌다
       if (!dragging && performance.now() - idleSince > 1200) {
@@ -565,7 +575,13 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
 
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault()
-      orbit.dist = Math.max(0.55, Math.min(1.45, orbit.dist + e.deltaY * 0.0012))
+      /**
+       * 방 전체를 볼 수 있어야 하되 **방 밖으로 나가면 안 된다.**
+       * 3.4배까지 열었더니 카메라가 벽을 뚫고 나가 화면이 새까매졌다.
+       * 카메라~얼굴 기본 거리가 1.35m 이고 방 깊이가 약 3.8m 이므로
+       * 2.0배(2.7m)면 반대편 벽 앞에서 멈춘다 — 방은 다 보이고 밖으로는 못 나간다.
+       */
+      orbit.dist = Math.max(0.34, Math.min(2.0, orbit.dist + e.deltaY * 0.0016))
       applyCam()
     }
     let px = 0
@@ -577,8 +593,9 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     const onMove = (e: PointerEvent): void => {
       if (!dragging) return
       // 좌우 ±20°, 상하 ±11° 정도로 묶는다
-      orbit.yaw = Math.max(-0.35, Math.min(0.35, orbit.yaw - (e.clientX - px) * 0.004))
-      orbit.pitch = Math.max(-0.2, Math.min(0.2, orbit.pitch + (e.clientY - py) * 0.003))
+      // 좌우 ±75°, 상하 ±32° — 방을 둘러보되 벽 밖으로는 못 나간다
+      orbit.yaw = Math.max(-1.3, Math.min(1.3, orbit.yaw - (e.clientX - px) * 0.005))
+      orbit.pitch = Math.max(-0.55, Math.min(0.55, orbit.pitch + (e.clientY - py) * 0.004))
       px = e.clientX; py = e.clientY
       applyCam()
     }
