@@ -45,13 +45,18 @@ SEATED = {
 
 def fit_arms(arm, side):
     """
-    손이 무릎 위에 오도록 위팔·아래팔 각도를 **탐색으로** 찾는다.
+    손이 **허벅지 중간**에 놓이도록 위팔·아래팔 각도를 탐색한다.
 
-    각도를 상수로 박았다가 틀렸다: 그 값은 A포즈 레스트를 기준으로 한 상대값인데,
-    이미지→3D 로 만든 모델은 **T포즈 레스트**라 같은 값을 넣으면 팔이 벌어진 채 남는다.
-    포즈 회전은 언제나 레스트 포즈로부터의 델타이므로, 레스트가 바뀌면 값도 바뀐다.
+    ## 세 번 고쳤다
+    ① 손↔**무릎** 거리만 최소화 → 팔이 몸통을 뚫는 지름길이 최적해였다.
+    ② 관통 벌점을 붙임 → 관통은 사라졌지만 팔이 어정쩡하게 벌어졌다.
+       목표가 무릎이라 너무 멀어서, 팔을 쭉 뻗어야 닿았기 때문이다.
+    ③ 2본 IK 로 바꿔봤다 → 아마추어 공간과 월드 공간을 섞어 팔꿈치가 수천 m 밖으로 날아갔다.
+       (`pb.head`/`pb.matrix` 는 아마추어 공간이다)
 
-    그래서 각 모델에서 직접 잰다. 거친 격자 → 주변 정밀 탐색, 몇 초면 끝난다.
+    **결론: 탐색은 맞았고 목표가 틀렸다.** 앉은 사람의 손은 무릎이 아니라
+    허벅지 중간쯤에 얹힌다. 그 지점을 목표로 하면 팔꿈치가 자연스럽게 접히고,
+    관통 벌점이 몸통을 지켜 준다.
     """
     import itertools
     pb = arm.pose.bones
@@ -60,40 +65,34 @@ def fit_arms(arm, side):
 
     def hand():
         bpy.context.view_layer.update()
-        return arm.matrix_world @ pb[f'{side}Hand'].head
+        return pb[f'{side}Hand'].head
 
     bpy.context.view_layer.update()
-    knee = (arm.matrix_world @ pb[f'{side}Leg'].head).copy()
-    target = knee.copy()
-    target.z += 0.06
+    knee = pb[f'{side}Leg'].head.copy()
+    hip = pb['Hips'].head.copy()
 
-    # 몸통 축 — 팔이 이걸 뚫고 지나가면 안 된다
-    spine_lo = arm.matrix_world @ pb['Spine'].head
-    spine_hi = arm.matrix_world @ pb['Spine02'].tail
-    shoulder_w = abs((arm.matrix_world @ pb[f'{side}Shoulder'].head).x - spine_lo.x)
-    CLEAR = max(0.10, shoulder_w * 0.9)   # 몸통 반지름 어림
+    # **허벅지 중간** — 엉덩이와 무릎 사이 55% 지점, 허벅지 위로 조금
+    target = hip.lerp(knee, 0.55)
+    target.z += 0.075
+
+    spine_lo = pb['Spine'].head.copy()
+    spine_hi = pb['Spine02'].tail.copy()
+    CLEAR = max(0.095, abs(pb[f'{side}Shoulder'].head.x - spine_lo.x) * 0.85)
 
     def torso_hit():
-        """팔꿈치와 손이 몸통 축에 얼마나 파고들었는지. 0 이면 안 겹친다."""
+        """팔꿈치·손이 몸통 축에 파고든 양. 0 이면 안 겹친다."""
         pen = 0.0
-        for p in (pb[f'{side}ForeArm'].head, pb[f'{side}Hand'].head, pb[f'{side}Hand'].tail):
-            w = arm.matrix_world @ p
-            # 몸통 축(수직선)까지의 수평 거리
-            t = max(0.0, min(1.0, (w.z - spine_lo.z) / max(1e-6, spine_hi.z - spine_lo.z)))
+        for pt in (fore.head, pb[f'{side}Hand'].head, pb[f'{side}Hand'].tail):
+            t = max(0.0, min(1.0, (pt.z - spine_lo.z) / max(1e-6, spine_hi.z - spine_lo.z)))
             axis = spine_lo.lerp(spine_hi, t)
-            horiz = ((w.x - axis.x) ** 2 + (w.y - axis.y) ** 2) ** 0.5
+            horiz = ((pt.x - axis.x) ** 2 + (pt.y - axis.y) ** 2) ** 0.5
             if horiz < CLEAR:
-                pen += (CLEAR - horiz)
+                pen += CLEAR - horiz
         return pen
 
     def cost():
-        """
-        손을 무릎에 놓되 **몸통을 뚫지 않는다.**
-        거리만 최소화했더니 팔이 가슴을 통과한 채로 손만 무릎에 닿는 답이 나왔다 —
-        관통 벌점이 없으면 탐색은 언제나 그 지름길을 고른다.
-        """
         bpy.context.view_layer.update()
-        return (hand() - target).length + torso_hit() * 3.0
+        return (hand() - target).length + torso_hit() * 4.0
 
     best = None
     for ux, uy, uz in itertools.product(range(-90, 51, 20), range(-80, 81, 40), range(-60, 81, 20)):
@@ -104,7 +103,7 @@ def fit_arms(arm, side):
             if best is None or c < best[0]:
                 best = (c, (ux, uy, uz), (fx, fz))
 
-    (bu, bf) = best[1], best[2]
+    bu, bf = best[1], best[2]
     for ux, uy, uz in itertools.product(*[range(v - 15, v + 16, 5) for v in bu]):
         upper.rotation_euler = Euler((R(ux), R(uy), R(uz)), 'XYZ')
         for fx, fz in itertools.product(range(bf[0] - 15, bf[0] + 16, 5), range(bf[1] - 15, bf[1] + 16, 5)):
@@ -115,13 +114,17 @@ def fit_arms(arm, side):
 
     upper.rotation_euler = Euler((R(best[1][0]), R(best[1][1]), R(best[1][2])), 'XYZ')
     fore.rotation_euler = Euler((R(best[2][0]), 0, R(best[2][1])), 'XYZ')
-    hand_b = pb.get(f'{side}Hand')
-    if hand_b:
-        hand_b.rotation_mode = 'XYZ'
-        hand_b.rotation_euler = Euler((R(-15), 0, 0), 'XYZ')
+    hb = pb.get(f'{side}Hand')
+    if hb:
+        hb.rotation_mode = 'XYZ'
+        hb.rotation_euler = Euler((R(-12), 0, 0), 'XYZ')
+
     bpy.context.view_layer.update()
-    print(f'  {side} 팔: 비용 {best[0]:.3f} (손↔무릎 {(hand() - target).length:.3f}m · '
-          f'몸통관통 {torso_hit():.3f}) · 위팔{best[1]} 아래팔{best[2]}')
+    # ⚠️ 이 좌표는 **아마추어 공간**이다. Meshy 리그는 아마추어 scale 이 0.01 이라
+    # 여기 수치 × 0.01 = 실제 미터다 (14.0 → 14cm). 이 단위를 몰라 IK 를 두 번 틀렸다.
+    scale = arm.scale.x or 1.0
+    print(f'  {side} 팔: 손↔허벅지 {(hand() - target).length * scale * 100:.1f}cm · '
+          f'몸통관통 {torso_hit() * scale * 100:.1f}cm')
 
 
 def main(src, dst):
