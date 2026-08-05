@@ -575,7 +575,11 @@ function openSubmit(): void {
   }
 
   sheet.appendChild(h('label', undefined, '범인')); sheet.appendChild(who)
-  sheet.appendChild(h('label', undefined, '범행 수단')); sheet.appendChild(method)
+  sheet.appendChild(h('label', undefined, '범행 수단'))
+  sheet.appendChild(h('div', 'hintline',
+    '결정적 증거(범행 시각 현장의 카드키 기록) 카드의 "발급 구분" 칸에 어떤 카드로 열었는지가 찍혀 있다. ' +
+    '그 카드를 확보하지 못했다면 수단은 추측이다. — 배점 20점.'))
+  sheet.appendChild(method)
   sheet.appendChild(h('label', undefined, '결정적 증거'))
   sheet.appendChild(h('div', 'hintline',
     '범인이 범행 시각에 현장에 있었음을 확정하는 기록이어야 한다. 진술이나 알리바이 기록은 해당하지 않는다. — 배점 20점, 못 맞혀도 범인만 맞히면 해결이다.'))
@@ -605,6 +609,14 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
     r.correct.culprit ? '범인을 맞혔습니다.' : '범인이 아닙니다.'))
   sheet.appendChild(h('p', undefined,
     `진범은 ${CASE.suspects[CASE.culprit].name}(${CASE.suspects[CASE.culprit].job}). 동기는 ${CASE.motive}, 수단은 ${CASE.method}.`))
+
+  if (!r.correct.method) {
+    const d = CASE.evidence.find((e) => e.decisive)!
+    sheet.appendChild(h('div', 'hintline',
+      ui.game.cards.includes(d.id)
+        ? `수단은 확보한 결정적 증거 카드의 "발급 구분" 칸에 적혀 있었다 — ${d.keyLabel}.`
+        : `수단은 결정적 증거 카드의 "발급 구분" 칸(${d.keyLabel})에서 읽어낼 수 있었다. 그 카드를 끝내 확보하지 못했다.`))
+  }
 
   if (!r.correct.decisive) {
     const d = CASE.evidence.find((e) => e.decisive)!

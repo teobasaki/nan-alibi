@@ -24,7 +24,7 @@ import {
   type Testimony,
   type Trajectory,
 } from '../types'
-import { METHODS, MOTIVES, NOISE_EVIDENCE_MAX, NOISE_EVIDENCE_MIN, SECRETS } from '../data/config'
+import { KEY_LABEL, METHODS, MOTIVES, NOISE_EVIDENCE_MAX, NOISE_EVIDENCE_MIN, SECRETS } from '../data/config'
 import { CASE_TITLES, GIVEN_NAMES, ROLES, SURNAMES, VENUES, VICTIMS } from '../data/names'
 import { PERSONAS, PERSONA_CONFLICTS } from '../data/personas'
 import { makeRng, pick, randInt, sample, shuffle, type Rng } from './rng'
@@ -205,7 +205,13 @@ export function generateCase(seed: number): CaseFile {
   presentUnlocks.push({ evidenceId: anchorEv.id, suspectId: culprit, yieldsTestimonyId: slipId })
 
   // ② 결정적 증거 — 범행 시각 현장의 범인. 자백성 진술이 열려야 조회 가능 (V5 하한 보장)
+  // 이 카드에 찍힌 '발급 구분' 이 곧 범행 수단이다 — 수단을 추측이 아니라 판독으로 만든다.
+  // **별도 난수 스트림에서 뽑는다.** 주 스트림(rng)에서 뽑으면 소비 지점이 앞당겨져
+  // 이후 모든 추첨이 밀리고 **기존 사건이 전부 다른 사건이 된다** — 사전 검증 시드 풀 400개도,
+  // 데모 시드 36의 대본도 한꺼번에 무효가 된다. 파생 시드로 그 파급을 끊는다.
+  const method = pick(makeRng(seed ^ 0x5bf03d1a), METHODS)
   const decisive: Evidence = {
+    keyLabel: KEY_LABEL[method],
     id: evId(),
     kind: 'keycard',
     slot: CRIME_SLOT,
@@ -325,7 +331,7 @@ export function generateCase(seed: number): CaseFile {
     venue: pick(rng, VENUES),
     culprit,
     motive: pick(rng, MOTIVES),
-    method: pick(rng, METHODS),
+    method,
     suspects,
     evidence: remapped,
     testimonies,
