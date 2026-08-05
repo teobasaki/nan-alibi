@@ -19,6 +19,7 @@ import {
   type SuspectId,
 } from '../types'
 import { INVESTIGATION_BUDGET } from '../data/config'
+import { candidatesFrom } from './solver'
 
 /** 진술 카드 id — 인물의 특정 시각 주장 1건 */
 export const claimCardId = (s: SuspectId, slot: Slot): string => `C:${s}:${slot}`
@@ -234,6 +235,8 @@ export interface SubmitResult {
   correct: { culprit: boolean; method: boolean; decisive: boolean }
   /** 수단을 맞혔지만 판독 근거(결정적 증거 카드)가 없어 점수가 없는 경우 */
   methodGuessed: boolean
+  /** 제출 시점에 기록으로 좁혀져 있던 후보 수 */
+  candidatesLeft: number
   breakdown: { culprit: number; method: number; decisive: number; efficiency: number; insight: number }
   total: number
 }
@@ -258,8 +261,21 @@ export function submit(g: GameState, s: Submission): SubmitResult {
   const hasDecisiveCard = g.cards.includes(g.case.decisiveEvidenceId)
   const methodGuessed = correct.method && !hasDecisiveCard
 
+  /**
+   * **찍어 맞힌 것과 좁혀서 맞힌 것은 다르다.**
+   *
+   * 수단에는 "근거 없이 맞히면 0점" 을 적용해 놓고 범인에는 적용하지 않아
+   * 스스로와 모순이었다 (자동 리뷰가 세 판 연속 major/fairness 로 지적).
+   *
+   * 승리의 정의는 바꾸지 않는다 — 범인 적중이 곧 해결이다. 밸런스(상식 봇 64%)를
+   * 다시 재야 하기 때문이다. 대신 **점수로 구분한다**: 기록으로 한 사람까지 몰았으면
+   * 60점, 후보가 여럿 남은 채 고른 것이면 40점.
+   */
+  const candidatesLeft = candidatesFrom(g.case, new Set(g.cards)).length
+  const culpritScore = !correct.culprit ? 0 : candidatesLeft === 1 ? 60 : 40
+
   const breakdown = {
-    culprit: correct.culprit ? 60 : 0,
+    culprit: culpritScore,
     method: correct.method && hasDecisiveCard ? 20 : 0,
     decisive: correct.decisive ? 20 : 0,
     efficiency: g.investigationsLeft * 5,
@@ -267,5 +283,5 @@ export function submit(g: GameState, s: Submission): SubmitResult {
   }
   const total = Object.values(breakdown).reduce((a, b) => a + b, 0)
 
-  return { state: { ...g, phase: 'result' }, correct, methodGuessed, breakdown, total }
+  return { state: { ...g, phase: 'result' }, correct, methodGuessed, candidatesLeft, breakdown, total }
 }
