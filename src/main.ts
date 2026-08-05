@@ -20,7 +20,7 @@ import { candidatesFrom } from './engine/solver'
 import { ask } from './api'
 import {
   CRIME_PLACE, CRIME_SLOT, PLACE_LABEL, SLOT_LABEL, SUSPECTS,
-  type CaseFile, type Slot, type SuspectId,
+  type CaseFile, type Evidence, type Slot, type SuspectId,
 } from './types'
 import { INVESTIGATION_BUDGET, METHODS } from './data/config'
 
@@ -359,14 +359,25 @@ function board(): HTMLElement {
 
   col.appendChild(h('h2', undefined, '기록 조회'))
   const lookup = h('div', 'lookup')
-  // 범행 시각 기록만이 사람을 지운다. 목록 맨 위로 올린다 —
-  // 규칙을 글로 아는 것과 목록에서 먼저 눈에 띄는 것은 다르다 (자동 리뷰 major/onboarding).
-  const avail = [...availableEvidence(ui.game)].sort(
-    (a, b) => (b.slot === CRIME_SLOT ? 1 : 0) - (a.slot === CRIME_SLOT ? 1 : 0))
+  const avail = availableEvidence(ui.game)
   if (avail.length === 0) {
     lookup.appendChild(h('div', 'hintline', '지금 조회할 수 있는 기록이 없다. 심문으로 실마리를 열어야 한다.'))
   }
-  for (const e of avail) {
+  // **정렬로는 부족했다.** 범행 시각 기록을 위로 올려도 초회 플레이어는 여전히
+  // 목록을 위에서부터 훑고 지나갔다 (자동 리뷰 major/onboarding, 두 라운드 연속).
+  // 아예 구역을 갈라 이름을 붙인다 — 사람을 지우는 기록과 그렇지 않은 기록은 다른 물건이다.
+  const groups: [string, typeof avail][] = [
+    [`${SLOT_LABEL[CRIME_SLOT]} — 후보를 지우는 기록`, avail.filter((e) => e.slot === CRIME_SLOT)],
+    ['그 밖의 시각 — 해금·교차검증용', avail.filter((e) => e.slot !== CRIME_SLOT)],
+  ]
+  for (const [title, list] of groups) {
+    if (list.length === 0) continue
+    lookup.appendChild(h('div', 'grouphd', title))
+    for (const e of list) buildLookupButton(lookup, e)
+  }
+  col.appendChild(lookup)
+
+  function buildLookupButton(into: HTMLElement, e: Evidence): void {
     // 기록실 색인처럼 **무엇을 여는지**는 보여주고 **누가 찍혔는지**는 감춘다.
     // 라벨이 전부 "영수증 조회" 로 같으면 플레이어는 찍기밖에 못 하고,
     // 그 순간 "무엇을 먼저 볼 것인가" 라는 이 게임의 전략이 사라진다.
@@ -379,9 +390,8 @@ function board(): HTMLElement {
     const b = h('button', undefined, `[${e.id}] ${label} — ${use} (조사 1회)`) as HTMLButtonElement
     b.disabled = ui.game.investigationsLeft <= 0 || ui.busy
     b.onclick = () => act(() => lookupEvidence(ui.game, e.id))
-    lookup.appendChild(b)
+    into.appendChild(b)
   }
-  col.appendChild(lookup)
 
   // 잠긴 기록 — 자물쇠는 보여주고 열쇠의 주인만 감춘다 (ADR 010)
   const locked = lockedRecords(ui.game)

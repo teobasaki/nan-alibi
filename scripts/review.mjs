@@ -59,8 +59,14 @@ it('t', () => {
       const x = c.suspects[s]
       return \`  \${x.name}(\${x.job}, \${x.relation}) — "\${SLOT_LABEL[CRIME_SLOT]}엔 \${PLACE_LABEL[x.claim[CRIME_SLOT]]}" · 성향힌트 "\${personaById(x.personaId).hint}"\`
     }).join('\\n')
-    const menu = availableEvidence(createGame(c)).map((e) =>
-      \`  \${e.kind} · \${SLOT_LABEL[e.slot]} \${PLACE_LABEL[e.place]}\`).join('\\n')
+    const av = availableEvidence(createGame(c))
+    const row = (e) => \`  [\${e.id}] \${e.kind} · \${SLOT_LABEL[e.slot]} \${PLACE_LABEL[e.place]}\`
+    const menu = [
+      \`  ── \${SLOT_LABEL[CRIME_SLOT]} — 후보를 지우는 기록 ──\`,
+      ...av.filter((e) => e.slot === CRIME_SLOT).map(row),
+      '  ── 그 밖의 시각 — 해금·교차검증용 ──',
+      ...av.filter((e) => e.slot !== CRIME_SLOT).map(row),
+    ].join('\\n')
     // 화면 한가운데의 '알리바이 대조표' — 시작 시점에는 범행 시각 열만 채워져 있다
     const pad = (t, w) => { let n = 0; for (const ch of t) n += ch.charCodeAt(0) > 127 ? 2 : 1; return t + ' '.repeat(Math.max(0, w - n)) }
     const slots = [0, 1, 2, 3, 4]
@@ -75,7 +81,7 @@ it('t', () => {
       header: \`\${c.venue.name} \${c.venue.room} · 피해자 \${c.victim.name}(\${c.victim.title}) · 추정 범행 \${SLOT_LABEL[CRIME_SLOT]} · 남은 조사 표시(●)\`,
       seen, menu, grid, actions: r.log, won: r.won, used: r.actionsUsed, contradictions: r.contradictions,
       note: [
-        '[기록 목록] 범행 시각 기록이 목록 맨 위로 정렬되고, 각 기록에 기록번호가 붙어 같은 시각·장소 기록도 구별된다. 각 기록에 용도가 함께 적힌다 — 범행 시각 기록은 "후보 소거", 그 밖은 "해금·교차검증". 사람을 지우는 건 범행 시각 기록뿐이며 조회 전에 이 구분이 보인다.',
+        '[기록 목록] 범행 시각 기록과 그 밖의 기록이 이름 붙은 두 구역으로 나뉘어 표시되고(위: '22:20 — 후보를 지우는 기록', 아래: '그 밖의 시각 — 해금·교차검증용'), 각 기록에 기록번호가 붙어 같은 시각·장소 기록도 구별된다. 각 기록에 용도가 함께 적힌다 — 범행 시각 기록은 "후보 소거", 그 밖은 "해금·교차검증". 사람을 지우는 건 범행 시각 기록뿐이며 조회 전에 이 구분이 보인다.',
         '[화면 구성] 왼쪽=용의자 5인(이름·직업·관계·압박 정도). 가운데=알리바이 대조표(위에 그린 것) + 그 아래 발견한 모순 목록. 대조표 위에는 남은 후보 수가 항상 표시되고, 기록으로 소거된 사람은 표에서 흐려지며 "기록으로 소거됨" 표가 붙는다. 오른쪽=조회 가능한 기록 목록, 잠긴 기록, 확보한 기록.',
         '[대조표가 곧 진술 카드다] 오른쪽 기록 한 장과 대조표의 칸 하나를 누르면 대조된다. 어긋나면 그 칸에 붉은 인장이 찍히고 아래 목록에 사람이 읽는 문장으로 쌓인다(예: "권태경의 22:20 진술이 CCTV · 22:20 라운지 기록과 어긋난다"). 대조는 조사를 소모하지 않는다.',
         '[기록 카드] 종류·시각·장소·찍힌 인물이 적혀 있다. 확보한 결정적 증거 카드에는 "제출용 결정적 증거 — 다시 제시해도 열리는 것이 없다" 가 적힌다. 조회 전에는 인물이 감춰지고 종류·시각·장소만 보인다.',
