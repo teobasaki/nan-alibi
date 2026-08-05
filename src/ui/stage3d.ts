@@ -195,11 +195,22 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
         m.receiveShadow = true
         const mm = m.material as import('three').MeshStandardMaterial
         if (mm?.isMeshStandardMaterial) {
-          // 피부는 방보다 덜 거칠어야 이마·코에 좁은 하이라이트가 생긴다.
-          // 완전 매트면 얼굴이 종이처럼 평평해진다.
-          mm.roughness = 0.56
-          mm.metalness = 0
-          mm.envMapIntensity = 0.2
+          /**
+           * **맵이 있으면 계수를 건드리지 않는다.**
+           * glTF 에서 `roughness`/`metalness` 는 맵에 **곱해지는 계수**다.
+           * 맵이 있는데 0.56 을 박으면 텍스처가 담고 있던 재질 변화(피부 vs 천 vs 금속)가
+           * 통째로 눌려 버린다 — 그러면 노멀맵을 복원한 의미가 없다.
+           * 맵이 없을 때만 눈대중 값을 준다.
+           */
+          if (mm.roughnessMap) {
+            mm.roughness = 1
+            mm.metalness = mm.metalnessMap ? 1 : 0
+          } else {
+            mm.roughness = 0.56
+            mm.metalness = 0
+          }
+          if (mm.normalMap) mm.normalScale.set(1, 1)
+          mm.envMapIntensity = 0.25
         }
       }
     })
@@ -353,6 +364,16 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     // 감시견 블록에 함께 뒀다가 TDZ 로 mount 가 통째로 실패했다 —
     // 정지를 막으려던 코드가 3D 를 죽여서 정지 화면이 됐다. 정확히 반대 효과였다.
     let lastFrame = performance.now()
+    /**
+     * 궤도 상태와 카메라 적용 함수는 **`tick()` 정의보다 먼저** 선언해야 한다.
+     * 드리프트가 `tick()` 안에서 `applyCam` 을 부르는데 선언이 뒤에 있어
+     * TDZ 로 mount 가 통째로 실패했다 — 같은 실수를 이 파일에서 두 번째 했다.
+     * 아래에서 실제 구현을 대입할 때까지는 아무것도 하지 않는 함수로 둔다.
+     */
+    let drift = 0
+    let idleSince = performance.now()
+    let dragging = false
+    let applyCam: (dy?: number, dp?: number) => void = () => {}
     /** 삐걱 콜백 — 등이 진폭 최대에 닿는 순간마다 한 번씩 부른다 */
     let creakCb: (() => void) | null = null
     let lastCreak = 0
@@ -439,6 +460,12 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
       key.intensity = (14 + heat * 5) * flick
 
+      // 손을 뗀 지 1.2초가 지나면 다시 천천히 떠다닌다
+      if (!dragging && performance.now() - idleSince > 1200) {
+        drift += 0.0016
+        applyCam(Math.sin(drift) * 0.055, Math.sin(drift * 0.63 + 1.2) * 0.022)
+      }
+
       renderer.render(scene, camera)
     }
     tick()
@@ -465,11 +492,22 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      */
     const base = camera.position.clone()
     const orbit = { yaw: 0, pitch: 0, dist: 1 }
-    const applyCam = (): void => {
+    /**
+     * ## 카메라 드리프트 — 3D 를 3D 로 보이게 하는 것
+     *
+     * 인물은 실측 170×71×**깊이 37.7cm** 의 진짜 부피다. 그런데 화면에서는 2D 처럼 보였다.
+     * 이유는 모델이 아니라 **카메라가 고정**이라서다 — 깊이는 시차(parallax)로 인지되는데,
+     * 카메라가 안 움직이면 그 단서가 아예 없다. 단일 사진 기반이라 얼굴 요철이 얕은 것도
+     * 겹쳐서, 결국 사진을 세워둔 것처럼 읽혔다.
+     *
+     * 아주 느리게 떠다니게 한다. 눈에 띄는 움직임이 아니라 **깊이가 느껴질 만큼만.**
+     * 사용자가 직접 끌면 그동안은 드리프트를 멈춘다 — 두 힘이 싸우면 멀미가 난다.
+     */
+    applyCam = (dy = 0, dp = 0): void => {
       const off = base.clone().sub(aim)
       const sph = new THREE.Spherical().setFromVector3(off)
-      sph.theta += orbit.yaw
-      sph.phi = Math.max(0.55, Math.min(1.48, sph.phi + orbit.pitch))
+      sph.theta += orbit.yaw + dy
+      sph.phi = Math.max(0.55, Math.min(1.48, sph.phi + orbit.pitch + dp))
       sph.radius = off.length() * orbit.dist
       camera.position.copy(aim).add(new THREE.Vector3().setFromSpherical(sph))
       camera.lookAt(aim)
@@ -480,11 +518,10 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       orbit.dist = Math.max(0.55, Math.min(1.45, orbit.dist + e.deltaY * 0.0012))
       applyCam()
     }
-    let dragging = false
     let px = 0
     let py = 0
     const onDown = (e: PointerEvent): void => {
-      dragging = true; px = e.clientX; py = e.clientY
+      dragging = true; idleSince = Infinity; px = e.clientX; py = e.clientY
       host.setPointerCapture(e.pointerId)
     }
     const onMove = (e: PointerEvent): void => {
@@ -496,7 +533,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       applyCam()
     }
     const onUp = (e: PointerEvent): void => {
-      dragging = false
+      dragging = false; idleSince = performance.now()
       if (host.hasPointerCapture(e.pointerId)) host.releasePointerCapture(e.pointerId)
     }
     host.addEventListener('wheel', onWheel, { passive: false })
