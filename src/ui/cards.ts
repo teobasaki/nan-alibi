@@ -59,7 +59,8 @@ export function renderEvidenceCard(c: CaseFile, e: Evidence): HTMLElement {
       ? [['구역', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]], ['식별', who]]
       : e.kind === 'keycard'
         ? [['소지자', who], ['지점', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]], ['결과', '승인'],
-           ...(e.keyLabel ? [['발급 구분', e.keyLabel] as [string, string]] : [])]
+           ...(e.keyLabel ? [['발급 구분', e.keyLabel] as [string, string]] : []),
+           ...(e.decisive ? [['용도', '제출용 결정적 증거 — 다시 제시해도 열리는 것이 없다'] as [string, string]] : [])]
         : e.kind === 'call'
           ? [['가입자', who], ['기지국', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]]]
           : [['결제자', who], ['매장', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]]]
