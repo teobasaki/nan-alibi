@@ -15,6 +15,7 @@ import {
 import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './ui/josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
+import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
@@ -187,7 +188,7 @@ function suspectColumn(): HTMLElement {
     card.setAttribute('aria-pressed', String(ui.active === s))
     card.setAttribute('aria-label', `${sus.name} ${sus.job} 심문하기`)
     focusKey(card, `suspect:${s}`)
-    const choose = (): void => { hush(); ui.active = s; render() }
+    const choose = (): void => { hush(); stopVoice(); ui.active = s; render() }
     card.onclick = choose
     card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
 
@@ -325,7 +326,7 @@ function stage(): HTMLElement {
   meta.appendChild(h('div', 'hint', `읽힌 성향: ${persona.label} — ${persona.hint}`))
   p.appendChild(meta)
   const back = focusKey(h('button', 'backbtn', '← 대조표'), 'back') as HTMLButtonElement
-  back.onclick = () => { hush(); ui.active = null; render() }
+  back.onclick = () => { hush(); stopVoice(); ui.active = null; render() }
   p.appendChild(back)
   box.appendChild(p)
 
@@ -650,8 +651,7 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   animateLast(r.reply.speech)
   // 3D 인물 옆에도 띄운다 — 심문 중 눈은 아래 로그가 아니라 얼굴에 가 있다
   say(r.reply.speech)
-  ui.scene?.handle?.setSpeaking(true)
-  setTimeout(() => ui.scene?.handle?.setSpeaking(false), Math.min(9000, r.reply.speech.length * 90))
+  voiceOut(r.reply, CASE.suspects[s].personaId)
 }
 
 async function doPresent(s: SuspectId, evId: string): Promise<void> {
@@ -688,8 +688,33 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   render()
   animateLast(r.reply.speech)
   say(r.reply.speech)
-  ui.scene?.handle?.setSpeaking(true)
-  setTimeout(() => ui.scene?.handle?.setSpeaking(false), Math.min(9000, r.reply.speech.length * 90))
+  voiceOut(r.reply, CASE.suspects[s].personaId)
+}
+
+/**
+ * 대사를 소리로 낸다. **몸동작·말풍선과 한 몸으로 움직인다** —
+ * 말이 끝나는 시점을 소리가 알려주므로, 제스처도 거기에 맞춰 멎는다.
+ * 음성을 못 쓰는 환경(윈도우 한국어 언어팩 없음 등)에서는 글자 길이로 어림한다.
+ */
+function voiceOut(reply: { speech: string; tell: string }, personaId: string): void {
+  const h = ui.scene?.handle
+  h?.setSpeaking(true)
+  const fallbackMs = Math.min(9000, reply.speech.length * 140)
+  if (canSpeak() && !isMuted()) {
+    let ended = false
+    const done = (): void => { if (!ended) { ended = true; h?.setSpeaking(false) } }
+    speak(reply as never, personaId)
+    // 큐가 비면 끝난 것으로 본다 — utterance 를 문장 단위로 쪼개 놔서 onend 가 여러 번 온다
+    const poll = setInterval(() => {
+      if (!speechSynthesis.speaking && !speechSynthesis.pending) {
+        clearInterval(poll)
+        done()
+      }
+    }, 220)
+    setTimeout(() => { clearInterval(poll); done() }, 20000)
+  } else {
+    setTimeout(() => h?.setSpeaking(false), fallbackMs)
+  }
 }
 
 /**
@@ -966,7 +991,13 @@ function openBriefing(): void {
 
   const go = h('button', undefined, '수사를 시작한다') as HTMLButtonElement
   go.style.marginTop = '10px'
-  go.onclick = () => { wake(); ov.remove(); render() }
+  go.onclick = () => {
+    wake()
+    // 음성 엔진 예열 — 여기서 안 깨우면 첫 심문에서만 소리가 ~800ms 늦는다
+    void initVoice()
+    ov.remove()
+    render()
+  }
   sheet.appendChild(go)
 
   ov.appendChild(sheet)
