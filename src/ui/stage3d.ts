@@ -72,14 +72,20 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     const w = host.clientWidth || 320
     const h = host.clientHeight || 380
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      // 캡처를 위해 그리기 버퍼를 유지한다. 이게 없으면 `canvas.toDataURL()` 이 흰 이미지를 준다 —
+      // 디자인 피드백을 받으려면 화면을 파일로 뽑을 수 있어야 하고, 그 대가는 약간의 성능이다.
+      preserveDrawingBuffer: true,
+    })
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
     renderer.setSize(w, h)
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFShadowMap
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     // 필름 같은 계조. 없으면 하이라이트가 하얗게 타서 플라스틱처럼 보인다.
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 0.78
+    renderer.toneMappingExposure = 0.65
     // 호스트는 재사용되는 영속 노드다. **캔버스만** 치운다 —
     // `replaceChildren()` 로 통째로 비웠더니 호스트에 얹어 둔 말풍선까지 사라졌다.
     host.querySelectorAll('canvas').forEach((el) => el.remove())
@@ -95,7 +101,9 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      */
     // 세로 화각. 뷰포트가 가로로 길어서 **세로가 병목**이다 —
     // 30°/1.28m 로 뒀더니 세로 0.70m 만 담겨 테이블(바닥에서 0.74m)이 프레임 밖으로 잘렸다.
-    const camera = new THREE.PerspectiveCamera(46, w / h, 0.05, 50)
+    // 화각 37° — 46° 는 풀숏이 되어 모델 결함(뭉개진 손가락·긴 상체)이 다 보였다.
+    // 좁힐수록 얼굴이 커지고 결함은 프레임 밖으로 나간다 (리뷰 1번).
+    const camera = new THREE.PerspectiveCamera(37, w / h, 0.05, 50)
 
     /**
      * ## 취조실 — **완성된 에셋을 쓴다**
@@ -120,10 +128,15 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
         m.castShadow = true
         const mm = m.material as import('three').MeshStandardMaterial
         if (mm?.isMeshStandardMaterial) {
-          // 에셋이 밝은 사무실 톤이다. 어둡게 눌러 취조실로 만든다.
-          mm.color.multiplyScalar(0.42)
-          mm.roughness = Math.max(mm.roughness, 0.85)
-          mm.metalness = Math.min(mm.metalness, 0.15)
+          /**
+           * 어둡게 만드는 일은 **조명이 한다.** 베이스컬러를 0.42배로 눌렀더니
+           * 피부·제복·벽돌·금속이 전부 같은 매트 표면이 되어 재질 구분이 사라졌다
+           * (아트 디렉터 리뷰 4번). 색은 살리고 거칠기만 재질에 맞게 준다.
+           */
+          mm.color.multiplyScalar(0.76)
+          mm.roughness = Math.min(Math.max(mm.roughness, 0.68), 0.9)
+          mm.metalness = Math.min(mm.metalness, 0.35)
+          mm.envMapIntensity = 0.35
         }
       }
     })
@@ -138,12 +151,27 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 에셋에는 조명이 없다(LIGHT 0개). 등은 형상일 뿐이라 빛은 우리가 넣어야 한다.
      * 흔들림도 여기서 만든다 — 빛이 얼굴을 훑는 것이 이 장면의 핵심이다.
      */
-    const key = new THREE.SpotLight(0xffd9a0, 22, 9, Math.PI / 5.5, 0.6, 1.4)
+    /**
+     * 키라이트. 리뷰 2·3번 반영:
+     * 정면광이라 얼굴이 평면으로 떴고(이마·코·볼 밝기가 같았다), 콘이 좁아
+     * 벽에 "조명 범위 표시" 같은 검은 반원이 생겼다.
+     * 각도를 넓히고 penumbra 를 올려 경계를 풀고, 강도는 낮춘다.
+     */
+    const key = new THREE.SpotLight(0xffd9a0, 14, 6, Math.PI / 4.2, 0.9, 1.4)
     key.castShadow = true
-    key.shadow.mapSize.set(1024, 1024)
-    key.shadow.bias = -0.002
+    key.shadow.mapSize.set(matchMedia('(pointer: coarse)').matches ? 1024 : 2048, matchMedia('(pointer: coarse)').matches ? 1024 : 2048)
+    key.shadow.bias = -0.0005
+    key.shadow.normalBias = 0.02
     scene.add(key, key.target)
-    scene.add(new THREE.HemisphereLight(0x2c2429, 0x0a0806, 0.35))
+    // 환경광은 거의 죽인다 — 밝히면 취조실이 사무실이 된다
+    scene.add(new THREE.HemisphereLight(0x18202a, 0x050403, 0.12))
+    /**
+     * 카메라 쪽 필 — **그림자를 완전히 검게 막지 않기 위한 것**이다.
+     * 이게 없으면 얼굴 그늘이 RGB 0 으로 뭉개져 형태 정보가 사라진다.
+     * 차갑게(푸른기) 넣어 따뜻한 키라이트와 대비를 만든다. 키 대비 약 1/15.
+     */
+    const fill = new THREE.DirectionalLight(0x8fa3b5, 0.75)
+    scene.add(fill, fill.target)
 
     /** 전경의 어깨 — 형사(=플레이어)의 것. 화면 아래를 검게 먹어 "내가 그 방에 있다" 를 만든다. */
     const shoulder = new THREE.Mesh(
@@ -165,6 +193,14 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       if (m.isMesh) {
         m.castShadow = true
         m.receiveShadow = true
+        const mm = m.material as import('three').MeshStandardMaterial
+        if (mm?.isMeshStandardMaterial) {
+          // 피부는 방보다 덜 거칠어야 이마·코에 좁은 하이라이트가 생긴다.
+          // 완전 매트면 얼굴이 종이처럼 평평해진다.
+          mm.roughness = 0.56
+          mm.metalness = 0
+          mm.envMapIntensity = 0.2
+        }
       }
     })
     scene.add(model)
@@ -259,22 +295,39 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 얼굴만 크게 잡으면 조명은 좋아도 '방' 이 사라진다 — 두 번 그렇게 만들었다.
      */
     /**
-     * 카메라는 **맞은편 의자 자리**다 — 인물이 바라보는 방향에서 들어온다.
-     * 처음엔 1.5m 였는데 방의 갓등이 바로 머리 위에 걸려 갓이 화면 절반을 덮었다.
-     * 물러서고(2.05m) 옆으로 비껴서(측면 0.34m) 등을 화면 위쪽 구석에 남긴다 —
-     * 레퍼런스처럼 **보이되 가리지 않게**.
+     * ## 프레이밍 — 가슴 위 클로즈업 (아트 디렉터 리뷰 1번)
+     *
+     * 풀숏으로 잡았더니 저해상도 모델의 결함이 전부 드러났다 —
+     * 뭉개진 손가락, 부자연스럽게 곧은 팔, 작은 머리에 긴 상체.
+     * **크롭이 인물 재생성보다 먼저다.** 결함의 절반 이상은 프레이밍으로 감춰진다.
+     *
+     * 시선은 눈이 아니라 **흉골 위쪽**을 겨눈다 — 그래야 머리가 화면 위쪽 43~46% 에 앉는다.
      */
-    const DIST = 2.05
-    const aim = new THREE.Vector3(face.x, face.y - 0.14, face.z)
+    const DIST = 1.35
+    const aim = new THREE.Vector3(face.x, face.y - 0.26, face.z)
     const fwd = new THREE.Vector3(Math.sin(FACE_YAW), 0, Math.cos(FACE_YAW))
     const side = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize()
     camera.position.copy(face)
       .addScaledVector(fwd, DIST)
-      .addScaledVector(side, 0.34)
-    camera.position.y = face.y + 0.10
+      .addScaledVector(side, 0.20)
+    camera.position.y = face.y + 0.06
     camera.lookAt(aim)
-    key.position.copy(LAMP)
-    key.target.position.set(face.x, face.y - 0.15, face.z)
+
+    /**
+     * 키라이트 위치 — **정면에서 뺀다.**
+     * 수평 55°, 위 40° 에서 들어와야 얼굴 한쪽만 밝고 반대쪽에 형태가 남는다.
+     * 정면광이면 이마·코·볼이 같은 밝기가 되어 사진을 세워둔 것처럼 보인다.
+     */
+    const KEY_POS = face.clone()
+      .addScaledVector(side, -0.45)
+      .addScaledVector(fwd, 0.2)
+    KEY_POS.y = face.y + 0.75
+    key.position.copy(KEY_POS)
+    key.target.position.set(face.x, face.y - 0.12, face.z)
+
+    // 필은 카메라 쪽에서 — 그늘이 완전히 검게 막히는 걸 막는다
+    fill.position.copy(camera.position).addScaledVector(side, 0.3)
+    fill.target.position.copy(face)
 
     // 전경 어깨 — 카메라 바로 앞 왼쪽 아래
     {
@@ -367,11 +420,12 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
        * 압박이 오르면 진폭이 커진다 — 방이 아니라 심문이 거칠어지는 것이다.
        */
       const heat0 = Math.min(1, pressure / 100)
-      const swingA = 0.13 + heat0 * 0.12
+      // 진폭을 10분의 1로 줄인다. 얼굴 전체를 왕복해 훑으면 공포가 아니라 게임 이벤트가 된다.
+      const swingA = 0.016 + heat0 * 0.019
       const sx = Math.sin(t * 0.62) * swingA + Math.sin(t * 1.37) * swingA * 0.28
       const sz = Math.cos(t * 0.48) * swingA * 0.5
-      key.position.set(LAMP.x + Math.sin(sx) * 0.7, LAMP.y, LAMP.z + Math.sin(sz) * 0.7)
-      key.target.position.set(face.x + sx * 0.55, face.y - 0.15, face.z)
+      key.position.set(KEY_POS.x + Math.sin(sx) * 0.5, KEY_POS.y, KEY_POS.z + Math.sin(sz) * 0.5)
+      key.target.position.set(face.x + sx * 0.4, face.y - 0.12, face.z)
       const flick = 1 + Math.sin(t * 11.3) * 0.03 + Math.sin(t * 27.7) * 0.015
 
       // 등이 한쪽 끝에 닿을 때 탁자가 삐걱인다 — 소리와 그림이 같은 박자를 탄다
@@ -383,7 +437,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       // 압박이 높으면 조명이 붉게 조여든다 — CSS 분위기 층과 같은 언어
       const heat = Math.min(1, pressure / 100)
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
-      key.intensity = (22 + heat * 8) * flick
+      key.intensity = (14 + heat * 5) * flick
 
       renderer.render(scene, camera)
     }
