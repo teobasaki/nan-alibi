@@ -811,6 +811,14 @@ function coachLine(): string {
   if (!interviewed && !hasEvidence) return '① 다섯 진술을 훑고, 가장 걸리는 사람을 눌러 심문하십시오.'
   if (!hasEvidence) return '② 오른쪽에서 기록을 조회해 진술과 맞춰 보십시오.'
   if (g.foundContradictions.length === 0) return '③ 기록 카드와 진술 카드를 하나씩 눌러 연결하십시오. 무료입니다.'
+  // **후반에만 경고하면 늦다.** 9회 중 8회를 후보 소거와 무관한 곳에 쓰고
+  // 마지막에야 범행 시각 기록을 연 판이 있었다 (자동 리뷰 minor/pacing).
+  const spent = INVESTIGATION_BUDGET - g.investigationsLeft
+  const hasCrimeRecord = CASE.evidence.some((e) => g.cards.includes(e.id) && e.slot === CRIME_SLOT)
+  if (spent >= 3 && !hasCrimeRecord && availableEvidence(g).some((e) => e.slot === CRIME_SLOT)) {
+    return `④ 조사 ${spent}회를 썼지만 ${SLOT_LABEL[CRIME_SLOT]} 기록을 아직 하나도 열지 않았습니다 — ` +
+      `사람을 지우는 건 그 기록뿐입니다. 승패는 범인 적중입니다.`
+  }
   if (g.investigationsLeft <= 2) {
     // 자원이 바닥날 때 **무엇을 포기하는 중인지** 알려준다. 화면에 이미 있는 정보를
     // 합쳐 말할 뿐이지만, 그 합산을 플레이어가 마지막 2회 안에 스스로 하기는 어렵다
