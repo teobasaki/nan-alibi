@@ -23,6 +23,7 @@ import {
   lookupEvidence, presentEvidence, submit, type GameState,
 } from './game'
 import { makeRng, pick, shuffle, type Rng } from './rng'
+import { INVESTIGATION_BUDGET } from '../data/config'
 
 /** 조회 전에 화면에 보이는 정보만 (subjects 없음) */
 export interface VisibleRecord {
@@ -89,12 +90,14 @@ function oddHourLiars(g: GameState): SuspectId[] {
   )]
 }
 
-function finish(g: GameState, seed: number, bot: string, log: string[]): PlayResult {
+function finish(g: GameState, seed: number, bot: string, log: string[], reacted?: Set<SuspectId>): PlayResult {
   const cands = candidatesVisible(g)
-  // 우선순위: ① 후보로 좁혀진 1명 ② 범행시각 밖 모순자 ③ 아무 모순자 ④ 남은 후보
+  // 우선순위: ① 후보 1명으로 확정 ② 증거에 반응한 사람 ③ 범행시각 밖 모순자 ④ 아무 모순자 ⑤ 남은 후보
+  const reactedList = [...(reacted ?? [])].filter((s) => cands.includes(s))
   const odd = oddHourLiars(g).filter((s) => cands.includes(s))
   const flagged = contradictedSuspects(g).filter((s) => cands.includes(s))
-  const guess = cands.length === 1 ? cands[0]! : (odd[0] ?? flagged[0] ?? cands[0] ?? 'S1')
+  const guess = cands.length === 1 ? cands[0]!
+    : (reactedList[0] ?? odd[0] ?? flagged[0] ?? cands[0] ?? 'S1')
   const owned = g.cards.filter((id) => g.case.evidence.some((e) => e.id === id))
   const r = submit(g, {
     culprit: guess,
@@ -108,16 +111,16 @@ function finish(g: GameState, seed: number, bot: string, log: string[]): PlayRes
   )
   return {
     seed, bot, won: r.correct.culprit,
-    actionsUsed: 6 - g.investigationsLeft,
+    actionsUsed: (g.case.evidence.length, INVESTIGATION_BUDGET) - g.investigationsLeft,
     contradictions: g.foundContradictions.length,
     submitted: guess, culprit: g.case.culprit, log,
   }
 }
 
 /** ① 무작위 봇 — 하한선. 운으로 몇 %나 풀리는가 */
-export function randomBot(c: CaseFile, rng: Rng): PlayResult {
+export function randomBot(c: CaseFile, rng: Rng, budget?: number): PlayResult {
   const log: string[] = []
-  let g = createGame(c)
+  let g = createGame(c, budget)
   while (g.investigationsLeft > 0) {
     const recs = visible(g)
     const roll = rng.next()
@@ -143,11 +146,13 @@ export function randomBot(c: CaseFile, rng: Rng): PlayResult {
  *   4) 그 사람에게 그 증거를 들이민다
  *   5) 새로 열린 기록을 조회한다
  */
-export function commonsenseBot(c: CaseFile, rng: Rng): PlayResult {
+export function commonsenseBot(c: CaseFile, rng: Rng, budget?: number): PlayResult {
   const log: string[] = []
-  let g = connectAll(createGame(c))
+  let g = connectAll(createGame(c, budget))
   const interviewed = new Set<SuspectId>()
   const presented = new Set<string>()
+  /** 증거를 들이밀었을 때 실제로 무언가 열린 사람 — 가장 강한 단서 */
+  const reacted = new Set<SuspectId>()
 
   // 같은 장소를 주장한 인원이 많은 순 — 겹치면 둘 중 하나는 거짓이다
   const claimCount = new Map<PlaceId, number>()
@@ -184,19 +189,37 @@ export function commonsenseBot(c: CaseFile, rng: Rng): PlayResult {
       g = connectAll(g); continue
     }
 
-    // 4) 모순이 걸린 사람에게 그 증거를 들이민다
-    const suspectNow = oddHourLiars(g)[0] ?? contradictedSuspects(g)[0]
-    if (suspectNow && interviewed.has(suspectNow)) {
+    // 4) **모순이 걸린 사람들에게 차례로 증거를 들이민다.**
+    //   증거 순서 무작위화 이후 "먼저 걸린 모순 = 범인" 이 사라졌다.
+    //   남은 판별법은 하나뿐이다 — **직접 들이밀고 반응을 본다.**
+    //   무언가 열리면(카드가 늘면) 그 사람이 핵심이고, 아니면 조사 1회를 잃는다.
+    //   이게 이 게임이 의도한 자원 소모다 (ADR 008).
+    const targets = oddHourLiars(g).length ? oddHourLiars(g) : contradictedSuspects(g)
+    let pushed = false
+    // 들이밀 카드는 **범행 직전 시각 기록**을 우선한다.
+    // 범행 시각 알리바이는 "그때 거기 없었다" 일 뿐이고, 사건을 여는 건 접근 흔적이다.
+    for (const t of targets) {
       const evForHim = g.foundContradictions
-        .filter((k) => k.split('|')[1] === suspectNow)
+        .filter((k) => k.split('|')[1] === t)
         .map((k) => k.split('|')[0]!)
-        .find((id) => !presented.has(`${id}|${suspectNow}`))
-      if (evForHim) {
-        presented.add(`${evForHim}|${suspectNow}`)
-        g = presentEvidence(g, evForHim, suspectNow); log.push(`제시 ${evForHim}→${suspectNow}`)
-        g = connectAll(g); continue
-      }
+        .filter((id) => !presented.has(`${id}|${t}`))
+        .sort((a, b) => {
+          const ea = c.evidence.find((e) => e.id === a)!
+          const eb = c.evidence.find((e) => e.id === b)!
+          const rank = (e: typeof ea) => (e.slot === CRIME_SLOT ? 9 : Math.abs(e.slot - CRIME_SLOT))
+          return rank(ea) - rank(eb)
+        })[0]
+      if (!evForHim) continue
+      presented.add(`${evForHim}|${t}`)
+      const before = g.cards.length
+      g = presentEvidence(g, evForHim, t)
+      const yielded = g.cards.length > before
+      if (yielded) reacted.add(t)
+      log.push(`제시 ${evForHim}→${t}${yielded ? ' ★반응' : ' (무반응)'}`)
+      g = connectAll(g); pushed = true
+      break
     }
+    if (pushed) continue
 
     // 5) 새로 열린 기록(선행 조건이 있던 것)이 있으면 최우선
     const unlocked = recs.filter((r) => c.evidence.find((e) => e.id === r.id)!.requires.length > 0)
@@ -256,7 +279,7 @@ export function commonsenseBot(c: CaseFile, rng: Rng): PlayResult {
     if (recs.length) { const r = pick(rng, recs); g = lookupEvidence(g, r.id); log.push(`조회 ${r.id} (탐색)`); g = connectAll(g); continue }
     break
   }
-  return finish(g, c.seed, 'commonsense', log)
+  return finish(g, c.seed, 'commonsense', log, reacted)
 }
 
 /** ③ 완벽 봇 — 상한선. BFS 최적 경로를 그대로 밟는다 */

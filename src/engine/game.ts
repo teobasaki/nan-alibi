@@ -43,14 +43,15 @@ export interface GameState {
   phase: Phase
 }
 
-export function createGame(c: CaseFile): GameState {
+/** @param budget 밸런스 스윕용 오버라이드. 게임은 항상 기본값을 쓴다. */
+export function createGame(c: CaseFile, budget = INVESTIGATION_BUDGET): GameState {
   // 기본 진술: 모든 인물의 **범행 시각** 주장만 무료 공개한다.
   // 나머지 시각은 심문해야 열린다 — 이게 심문에 값을 부여한다.
   const cards = SUSPECTS.map((s) => claimCardId(s, CRIME_SLOT))
   const pressure = Object.fromEntries(SUSPECTS.map((s) => [s, 0])) as Record<SuspectId, number>
   return {
     case: c,
-    investigationsLeft: INVESTIGATION_BUDGET,
+    investigationsLeft: budget,
     cards,
     connections: [],
     foundContradictions: [],

@@ -33,6 +33,7 @@ import { makeRng, pick, randInt, sample, shuffle, type Rng } from './rng'
 const NON_CRIME_PLACES: PlaceId[] = [0, 1, 3, 4]
 
 const APPROACH_PLACE: PlaceId = 1 // 복도 — 범인이 현장 직전에 지나는 곳
+const APPROACH_SLOT: Slot = 1 // 범행 직전 시각
 const ESCAPE_PLACE: PlaceId = 3 // 직원계단 — 범인의 도주로
 
 function otherPlace(rng: Rng, not: PlaceId): PlaceId {
@@ -168,14 +169,20 @@ export function generateCase(seed: number): CaseFile {
     text: '증거 앞에서 무너지며 흘린 진술',
   })
 
-  // 사슬 깊이를 시드마다 다르게 준다. 이게 없으면 모든 사건의 최소 조사 수가 3으로 고정되어
-  // 난이도 분포가 사라진다 (ADR 003).
-  //   'short'   접근물증 → 제시 → 결정적                     (m* 3)
-  //   'witness' 목격자 심문 → 접근물증 → 제시 → 결정적        (m* 4)
-  //   'double'  목격자 심문 → 접근물증 → 제시 → 결정적        (m* 4, 결정적이 증언 2개 요구)
-  const chain = pick(rng, ['short', 'witness', 'double'] as const)
-  const witness = pick(rng, innocents)
+  // 사슬 구조 — **범인 혼자로는 절대 열 수 없다.**
+  //
+  // 초기 설계('short')는 접근물증 → 범인에게 제시 → 결정적 이 전부여서,
+  // 다섯 명 중 범인 한 명만 만나도 이겼다. 나머지 넷과 성향 힌트가 장식이 됐다
+  // (자동 플레이테스트 리뷰 major 지적, ADR 008).
+  //
+  // 이제 모든 변형이 **무고한 목격자의 증언을 최소 1개** 요구한다:
+  //   'gate'      목격자 심문 → 접근물증 → 범인에게 제시 → 결정적            (m* 4)
+  //   'corrob'    접근물증 → 범인에게 제시 → 목격자 심문 → 결정적            (m* 4)
+  //   'deep'      목격자 둘을 심문해야 결정적이 열린다                        (m* 5)
+  const chain = pick(rng, ['gate', 'corrob', 'corrob', 'deep'] as const)
+  const [witness, witness2] = sample(rng, innocents, 2) as [SuspectId, SuspectId]
   const witnessTestimony = `T-${witness}`
+  const witness2Testimony = `T-${witness2}`
 
   // --- 물증 ---
   const evidence: Evidence[] = []
@@ -191,7 +198,8 @@ export function generateCase(seed: number): CaseFile {
     subjects: [culprit],
     exhaustive: true,
     decisive: false,
-    requires: chain === 'short' ? [] : [witnessTestimony],
+    // 'gate' 만 접근물증 자체를 목격자 증언 뒤에 둔다
+    requires: chain === 'gate' ? [witnessTestimony] : [],
   }
   evidence.push(anchorEv)
   presentUnlocks.push({ evidenceId: anchorEv.id, suspectId: culprit, yieldsTestimonyId: slipId })
@@ -205,7 +213,10 @@ export function generateCase(seed: number): CaseFile {
     subjects: [culprit],
     exhaustive: false,   // 카드키는 출입만 증명한다
     decisive: true,
-    requires: chain === 'double' ? [slipId, witnessTestimony] : [slipId],
+    requires:
+      chain === 'gate' ? [slipId]
+      : chain === 'deep' ? [slipId, witnessTestimony, witness2Testimony]
+      : [slipId, witnessTestimony],
   }
   evidence.push(decisive)
 
@@ -247,6 +258,34 @@ export function generateCase(seed: number): CaseFile {
     })
   }
 
+  // ③-b 미끼 — **범행 직전 시각에 무고한 사람의 기록도 넣는다.**
+  //   접근 물증이 항상 "직전 시각 + 범인" 이면 "직전 기록을 열어라, 거기 찍힌 사람이 범인" 이
+  //   구조적 누설이 된다 (봇 승률이 89% 로 튀며 드러났다, ADR 008).
+  //   같은 시각에 무고한 사람도 찍혀 있어야 그 한 수가 판별이 아니라 후보 축소가 된다.
+  //   ⚠️ 미끼는 **거짓말과 짝을 이뤄야 미끼다.** 무고한 사람의 진술과 일치하는 기록을 넣으면
+  //   모순이 안 생기고, "범행시각 밖 모순 = 범인" 이 그대로 100% 성립한다
+  //   (실측: 후보 5명이 남아도 봇이 86% 승리 — 좁히지 않고 찍어서 맞혔다).
+  //   그래서 미끼 대상에게는 접근 시각 거짓말을 강제한다.
+  const decoyCount = 1
+  for (const s of sample(rng, innocents, decoyCount)) {
+    const sus = suspects[s]
+    if (!sus.lieSlots.includes(APPROACH_SLOT)) {
+      sus.claim[APPROACH_SLOT] = otherPlace(rng, sus.truth[APPROACH_SLOT]!)
+      sus.lieSlots.push(APPROACH_SLOT)
+      if (!sus.lieReason) sus.lieReason = pick(rng, SECRETS)
+    }
+    evidence.push({
+      id: evId(),
+      kind: 'cctv',
+      slot: APPROACH_SLOT,
+      place: suspects[s].truth[APPROACH_SLOT]!,
+      subjects: [s],
+      exhaustive: true,
+      decisive: false,
+      requires: [],
+    })
+  }
+
   // ④ 잡음 — 사건과 무관한 시각의 진짜 기록. 조사 횟수를 낭비시키는 함정.
   // **인물당 최대 1건**으로 분산한다. 한 사람에게 몰리면(실측: 8건 중 3건이 동일인)
   // 조회 목록의 절반이 같은 사람의 무의미한 기록이 되어 낭비 확률이 치솟는다.
@@ -265,6 +304,20 @@ export function generateCase(seed: number): CaseFile {
     })
   }
 
+  // ⑤ **순서 섞기 — 생성 순서가 곧 정답 순서였다.**
+  //   접근 물증이 항상 E1 이라 조회 목록의 맨 위였고, 모순도 그것부터 발견됐다.
+  //   "제일 먼저 걸리는 모순 = 범인" 이 성립해, 후보 5명이 남아도 봇이 69% 를 맞혔다 (ADR 008).
+  //   id 까지 다시 매겨 참조를 remap 한다.
+  const shuffled = shuffle(rng, evidence)
+  const idMap = new Map<string, string>()
+  shuffled.forEach((e, i) => idMap.set(e.id, `E${i + 1}`))
+  const remapped: Evidence[] = shuffled.map((e) => ({
+    ...e,
+    id: idMap.get(e.id)!,
+    requires: e.requires.map((r) => idMap.get(r) ?? r),
+  }))
+  const unlocksRemapped = presentUnlocks.map((u) => ({ ...u, evidenceId: idMap.get(u.evidenceId)! }))
+
   return {
     seed,
     title: pick(rng, CASE_TITLES),
@@ -274,9 +327,9 @@ export function generateCase(seed: number): CaseFile {
     motive: pick(rng, MOTIVES),
     method: pick(rng, METHODS),
     suspects,
-    evidence,
+    evidence: remapped,
     testimonies,
-    presentUnlocks,
-    decisiveEvidenceId: decisive.id,
+    presentUnlocks: unlocksRemapped,
+    decisiveEvidenceId: idMap.get(decisive.id)!,
   }
 }

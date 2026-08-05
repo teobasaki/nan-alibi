@@ -80,22 +80,37 @@ describe('조사 예산 (Task 6 — 완료기준 B1·B2)', () => {
 })
 
 describe('해금 사슬 (Task 6)', () => {
-  it('증거 제시로 자백성 진술이 열리고 결정적 증거 조회가 가능해진다', () => {
+  it('★ 결정적 증거는 범인 혼자로 열리지 않는다 — 목격자 증언이 반드시 낀다 (ADR 008)', () => {
+    for (const seed of [5002, 5030, 5031, 5032]) {
+      const g0 = fresh(seed)
+      const decisive = g0.case.evidence.find((e) => e.decisive)!
+      const witnessReqs = decisive.requires.filter((r) => r !== 'T-SLIP')
+      // 결정적 증거의 선행 조건에 **범인의 자백(T-SLIP) 외의 증언**이 최소 1개 있거나,
+      // 앵커 물증 자체가 목격자 증언 뒤에 잠겨 있어야 한다
+      const anchor = g0.case.evidence.find((e) => e.id === g0.case.presentUnlocks[0]!.evidenceId)!
+      expect(witnessReqs.length + anchor.requires.length, `seed ${seed}`).toBeGreaterThan(0)
+    }
+  })
+
+  it('선행 조건을 모두 채우면 결정적 증거가 열린다', () => {
     const g0 = fresh(5002)
     const unlock = g0.case.presentUnlocks[0]!
     const anchor = g0.case.evidence.find((e) => e.id === unlock.evidenceId)!
-    // 앵커에 선행 조건이 있으면 먼저 푼다
+    const decisive = g0.case.evidence.find((e) => e.decisive)!
+
     let g = g0
-    for (const req of anchor.requires) {
-      const owner = SUSPECTS.find((s) => g.case.suspects[s].testimonies.includes(req))!
-      g = interview(g, owner)
+    const need = (id: string) => {
+      const owner = SUSPECTS.find((s) => g.case.suspects[s].testimonies.includes(id))
+      if (owner && !g.cards.includes(id)) g = interview(g, owner)
     }
+    for (const req of anchor.requires) need(req)
     g = lookupEvidence(g, anchor.id)
-    expect(availableEvidence(g).map((e) => e.id)).not.toContain(g.case.decisiveEvidenceId)
+    expect(availableEvidence(g).map((e) => e.id)).not.toContain(decisive.id)
 
     g = presentEvidence(g, anchor.id, unlock.suspectId)
     expect(g.cards).toContain(unlock.yieldsTestimonyId)
-    expect(availableEvidence(g).map((e) => e.id)).toContain(g.case.decisiveEvidenceId)
+    for (const req of decisive.requires) need(req)
+    expect(availableEvidence(g).map((e) => e.id)).toContain(decisive.id)
   })
 
   it('★ 해금 관계가 없어도 제시할 수 있다 — 막으면 버튼 활성화가 정답을 유출한다', () => {
