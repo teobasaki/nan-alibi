@@ -21,7 +21,8 @@
     "gen:portraits": "node scripts/gen-portraits.mjs",
     "pose:chars": "node scripts/pose-all.mjs",
     "gen:mv": "node scripts/multiview2char.mjs",
-    "build:chars": "bash scripts/build-chars.sh"
+    "build:chars": "bash scripts/build-chars.sh",
+    "add:face": "bash scripts/add-face.sh"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260804.1",
