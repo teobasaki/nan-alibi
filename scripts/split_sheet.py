@@ -45,29 +45,53 @@ def trim(img):
     return img.crop(box)
 
 
-def main(sheet_path, slug):
+def main(sheet_path, slug, grid=None, out_dir='public/refs', do_trim=True, count=None):
+    """
+    grid=None 이면 인물 4면(2×2, 시점 이름). grid='3x2' 면 격자를 지정하고
+    파일명은 `<slug>0.png` 부터 번호로 나간다 — 인트로·엔딩 컷에 쓴다.
+    """
     sheet = Image.open(sheet_path).convert('RGB')
     W, H = sheet.size
-    hw, hh = W // 2, H // 2
-    out_dir = Path('public/refs')
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
 
-    print(f'\n▶ {sheet_path} ({W}×{H}) → 4등분 ({hw}×{hh})\n')
-    for name, col, row in CELLS:
-        cell = sheet.crop((col * hw, row * hh, col * hw + hw, row * hh + hh))
-        cell = trim(cell)
-        # 긴 변을 TARGET 으로 — 인물이 작으면 리깅의 자세 추정이 실패한다
+    if grid is None:
+        cols, rows, cells = 2, 2, CELLS
+    else:
+        cols, rows = (int(x) for x in grid.lower().split('x'))
+        cells = [(str(i), i % cols, i // cols) for i in range(cols * rows)]
+        if count:
+            cells = cells[:count]
+
+    cw, ch = W // cols, H // rows
+    print(f'\n▶ {sheet_path} ({W}×{H}) → {cols}×{rows} ({cw}×{ch})\n')
+    for name, col, row in cells:
+        cell = sheet.crop((col * cw, row * ch, col * cw + cw, row * ch + ch))
+        if do_trim:
+            cell = trim(cell)
         scale = TARGET / max(cell.size)
         if scale > 1:
             cell = cell.resize((round(cell.width * scale), round(cell.height * scale)),
                                Image.LANCZOS)
-        out = out_dir / f'{slug}-{name}.png'
+        sep = '-' if grid is None else ''
+        out = out_path / f'{slug}{sep}{name}.png'
         cell.save(out)
         print(f'  {name}: {out} ({cell.width}×{cell.height})')
     print('')
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        raise SystemExit('사용법: python3 scripts/split_sheet.py <시트.png> <slug>')
-    main(sys.argv[1], sys.argv[2])
+    a = sys.argv[1:]
+    if len(a) < 2:
+        raise SystemExit(
+            '사용법:\n'
+            '  인물 4면 : python3 scripts/split_sheet.py <시트.png> <slug>\n'
+            '  컷 시트  : python3 scripts/split_sheet.py <시트.png> "" --grid 3x2 '
+            '--out public/intro --no-trim --count 5')
+    sheet, slug = a[0], a[1]
+    opt = lambda k, d=None: (a[a.index(k) + 1] if k in a else d)
+    main(sheet, slug,
+         grid=opt('--grid'),
+         out_dir=opt('--out', 'public/refs'),
+         do_trim='--no-trim' not in a,
+         count=int(opt('--count', 0)) or None)
