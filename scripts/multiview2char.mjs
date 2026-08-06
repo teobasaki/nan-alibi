@@ -26,6 +26,17 @@ const BASE = 'https://api.meshy.ai/openapi'
 const key = /^MESHY_API_KEY=(.+)$/m.exec(readFileSync('.dev.vars', 'utf-8'))[1].trim().replace(/^["']|["']$/g, '')
 const slug = process.argv[2] ?? 'security'
 const VIEWS = ['front', 'left', 'right', 'back']
+/**
+ * 얼굴 클로즈업 시점. **있으면 함께 넣는다.**
+ *
+ * 왜 필요한가: 전신 한 장에서 얼굴은 키의 1/7.5 밖에 안 된다.
+ * 4면 시트를 쪼개면 거기서 또 1/4 이 되어 **실측 84px** 까지 떨어졌다 —
+ * 화면에서 얼굴이 200px 넘게 나오는데 소스가 84px 이면 확대일 뿐이다.
+ * 머리·어깨만 담은 시트를 따로 받으면 같은 요청 한 번으로 **300px 이상**이 된다.
+ *
+ * 전신은 실루엣·의상·비율을, 얼굴 클로즈업은 이목구비를 담당한다.
+ */
+const FACE_VIEWS = ['face-front', 'face-left', 'face-right', 'face-back']
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const req = async (p, init) => {
@@ -44,13 +55,18 @@ const bal = async () => (await req('/v1/balance')).balance
  * 멀티뷰가 실제로 효과가 있는지 싸게 확인하려면 이 유연성이 필요하다.
  * 최소 둘은 있어야 '멀티' 라고 부를 수 있다.
  */
-const files = VIEWS.map((v) => `public/refs/${slug}-${v}.png`).filter((f) => existsSync(f))
-if (files.length < 2) {
-  console.error(`시점이 ${files.length}개뿐이다. 최소 2개 필요.`)
+const body = VIEWS.map((v) => `public/refs/${slug}-${v}.png`).filter((f) => existsSync(f))
+const face = FACE_VIEWS.map((v) => `public/refs/${slug}-${v}.png`).filter((f) => existsSync(f))
+const files = [...body, ...face]
+if (body.length < 2) {
+  console.error(`전신 시점이 ${body.length}개뿐이다. 최소 2개 필요.`)
   console.error(`public/refs/${slug}-{front,left,right,back}.png — 같은 인물·같은 의상이어야 한다.`)
   process.exit(1)
 }
-console.log(`  사용할 시점: ${files.map((f) => f.match(/-(\w+)\.png$/)[1]).join(', ')}`)
+console.log(`  전신 ${body.length}장 + 얼굴 ${face.length}장 = ${files.length}장`)
+if (!face.length) {
+  console.log('  ⚠️ 얼굴 클로즈업이 없다 — 얼굴 해상도가 84px 수준에 머문다')
+}
 
 const urls = files.map((f) => `data:image/png;base64,${readFileSync(f).toString('base64')}`)
 const start = await bal()
