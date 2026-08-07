@@ -17,3 +17,4 @@ public/characters/*.mv.glb
 public/characters/*.mvrigged.glb
 public/characters/*.mvseated.glb
 public/characters/*.pbr.glb
+assets-src/
