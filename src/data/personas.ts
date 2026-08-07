@@ -19,8 +19,17 @@ export interface Persona {
   avoidance: string
   /** 압박 반응 — 전략을 바꾸는 유일한 요소 */
   pressureResponse: string
-  /** 플레이어에게 힌트로 노출되는 한 줄 (UI 표시용) */
+  /**
+   * 플레이어에게 노출되는 한 줄.
+   *
+   * ⚠️ **공략법이 아니라 관찰 가능한 행동으로 쓴다** (QA 5.9).
+   * "관계를 건드리면 말이 많아진다" 는 시스템이 해답을 알려주는 문장이고,
+   * 인물이 아니라 상호작용 규칙처럼 읽힌다. 무엇을 하면 되는지가 아니라
+   * **이 사람이 어떻게 행동하는지**를 적는다 — 판단은 플레이어의 몫이다.
+   */
   hint: string
+  /** 무너질 때의 자백. 결말 이야기에서 쓴다 — 인물마다 무너지는 방식이 다르다. */
+  confession: string
 }
 
 export const PERSONAS: readonly Persona[] = [
@@ -31,7 +40,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '상대의 자격을 되묻는다 ("그걸 왜 나한테 묻습니까?")',
     avoidance: '자신의 실수나 판단 착오를 절대 인정하지 않는다',
     pressureResponse: '직접 추궁하면 반발하며 입을 닫는다. 체면을 세워주면 오히려 길게 말한다.',
-    hint: '체면을 세워주며 물어야 열린다',
+    hint: '질문을 받으면 먼저 자신의 직함부터 말한다. 실수를 짚으면 대답 대신 그럴 자격이 있느냐고 되묻는다.',
+    confession: '끝까지 부정하다가, 자기 말이 서로 맞지 않는다는 걸 알고는 입을 다물었다.',
   },
   {
     id: 'timid',
@@ -40,7 +50,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '문장 중간에 "저기…", "그러니까…" 를 넣는다',
     avoidance: '단정적인 표현을 쓰지 않는다 ("확실히", "분명히" 를 피한다)',
     pressureResponse: '압박하면 말이 꼬이고 진술이 흔들린다. 안심시키면 정확해진다.',
-    hint: '안심시켜야 진술이 정확해진다',
+    hint: '말끝이 자꾸 흐려진다. 다그치면 기억이 더 흐려지고, 조용히 기다리면 없던 시각까지 떠올린다.',
+    confession: '울먹이며, 그날 밤 자기가 본 것을 처음부터 다시 말했다.',
   },
   {
     id: 'calculating',
@@ -49,7 +60,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '되묻지 않고 사실만 확인한다 ("그게 기록에 있습니까?")',
     avoidance: '추측이나 감정 표현을 하지 않는다',
     pressureResponse: '증거 없는 추궁은 무시한다. 물증을 보여줘야 태도가 바뀐다.',
-    hint: '물증을 먼저 제시해야 인정한다',
+    hint: '묻는 말에만 정확히 답하고 한 마디도 더 붙이지 않는다. 종이를 내밀면 그제야 문장이 길어진다.',
+    confession: '증거의 허점을 하나씩 짚어보다가, 빠져나갈 구멍이 없다는 걸 스스로 인정했다.',
   },
   {
     id: 'emotional',
@@ -58,7 +70,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '다른 사람 이름을 반복해서 부른다',
     avoidance: '피해자 이야기를 담담하게 못 한다 — 화제를 돌린다',
     pressureResponse: '특정 인물을 언급하면 흥분해서 원래 하려던 말보다 많이 흘린다.',
-    hint: '관계를 건드리면 말이 많아진다',
+    hint: '다른 질문에는 짧게 답하지만, 피해자 이야기가 나오면 말을 끊고 언성을 높인다.',
+    confession: '억눌렀던 원망을 쏟아내며, 그럴 수밖에 없었다고 소리쳤다.',
   },
   {
     id: 'loyal',
@@ -67,7 +80,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '"제가 아는 한" 을 자주 붙인다',
     avoidance: '보호 대상에게 불리한 말을 하지 않는다',
     pressureResponse: '자신을 향한 압박에는 버틴다. 보호 대상에게 불리한 증거를 보면 무너진다.',
-    hint: '보호 대상에게 불리한 증거가 열쇠다',
+    hint: '자기 이야기보다 남의 이야기를 먼저 한다. 누군가에게 불리한 말이 나오면 즉시 끼어든다.',
+    confession: '지키려던 사람의 이름이 나오자, 더는 감쌀 수 없다며 고개를 떨궜다.',
   },
   {
     id: 'egocentric',
@@ -76,7 +90,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '"내 입장에서는", "나로서는" 을 앞에 붙인다',
     avoidance: '자기가 못 본 것은 없었던 일로 취급한다 — 남의 행적은 모른다고 답한다',
     pressureResponse: '반박하면 더 강하게 주장한다. 다른 시점의 증거를 대면 흔들린다.',
-    hint: '다른 시점의 기록과 대조해야 한다',
+    hint: '자기 이익에 관한 것만 또렷하게 기억한다. 나머지는 "그건 잘 모르겠다" 로 넘어간다.',
+    confession: '손해를 계산해 보더니, 부인하는 쪽이 더 비싸다는 걸 알고 시인했다.',
   },
   {
     id: 'guilty',
@@ -85,7 +100,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '되묻는 대신 침묵한다',
     avoidance: '핵심 시각을 직접 말하지 않고 주변만 맴돈다',
     pressureResponse: '정면으로 물으면 회피한다. 간접적으로 기억을 유도하면 흘린다.',
-    hint: '간접 질문으로 기억을 유도해야 한다',
+    hint: '묻지 않은 것까지 변명한다. 정작 그 시각을 물으면 화제를 돌린다.',
+    confession: '변명이 바닥나자, 오래 준비해 온 문장처럼 담담하게 털어놓았다.',
   },
   {
     id: 'cynical',
@@ -94,7 +110,8 @@ export const PERSONAS: readonly Persona[] = [
     tic: '질문 자체를 평가한다 ("좋은 질문이네요, 정말로")',
     avoidance: '진심으로 걱정하는 말을 하지 않는다',
     pressureResponse: '압박에 태연하다. 사실관계의 허점을 짚으면 태도가 진지해진다.',
-    hint: '허점을 짚으면 진지해진다',
+    hint: '수사 자체를 비웃는다. 논리의 구멍을 짚으면 그때만 농담을 멈춘다.',
+    confession: '웃음기를 거두고, 어차피 알아낼 거였다는 투로 말했다.',
   },
 ] as const
 

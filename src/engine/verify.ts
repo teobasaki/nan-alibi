@@ -1,3 +1,4 @@
+import type { Statement } from './prompt'
 /**
  * 응답 검증기 — llm-persona-game 스킬 §3 "화이트리스트 3중 방어".
  *
@@ -73,6 +74,22 @@ export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResu
     return { ok: false, reason: 'shape', detail: `tell 값 오류: ${String(r.tell)}` }
   }
 
+  /**
+   * 조서(statement)는 **없어도 통과**시킨다.
+   * 모델이 필드를 빠뜨렸다고 대사까지 버리면 플레이어가 조사 횟수를 잃는다 —
+   * 조서는 편의 기능이고 대사가 본체다. 없으면 빈 조서로 채운다.
+   */
+  const st = (r.statement ?? {}) as Record<string, unknown>
+  const certainty = ['확언', '추정', '기억없음'].includes(String(st.certainty))
+    ? (st.certainty as Statement['certainty']) : '추정'
+  const statement: Statement = {
+    time: typeof st.time === 'string' ? st.time.slice(0, 20) : '',
+    place: typeof st.place === 'string' ? st.place.slice(0, 20) : '',
+    action: typeof st.action === 'string' ? st.action.slice(0, 40) : '',
+    certainty,
+    newInfo: st.newInfo === true,
+  }
+
   const speech = r.speech.trim()
   if (speech.length > MAX_CHARS) {
     return { ok: false, reason: 'too-long', detail: `${speech.length}자 (상한 ${MAX_CHARS})` }
@@ -118,6 +135,7 @@ export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResu
       revealedFactIds: r.revealedFactIds as string[],
       pressureDelta: clampedDelta,
       tell: r.tell as PersonaReply['tell'],
+    statement,
     },
   }
 }
@@ -144,5 +162,6 @@ export function fallbackReply(personaId: string): PersonaReply {
     revealedFactIds: [],
     pressureDelta: 0,
     tell: 'pause',
+    statement: { time: '', place: '', action: '', certainty: '기억없음', newInfo: false },
   }
 }

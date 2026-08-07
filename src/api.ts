@@ -48,7 +48,10 @@ export async function ask(input: AskInput): Promise<AskResult> {
   } catch (e) {
     // 폴백 3층: 네트워크·타임아웃. 게임은 멈추지 않는다.
     return {
-      reply: { speech: '(대답이 없다)', revealedFactIds: [], pressureDelta: 0, tell: 'pause' },
+      reply: {
+        speech: '(대답이 없다)', revealedFactIds: [], pressureDelta: 0, tell: 'pause',
+        statement: { time: '', place: '', action: '', certainty: '기억없음', newInfo: false },
+      },
       fallback: true,
       reason: String(e),
       ms: performance.now() - t0,
