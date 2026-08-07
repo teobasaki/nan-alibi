@@ -48,10 +48,27 @@ const ROOM_URL = (Object.values(
   import.meta.glob('/public/room/room.opt.glb', { eager: true, query: '?url', import: 'default' }),
 )[0] as string ?? '').replace(/^\/public/, '')
 
+/**
+ * 전신 모델과 **흉상**을 파일명으로 구분한다 (`<slug>.bust.opt.glb`).
+ *
+ * 크기로 판별하려다 한 번 당했다 — Meshy 출력은 미터가 아니라 정규화된 단위라
+ * 흉상도 세로 1.9 로 나온다. 그걸 전신으로 보고 1.72m 에 맞췄더니 머리만 거대해졌다.
+ * **추측하지 말고 이름으로 선언한다.**
+ *
+ * 흉상을 쓰는 이유: Meshy 멀티이미지가 **4장까지만** 받아서 전신과 얼굴 중 골라야 한다.
+ * 이 게임의 카메라는 가슴 위를 잡고 테이블이 아래를 가린다 — 다리는 안 보인다.
+ * 리깅(앉은 자세·팔 제스처)을 포기하고 **얼굴 해상도 7배**(84px→580px)를 택했다.
+ */
 const BY_SLUG = new Map<string, string>()
+const IS_BUST = new Set<string>()
 for (const [path, url] of Object.entries(MODELS)) {
-  const name = path.split('/').pop()?.replace(/\.opt\.glb$/, '')
-  if (name) BY_SLUG.set(name, (url as string).replace(/^\/public/, ''))
+  const file = path.split('/').pop() ?? ''
+  const bust = /\.bust\.opt\.glb$/.test(file)
+  const name = file.replace(/\.(bust\.)?opt\.glb$/, '')
+  if (!name) continue
+  // 흉상이 있으면 그것을 쓴다 — 얼굴이 주인공이다
+  if (bust || !BY_SLUG.has(name)) BY_SLUG.set(name, (url as string).replace(/^\/public/, ''))
+  if (bust) IS_BUST.add(name)
 }
 
 export const hasModel = (slug: string): boolean => BY_SLUG.has(slug)
@@ -287,25 +304,48 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 블렌더에서 (x, -z, y) 로 들어온다. 그래서 블렌더 (x, y) → three (x, ·, -y).
      * 여기에 방 배율 1.9 를 곱한다.
      */
-    const SEAT = new THREE.Vector3(0.42 * ROOM_SCALE, 0, 0.03 * ROOM_SCALE)
+    /**
+     * 좌석 — **테이블 건너편**이다.
+     *
+     * 처음엔 좌면 높이 버텍스를 군집화해 "의자 좌표" 라고 쓴 값(x=0.80)을 넣었는데,
+     * 상판 실측 범위가 `x[-1.71, 0.88] · z[-0.55, 0.47]` 이라 **그 좌표는 상판 한가운데**였다.
+     * 인물이 테이블을 뚫고 서 있었고, 흉상에서는 잘린 밑면까지 드러났다.
+     *
+     * 카메라는 -X 쪽에서 들어오므로 인물은 상판 최대 x(0.88)보다 **더 뒤**에 앉아야
+     * 테이블이 둘 사이에 놓인다. 여유를 둬 1.18 로 잡는다.
+     */
+    const SEAT = new THREE.Vector3(1.18, 0, -0.04)
     /** 용의자는 -X 쪽(맞은편 의자)을 본다. 카메라도 그 방향에서 들어온다. */
     const FACE_YAW = -Math.PI / 2
     const LAMP = new THREE.Vector3(-0.2 * ROOM_SCALE, 1.62, 0.02 * ROOM_SCALE)
 
+    const bust = IS_BUST.has(slug)
     const box = new THREE.Box3().setFromObject(model)
     const size = box.getSize(new THREE.Vector3())
-    const scale = size.y > 1.55 ? 1.72 / size.y : 1   // 서 있는 모델만 정규화
+    /**
+     * 흉상은 머리+어깨+가슴 윗부분이라 실제 세로가 약 0.66m 다.
+     * 전신 정규화(1.72m)를 적용하면 머리가 거대해진다 — 실제로 그렇게 만든 적이 있다.
+     */
+    const scale = bust ? 0.66 / (size.y || 1) : (size.y > 1.55 ? 1.72 / size.y : 1)
     model.scale.setScalar(scale)
     const box2 = new THREE.Box3().setFromObject(model)
-    const height = box2.max.y - box2.min.y
-    if (height < 1.15) {
-      // **흉상이다.** 이미지→3D 는 원본 사진이 흉상이면 흉상을 준다(그래서 리깅도 안 된다).
-      // 다리가 없으니 바닥 기준으로 놓으면 공중에 뜬다. 테이블 뒤 '앉은 사람의 가슴' 높이에 맞춘다.
-      // 이 구도에서는 다리가 보이지 않으므로 없어도 성립한다 — 테이블이 가려 준다.
-      model.position.y += 1.42 - box2.max.y
+    if (bust) {
+      /**
+       * 흉상 꼭대기를 앉은 사람의 정수리(실측 1.36m)에 맞춘다.
+       * 흉상 세로가 0.66m 이므로 잘린 밑면은 0.70m — 테이블 상판(0.74m)보다 아래다.
+       * **단면이 테이블에 가려진다.** 몸통이 없어도 성립하는 이유가 이것이다.
+       */
+      model.position.y += 1.36 - box2.max.y
     } else {
       model.position.y -= box2.min.y
     }
+    /**
+     * 방향 — **상수 대신 계산한다.**
+     * 전신 모델은 블렌더를 거치며 축이 바뀌고, 흉상은 Meshy 원본 그대로라
+     * 둘의 기본 방향이 다르다. 상수 하나로 맞추려다 흉상이 옆을 봤다.
+     * 카메라가 앉을 방향(FACE_YAW)을 그대로 바라보게 하고, 흉상은 기본 정면이
+     * +Z 라는 실측(코 방향 측정)에 따라 같은 각을 준다.
+     */
     model.rotation.y = FACE_YAW
     model.updateMatrixWorld(true)
     const box3 = new THREE.Box3().setFromObject(model)
