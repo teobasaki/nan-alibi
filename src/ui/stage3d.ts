@@ -320,10 +320,12 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * | 테이블 상판 | **0.76m** | x[-0.65, 0.87] · z[-0.51, 0.43] |
      * | 갓등 | 1.57~1.65m | 중심 (0.05, -0.02) |
      *
-     * 좌석은 상판 안쪽 끝(three z = -0.51)보다 **더 뒤**여야 테이블이 사이에 놓인다.
-     * 블렌더 y=0.78 → three z=-0.78.
+     * 좌석은 상판 안쪽 끝(three z=-0.51)에 **살짝 걸쳐야** 한다.
+     * z=-0.78 로 뒀더니 0.27m 떨어져 테이블과 인물 사이에 빈 공간이 생겼다 —
+     * 가려지는 게 아니라 그냥 뒤에 서 있는 그림이었다.
+     * -0.62 면 몸통 앞면(z=-0.43)이 상판과 겹쳐 **테이블이 실제로 가린다.**
      */
-    const SEAT = new THREE.Vector3(0.10, 0, -0.78)
+    const SEAT = new THREE.Vector3(0.10, 0, -0.62)
     /**
      * 용의자는 **+Z(테이블 이쪽)** 를 본다. 카메라도 거기서 들어온다.
      * 흉상의 기본 정면이 +Z 라는 실측(블렌더 렌더로 확인)에 맞춘 값이다.
@@ -428,8 +430,9 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      *
      * 시선은 눈이 아니라 **흉골 위쪽**을 겨눈다 — 그래야 머리가 화면 위쪽 43~46% 에 앉는다.
      */
-    const DIST = 1.35
-    const aim = new THREE.Vector3(face.x, face.y - 0.26, face.z)
+    /** 거리·높이는 블렌더에서 방·인물·카메라를 함께 놓고 렌더해 확정했다. */
+    const DIST = 1.15
+    const aim = new THREE.Vector3(face.x, face.y - 0.16, face.z)
     const fwd = new THREE.Vector3(Math.sin(FACE_YAW), 0, Math.cos(FACE_YAW))
     const side = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize()
     camera.position.copy(face)
