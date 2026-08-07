@@ -20,27 +20,33 @@ from mathutils import Euler, Vector
 R = math.radians
 
 # 역할 → 뼈 이름 패턴. 앞에 오는 패턴이 우선한다.
+#
+# 지금까지 만난 규약 셋:
+#   Meshy 오토리깅       : Hips, LeftUpLeg, LeftLeg, LeftArm …
+#   Sketchfab(carla)     : hip_02, upperleg_l_074, lowerleg_l_075 …
+#   Character Creator    : CC_Base_Hip, CC_Base_L_Thigh, CC_Base_L_Calf …
+# 규약마다 이름이 다르므로 **정확한 이름 대신 패턴**으로 찾는다.
 PATTERNS = {
-    'hips':      [r'^hips?$', r'^hip[_\d]', r'^pelvis'],
-    'spine':     [r'^spine[_\d]*0?1', r'^spine$'],
-    'chest':     [r'^spine[_\d]*0?3', r'^spine[_\d]*0?2', r'^chest'],
-    'neck':      [r'^neck'],
-    'head':      [r'^head(?![_\d]*end)'],
-    'jaw':       [r'^jaw(?![_\d]*end)'],
-    'l_upleg':   [r'^upperleg[_\d]*l\b', r'^l.*upleg', r'^leftupleg'],
-    'r_upleg':   [r'^upperleg[_\d]*r\b', r'^r.*upleg', r'^rightupleg'],
-    'l_leg':     [r'^lowerleg[_\d]*l\b', r'^leftleg'],
-    'r_leg':     [r'^lowerleg[_\d]*r\b', r'^rightleg'],
-    'l_foot':    [r'^foot[_\d]*l\b', r'^leftfoot'],
-    'r_foot':    [r'^foot[_\d]*r\b', r'^rightfoot'],
-    'l_shoulder':[r'^shoulder[_\d]*l\b', r'^leftshoulder', r'^clavicle[_\d]*l'],
-    'r_shoulder':[r'^shoulder[_\d]*r\b', r'^rightshoulder', r'^clavicle[_\d]*r'],
-    'l_arm':     [r'^upperarm[_\d]*l\b', r'^leftarm'],
-    'r_arm':     [r'^upperarm[_\d]*r\b', r'^rightarm'],
-    'l_fore':    [r'^lowerarm[_\d]*l\b', r'^leftforearm'],
-    'r_fore':    [r'^lowerarm[_\d]*r\b', r'^rightforearm'],
-    'l_hand':    [r'^hand[_\d]*l\b', r'^lefthand'],
-    'r_hand':    [r'^hand[_\d]*r\b', r'^righthand'],
+    'hips':      [r'^hips?$', r'^hip[_\d]', r'(?:cc_base_)?hip$', r'^pelvis'],
+    'spine':     [r'^spine[_\d]*0?1', r'^spine$', r'(?:cc_base_)?waist$', r'(?:cc_base_)?spine0?1$'],
+    'chest':     [r'^spine[_\d]*0?3', r'^spine[_\d]*0?2', r'^chest', r'(?:cc_base_)?spine0?2$'],
+    'neck':      [r'^neck', r'(?:cc_base_)?neck'],
+    'head':      [r'^head(?![_\d]*end)', r'(?:cc_base_)?head$'],
+    'jaw':       [r'^jaw(?![_\d]*end)', r'(?:cc_base_)?jawroot$', r'jaw'],
+    'l_upleg':   [r'^upperleg[_\d]*l\b', r'^leftupleg', r'l_thigh$', r'^l.*upleg'],
+    'r_upleg':   [r'^upperleg[_\d]*r\b', r'^rightupleg', r'r_thigh$', r'^r.*upleg'],
+    'l_leg':     [r'^lowerleg[_\d]*l\b', r'^leftleg', r'l_calf$'],
+    'r_leg':     [r'^lowerleg[_\d]*r\b', r'^rightleg', r'r_calf$'],
+    'l_foot':    [r'^foot[_\d]*l\b', r'^leftfoot', r'l_foot$'],
+    'r_foot':    [r'^foot[_\d]*r\b', r'^rightfoot', r'r_foot$'],
+    'l_shoulder':[r'^shoulder[_\d]*l\b', r'^leftshoulder', r'l_clavicle$', r'^clavicle[_\d]*l'],
+    'r_shoulder':[r'^shoulder[_\d]*r\b', r'^rightshoulder', r'r_clavicle$', r'^clavicle[_\d]*r'],
+    'l_arm':     [r'^upperarm[_\d]*l\b', r'^leftarm', r'l_upperarm$'],
+    'r_arm':     [r'^upperarm[_\d]*r\b', r'^rightarm', r'r_upperarm$'],
+    'l_fore':    [r'^lowerarm[_\d]*l\b', r'^leftforearm', r'l_forearm$'],
+    'r_fore':    [r'^lowerarm[_\d]*r\b', r'^rightforearm', r'r_forearm$'],
+    'l_hand':    [r'^hand[_\d]*l\b', r'^lefthand', r'l_hand$'],
+    'r_hand':    [r'^hand[_\d]*r\b', r'^righthand', r'r_hand$'],
 }
 
 
@@ -53,7 +59,8 @@ def map_bones(arm):
             hit = None
             for n in names:
                 # 접미 번호를 떼고 비교한다 — upperleg_l_074 → upperleg_l
-                stripped = re.sub(r'[_\d]+$', '', n)
+                # `CC_Base_L_Thigh_04` → `CC_Base_L_Thigh`, `upperleg_l_074` → `upperleg_l`
+                stripped = re.sub(r'_\d+$', '', n)
                 if re.search(pat, stripped, re.I) or re.search(pat, n, re.I):
                     hit = n
                     break
@@ -231,28 +238,38 @@ def main(src, dst, target_h=1.72):
 
     # ── 크기를 미터로 맞춘다 (carla 는 cm 단위라 세로 174 로 나온다) ──
     dg = bpy.context.evaluated_depsgraph_get()
-    ev = body.evaluated_get(dg)
-    zs = [(body.matrix_world @ v.co).z for v in ev.data.vertices]
+    zs = [(m.matrix_world @ v.co).z
+          for m in meshes
+          for v in m.evaluated_get(dg).data.vertices]
     h = max(zs) - min(zs)
-    root = arm
-    while root.parent:
-        root = root.parent
+    """
+    크기·위치는 **모든 루트에** 적용한다.
+    기성 모델은 옷·머리·신발이 각각 별도 메시이고 루트도 따로다.
+    본체 하나만 스케일했더니 나머지가 원래 크기로 남아 폭 6m 짜리가 나왔다.
+    """
+    roots = [o for o in bpy.data.objects if o.parent is None]
     k = (target_h * 0.79) / h        # 앉은키는 선 키의 약 79%
-    root.scale = (root.scale.x * k, root.scale.y * k, root.scale.z * k)
+    for r in roots:
+        r.scale = (r.scale.x * k, r.scale.y * k, r.scale.z * k)
     bpy.context.view_layer.update()
 
     # **발을 바닥에 맞춘다.**
     # 엉덩이를 좌면(0.455m)에 맞췄더니 발이 바닥 아래 30cm 로 내려갔다 —
     # 리그마다 힙 본의 위치가 달라 힙 기준은 못 믿는다. 최저점이 확실하다.
-    dg = bpy.context.evaluated_depsgraph_get()
-    ev = body.evaluated_get(dg)
-    lo = min((body.matrix_world @ v.co).z for v in ev.data.vertices)
-    root.location.z -= lo
+    # 최저점은 **모든 메시**에서 잰다 — 신발이 본체보다 아래다
+    dg2 = bpy.context.evaluated_depsgraph_get()
+    lo = min((m.matrix_world @ v.co).z
+             for m in meshes
+             for v in m.evaluated_get(dg2).data.vertices)
+    for r in roots:
+        r.location.z -= lo
     bpy.context.view_layer.update()
 
-    ev = body.evaluated_get(bpy.context.evaluated_depsgraph_get())
-    zs = [(body.matrix_world @ v.co).z for v in ev.data.vertices]
-    print(f'  앉은키 {max(zs) - min(zs):.2f}m · 바닥 {min(zs):.2f} · 정수리 {max(zs):.2f}')
+    dg3 = bpy.context.evaluated_depsgraph_get()
+    pts = [m.matrix_world @ v.co for m in meshes for v in m.evaluated_get(dg3).data.vertices]
+    zs = [p.z for p in pts]; ys = [p.y for p in pts]; xs = [p.x for p in pts]
+    print(f'  앉은키 {max(zs)-min(zs):.2f}m · 폭 {max(xs)-min(xs):.2f} · 깊이 {max(ys)-min(ys):.2f} '
+          f'· 바닥 {min(zs):.2f}')
 
     bpy.ops.object.select_all(action='DESELECT')
     for o in bpy.data.objects:
