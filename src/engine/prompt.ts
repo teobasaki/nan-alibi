@@ -136,14 +136,50 @@ export const RESPONSE_SCHEMA = {
     },
     pressureDelta: { type: 'integer', description: '동요 변화량 -20~40' },
     tell: { type: 'string', enum: ['none', 'gaze', 'pause', 'stammer', 'anger'] },
+    /**
+     * ## 대사와 **조서**를 분리한다
+     *
+     * QA 지적(5.3): "AI 가 자연스럽게 말해도 그 답변이 추리에 쓸 근거로 남지 않는다."
+     * 플레이어가 대사에서 시간·장소·행동·확신도를 직접 뽑아내야 했고,
+     * 그래서 대화는 풍부한데 사건은 진전되지 않는 느낌이 생겼다.
+     *
+     * **AI 는 인물을 연기하고, 시스템은 그 말을 검증 가능한 조서로 옮긴다.**
+     * 같은 호출에서 둘을 함께 받으면 추가 지연이 0 이다.
+     */
+    statement: {
+      type: 'object',
+      properties: {
+        time: { type: 'string', description: '이번 답변이 가리키는 시각. 모르면 빈 문자열.' },
+        place: { type: 'string', description: '주장한 장소. 없으면 빈 문자열.' },
+        action: { type: 'string', description: '무엇을 했다고 말했는가. 20자 이내.' },
+        certainty: {
+          type: 'string',
+          enum: ['확언', '추정', '기억없음'],
+          description: '본인이 얼마나 확신하는가',
+        },
+        newInfo: { type: 'boolean', description: '이전 답변에 없던 사실을 말했는가' },
+      },
+      required: ['time', 'place', 'action', 'certainty', 'newInfo'],
+      additionalProperties: false,
+    },
   },
-  required: ['speech', 'revealedFactIds', 'pressureDelta', 'tell'],
+  required: ['speech', 'revealedFactIds', 'pressureDelta', 'tell', 'statement'],
   additionalProperties: false,
 } as const
+
+/** 대사에서 뽑아낸 **조서 한 줄**. 플레이어의 기억 대신 시스템이 든다. */
+export interface Statement {
+  time: string
+  place: string
+  action: string
+  certainty: '확언' | '추정' | '기억없음'
+  newInfo: boolean
+}
 
 export interface PersonaReply {
   speech: string
   revealedFactIds: string[]
   pressureDelta: number
   tell: 'none' | 'gaze' | 'pause' | 'stammer' | 'anger'
+  statement: Statement
 }

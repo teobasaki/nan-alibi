@@ -18,6 +18,7 @@ import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
 import { playIntro } from './ui/intro'
 import { playOutro } from './ui/outro'
+import type { Statement } from './engine/prompt'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
@@ -32,14 +33,32 @@ import {
 } from './types'
 import { INVESTIGATION_BUDGET, METHODS } from './data/config'
 
-const PRESETS = [
-  '사건 시간에 어디 계셨습니까?',
-  '피해자와 어떤 관계였습니까?',
-  '그걸 증명해 줄 사람이 있습니까?',
-  '왜 그 사실을 먼저 말하지 않았습니까?',
+/**
+ * 정형 질문 — **무엇을 확인하려는 질문인지 함께 적는다** (QA 5.2).
+ *
+ * "질문이 적절한지 판단할 기준이 없다" 는 것이 이 게임의 가장 큰 마찰이었다.
+ * 그 상태에서는 추리 능력이 아니라 **AI 에게 질문을 잘 쓰는 능력**이 중요해진다.
+ * 목적을 명시하면 플레이어는 문장을 고민하는 대신 **무엇을 검증할지**를 고른다.
+ */
+const PRESETS: readonly { q: string; why: string }[] = [
+  { q: '사건 시간에 어디 계셨습니까?', why: '범행 시각의 위치를 받아낸다' },
+  { q: '피해자와 어떤 관계였습니까?', why: '동기의 유무를 짚는다' },
+  { q: '그걸 증명해 줄 사람이 있습니까?', why: '알리바이의 뒷받침을 확인한다' },
+  { q: '왜 그 사실을 먼저 말하지 않았습니까?', why: '숨긴 것이 있는지 압박한다' },
 ]
 
-interface Chat { q: string; a: string; fallback: boolean; tell: string }
+interface Chat {
+  q: string
+  a: string
+  fallback: boolean
+  tell: string
+  /**
+   * 대사에서 뽑아낸 조서. **기록 노동은 시스템이 진다** (QA 5.3/5.4).
+   * 플레이어가 긴 답변에서 시간·장소·행동을 직접 추출하고 있었고,
+   * 그래서 "대화는 풍부한데 사건이 진전되지 않는" 느낌이 생겼다.
+   */
+  st?: Statement
+}
 
 interface UI {
   game: GameState
@@ -338,6 +357,18 @@ function stage(): HTMLElement {
     const a = h('div', `bubble a${c.fallback ? ' fallback' : ''}`)
     a.appendChild(h('div', undefined, c.a))
     if (c.tell !== 'none') a.appendChild(h('div', 'tell', tellLabel(c.tell)))
+    /**
+     * **조서** — 대사와 분리해 한 줄로 남긴다.
+     * 무엇을 새로 말했는지가 한눈에 보여야 조사 한 번의 값이 읽힌다.
+     */
+    if (c.st && (c.st.time || c.st.place || c.st.action)) {
+      const parts = [c.st.time, c.st.place, c.st.action].filter(Boolean)
+      const rec = h('div', `stmt${c.st.newInfo ? ' fresh' : ''}`)
+      rec.appendChild(h('span', 'stmt-k', c.st.newInfo ? '새 진술' : '기존 진술'))
+      rec.appendChild(h('span', 'stmt-v', parts.join(' · ')))
+      if (c.st.certainty !== '확언') rec.appendChild(h('span', 'stmt-c', c.st.certainty))
+      a.appendChild(rec)
+    }
     log.appendChild(a)
   }
   if (ui.busy) log.appendChild(h('div', 'bubble a', '…'))
@@ -461,8 +492,11 @@ function askBox(s: SuspectId): HTMLElement {
   input.placeholder = '직접 질문을 입력하십시오'
   input.maxLength = 200
 
-  for (const q of PRESETS) {
-    const c = h('button', 'chip', q) as HTMLButtonElement
+  for (const { q, why } of PRESETS) {
+    // 질문 아래 목적을 함께 적는다 — 무엇을 확인하려는 질문인지 알고 눌러야 한다
+    const c = h('button', 'chip') as HTMLButtonElement
+    c.appendChild(h('span', 'chip-q', q))
+    c.appendChild(h('span', 'chip-why', why))
     c.onclick = () => { input.value = q; input.focus() }
     chips.appendChild(c)
   }
@@ -647,7 +681,7 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   // 폴백이면 조사 횟수를 돌려준다 — AI 실패의 대가를 플레이어가 치르지 않는다
   if (r.fallback) ui.game = before
 
-  ui.chats[s] = [...ui.chats[s]!, { q, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell }]
+  ui.chats[s] = [...ui.chats[s]!, { q, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement }]
   ui.busy = false
   render()
   animateLast(r.reply.speech)
@@ -683,7 +717,7 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   ui.chats[s] = [...ui.chats[s]!, {
     q: `[증거 제시] ${cardSummary(CASE, evId)}`,
     a: r.reply.speech + unlockNote(before, advanced, opened),
-    fallback: r.fallback, tell: r.reply.tell,
+    fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement,
   }]
   ui.busy = false
   ui.selected = []
@@ -839,14 +873,103 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   void playOutro(CASE, culprit, r.correct.culprit).then(() => renderResultSheet(r, culprit))
 }
 
+/**
+ * 오답 진단 — **범인·정답 증거·수단은 절대 말하지 않는다.**
+ * 대신 "어느 시간대가 비었는가 · 누가 말을 바꿨는가 · 무엇을 확인 안 했는가" 를 준다.
+ * 다음 수사의 방향은 주되 답은 주지 않는다 (QA 5.7).
+ */
+function diagnosis(): HTMLElement {
+  const box = h('div', 'diag')
+  box.appendChild(h('h3', undefined, '수사 진단'))
+  const held = new Set(ui.game.cards)
+  const lines: string[] = []
+
+  // ① 범행 시각 기록을 얼마나 열었나 — 사람을 지우는 유일한 수단이다
+  const crimeRecs = CASE.evidence.filter((e) => e.slot === CRIME_SLOT)
+  const openedCrime = crimeRecs.filter((e) => held.has(e.id)).length
+  if (openedCrime < crimeRecs.length) {
+    lines.push(`${SLOT_LABEL[CRIME_SLOT]} 기록 ${crimeRecs.length}건 중 ${openedCrime}건만 확인했습니다. ` +
+      '사람을 지우는 건 이 시간대의 기록뿐입니다.')
+  }
+
+  // ② 아무 질문도 안 한 사람이 있나
+  const untouched = SUSPECTS.filter((x) => (ui.chats[x]?.length ?? 0) === 0)
+  if (untouched.length) {
+    lines.push(`${untouched.length}명에게는 한 번도 묻지 않았습니다 — ` +
+      untouched.map((x) => CASE.suspects[x].job).join(' · ') + '.')
+  }
+
+  // ③ 말을 바꾼 사람이 있었나 (이름은 밝히지 않는다)
+  let changed = 0
+  for (const x of SUSPECTS) {
+    const places = new Set((ui.chats[x] ?? []).map((c) => c.st?.place).filter(Boolean))
+    if (places.size > 1) changed += 1
+  }
+  if (changed) {
+    lines.push(`진술 중 장소가 바뀐 사람이 ${changed}명 있었습니다. 조서를 다시 훑어보십시오.`)
+  }
+
+  // ④ 인장(모순)을 하나도 못 찾았나
+  if (ui.game.foundContradictions.length === 0) {
+    lines.push('찾아낸 모순이 없습니다 — 기록을 손에 쥔 채 같은 시각을 다시 물으면 인장이 찍힙니다.')
+  }
+
+  if (!lines.length) {
+    lines.push('놓친 절차는 없습니다. 근거는 모였지만 해석이 갈린 판입니다 — 같은 기록을 다른 순서로 읽어 보십시오.')
+  }
+  for (const t of lines) box.appendChild(h('div', 'hintline', t))
+  box.appendChild(h('div', 'diag-note', '진범은 밝히지 않습니다. 같은 사건번호로 다시 수사할 수 있습니다.'))
+  return box
+}
+
+/**
+ * 정답 결말 — **사실 요약이 아니라 이야기**로 닫는다 (QA 5.8).
+ * "범인은 돈 때문에 도구로 죽였다" 는 범죄 사실이지 사건이 아니다.
+ * 발단·전개·절정·결말을 페르소나에 맞춘 문장으로 잇는다.
+ */
+function storyBlock(): HTMLElement {
+  const c = CASE.suspects[CASE.culprit]
+  const persona = personaById(c.personaId)
+  const d = CASE.evidence.find((e) => e.decisive)!
+  const box = h('div', 'story')
+  box.appendChild(h('h3', undefined, '사건의 전말'))
+
+  const beats: [string, string][] = [
+    // 조사는 josa() 로 붙인다 — 이름이 매 판 바뀌므로 '와(과)' 같은 회피 표기는 쓰지 않는다
+    ['발단', `${josa(c.name, '은/는')} ${josa(CASE.victim.name, '과/와')} ${c.relation}. ` +
+             `${josa(CASE.motive, '이/가')} 둘 사이에 남아 있었다.`],
+    ['전개', `${SLOT_LABEL[CRIME_SLOT]}, ${CASE.venue.room}. 그 시각 그 층에 있었던 사람은 하나뿐이었다.`],
+    // 수단은 사건마다 '준비된 것' 일 수도 있어 단정하지 않는다 — 도구 이름만 놓는다
+    ['절정', `그리고 ${josa(CASE.method, '이/가')} 쓰였다.`],
+    ['결말', `${josa(d.keyLabel ?? '그 기록', '이/가')} 남았다. ${persona.confession}`],
+  ]
+  for (const [k, t] of beats) {
+    const row = h('div', 'beat')
+    row.appendChild(h('span', 'beat-k', k))
+    row.appendChild(h('span', 'beat-t', t))
+    box.appendChild(row)
+  }
+  return box
+}
+
 function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): void {
   const ov = h('div', 'overlay')
   const sheet = h('div', 'sheet casefile')
   // 붉은 인장은 '확정' 의 색이다. 못 맞혔으면 색을 빼야 한다 — 색이 곧 판정이다.
   play(r.correct.culprit ? 'solved' : 'filed')
   sheet.appendChild(fileHeader(r.correct.culprit ? '사건\n해결' : '미제\n편철', !r.correct.culprit))
-  sheet.appendChild(h('div', `verdict ${r.correct.culprit ? 'ok' : 'no'}`,
-    r.correct.culprit ? '범인을 맞혔습니다.' : '범인이 아닙니다.'))
+  /**
+   * **판정을 네 등급으로 나눠 이름을 준다** (QA 5.6).
+   * "범인을 맞혔습니다 / 아닙니다" 두 칸뿐이면, 범인을 찾고도 입증에 실패한 판과
+   * 아무것도 못 한 판이 같은 문장으로 끝난다. 핵심 추리와 입증을 갈라서 부른다.
+   */
+  const proved = r.correct.decisive && !r.methodGuessed
+  const grade = r.correct.culprit
+    ? (proved ? { t: '사건 완전 해결', k: 'ok' } : { t: '범인은 찾았으나 입증이 부족합니다', k: 'ok half' })
+    : (r.correct.decisive || r.correct.method
+        ? { t: '방향은 옳았으나 대상이 틀렸습니다', k: 'no half' }
+        : { t: '수사 실패', k: 'no' })
+  sheet.appendChild(h('div', `verdict ${grade.k}`, grade.t))
 
   /**
    * **맞힌 것과 좁힌 것은 다르다.**
@@ -869,41 +992,66 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
       `제출 시점에 기록으로 좁혀진 후보는 ${endCands.length}명이었습니다. ` +
       `사람을 지우는 건 ${SLOT_LABEL[CRIME_SLOT]} 기록뿐입니다 — 진술과 인장은 의심의 근거이지 소거가 아닙니다.`))
   }
-  sheet.appendChild(h('p', undefined,
-    `진범은 ${CASE.suspects[CASE.culprit].name}(${CASE.suspects[CASE.culprit].job}). 동기는 ${CASE.motive}, 수단은 ${CASE.method}.`))
-
-  if (r.methodGuessed) {
-    const d = CASE.evidence.find((e) => e.decisive)!
-    sheet.appendChild(h('div', 'hintline',
-      `수단은 맞았지만 점수는 없다 — 근거가 되는 카드(${d.keyLabel})를 확보하지 못한 채 찍은 것이기 때문이다.`))
-  } else if (!r.correct.method) {
-    const d = CASE.evidence.find((e) => e.decisive)!
-    sheet.appendChild(h('div', 'hintline',
-      ui.game.cards.includes(d.id)
-        ? `수단은 확보한 결정적 증거 카드의 "발급 구분" 칸에 적혀 있었다 — ${d.keyLabel}.`
-        : `수단은 결정적 증거 카드의 "발급 구분" 칸(${d.keyLabel})에서 읽어낼 수 있었다. 그 카드를 끝내 확보하지 못했다.`))
+  /**
+   * ## 오답이면 **진범을 밝히지 않는다** (QA 5.7)
+   *
+   * "오답은 정답 공개 화면이 아니라 재수사를 위한 진단 화면이어야 한다."
+   * 즉시 범인을 공개하면 같은 사건에 다시 도전할 이유가 사라진다.
+   * 대신 **무엇을 놓쳤는지**를 정답을 노출하지 않고 짚어 준다.
+   */
+  if (r.correct.culprit) {
+    sheet.appendChild(storyBlock())
+  } else {
+    sheet.appendChild(diagnosis())
   }
 
-  if (!r.correct.decisive) {
-    const d = CASE.evidence.find((e) => e.decisive)!
-    const had = ui.game.cards.includes(d.id)
-    sheet.appendChild(h('div', 'hintline',
-      had
-        ? `결정적 증거는 ${d.id}(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]})였다. 손에 쥐고도 고르지 못했다.`
-        : `결정적 증거(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]} 기록)를 끝내 확보하지 못했다. ` +
-          `그것은 범인의 자백과 무고한 목격자의 증언이 모두 모여야 열린다.`))
+  /**
+   * 수단·결정적 증거 해설은 **범인을 맞혔을 때만** 편다 (QA 5.7).
+   * 이 문장들은 결정적 증거의 이름·시각·장소를 그대로 알려준다 —
+   * 오답에 띄우면 진단 화면을 조심스럽게 써 놓고 옆문으로 정답을 흘리는 셈이다.
+   */
+  if (r.correct.culprit) {
+    if (r.methodGuessed) {
+      const d = CASE.evidence.find((e) => e.decisive)!
+      sheet.appendChild(h('div', 'hintline',
+        `수단은 맞았지만 점수는 없다 — 근거가 되는 카드(${d.keyLabel})를 확보하지 못한 채 찍은 것이기 때문이다.`))
+    } else if (!r.correct.method) {
+      const d = CASE.evidence.find((e) => e.decisive)!
+      sheet.appendChild(h('div', 'hintline',
+        ui.game.cards.includes(d.id)
+          ? `수단은 확보한 결정적 증거 카드의 "발급 구분" 칸에 적혀 있었다 — ${d.keyLabel}.`
+          : `수단은 결정적 증거 카드의 "발급 구분" 칸(${d.keyLabel})에서 읽어낼 수 있었다. 그 카드를 끝내 확보하지 못했다.`))
+    }
+
+    if (!r.correct.decisive) {
+      const d = CASE.evidence.find((e) => e.decisive)!
+      const had = ui.game.cards.includes(d.id)
+      sheet.appendChild(h('div', 'hintline',
+        had
+          ? `결정적 증거는 ${d.id}(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]})였다. 손에 쥐고도 고르지 못했다.`
+          : `결정적 증거(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]} 기록)를 끝내 확보하지 못했다. ` +
+            `그것은 범인의 자백과 무고한 목격자의 증언이 모두 모여야 열린다.`))
+    }
   }
 
-  sheet.appendChild(h('h2', undefined, '사건 재구성'))
-  const tl = h('ul', 'timeline')
-  const k = CASE.suspects[CASE.culprit]
-  k.truth.forEach((place, i) => {
-    const li = h('li', i === CRIME_SLOT ? 'crime' : undefined,
-      `${SLOT_LABEL[i as Slot]}  ${k.name} — ${PLACE_LABEL[place]}${i === CRIME_SLOT ? '   ← 범행' : ''}`)
-    li.style.animationDelay = `${i * 260}ms`
-    tl.appendChild(li)
-  })
-  sheet.appendChild(tl)
+  /**
+   * 사건 재구성 — **정답을 맞혔을 때만 보여준다** (QA 5.7).
+   * 이 표는 진범의 이름과 다섯 시간대 동선을 통째로 드러낸다.
+   * 오답에 이걸 띄우면 진단 화면을 아무리 조심스럽게 써도 소용이 없다 —
+   * 같은 사건번호로 다시 도전할 이유가 사라진다.
+   */
+  if (r.correct.culprit) {
+    sheet.appendChild(h('h2', undefined, '사건 재구성'))
+    const tl = h('ul', 'timeline')
+    const k = CASE.suspects[CASE.culprit]
+    k.truth.forEach((place, i) => {
+      const li = h('li', i === CRIME_SLOT ? 'crime' : undefined,
+        `${SLOT_LABEL[i as Slot]}  ${k.name} — ${PLACE_LABEL[place]}${i === CRIME_SLOT ? '   ← 범행' : ''}`)
+      li.style.animationDelay = `${i * 260}ms`
+      tl.appendChild(li)
+    })
+    sheet.appendChild(tl)
+  }
 
   const sc = h('div', 'score')
   const line = (label: string, v: number, cls?: string): void => {
