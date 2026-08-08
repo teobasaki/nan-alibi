@@ -1,0 +1,43 @@
+#!/bin/sh
+# 커밋 메시지 게이트 — AssetBox 컨벤션 `[TYPE] 한국어 한 줄 요약`
+#
+# 왜 훅인가: 컨벤션을 문서에만 적으면 바쁠 때 건너뛴다. 실제로 이 저장소는
+# 67개 커밋이 세 가지 형식으로 갈라져 있었고(conventional / 접두사 없음 / 대괄호),
+# 나중에 히스토리를 통째로 재작성해야 했다. **문장으로 적은 규칙은 조용히 깨진다.**
+#
+# 정본: AssetBox `team/기획/08_collaboration/01_Git_브랜치_PR_규칙.md`
+
+MSG_FILE="$1"
+SUBJECT=$(head -n1 "$MSG_FILE")
+
+# 머지·리버트·픽스업 커밋은 git 이 형식을 정하므로 통과시킨다
+case "$SUBJECT" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*) exit 0 ;;
+esac
+
+# 주석만 있는 빈 메시지는 git 이 알아서 중단시킨다
+[ -z "$SUBJECT" ] && exit 0
+
+TYPES='FEAT|FIX|CHORE|DOCS|REFACTOR|TEST|PERF|WIP'
+
+if ! printf '%s' "$SUBJECT" | grep -qE "^\[($TYPES)\] .+"; then
+  echo "✗ 커밋 메시지 형식 위반"
+  echo ""
+  echo "  받은 것: $SUBJECT"
+  echo "  형식   : [TYPE] 한국어 한 줄 요약"
+  echo "  타입   : FEAT FIX CHORE DOCS REFACTOR TEST PERF WIP"
+  echo ""
+  echo "  예) [FEAT] 장소별 대조표 추가"
+  echo "      [FIX] 폴백 시 정답이 새던 유출 차단"
+  echo ""
+  exit 1
+fi
+
+# 제목이 길면 목록에서 잘려 읽히지 않는다. 72자를 넘으면 본문으로 내리라고 알린다.
+LEN=$(printf '%s' "$SUBJECT" | wc -m | tr -d ' ')
+if [ "$LEN" -gt 72 ]; then
+  echo "✗ 제목이 ${LEN}자다 — 72자를 넘으면 목록에서 잘린다. 자세한 것은 본문으로 내려라."
+  exit 1
+fi
+
+exit 0
