@@ -19,6 +19,9 @@
  */
 
 import { isMuted } from './sound'
+import { prosodyOf } from './tts/emotion'
+import * as supertone from './tts/supertone'
+import { setStage } from './pipeline'
 import type { PersonaReply } from '../engine/prompt'
 
 /** 이 순서로 찾는다. macOS=Yuna, Windows=Heami, Chrome 내장=Google 한국의 */
@@ -72,14 +75,7 @@ const TIMBRE: Record<string, { rate: number; pitch: number }> = {
   cynical: { rate: 1.0, pitch: 0.8 },
 }
 
-/** tell → 연기. 긴장·회피가 속도와 높이로 드러난다. */
-const TELL: Record<PersonaReply['tell'], { rate: number; pitch: number }> = {
-  none: { rate: 1.0, pitch: 1.0 },
-  gaze: { rate: 0.92, pitch: 0.98 },
-  pause: { rate: 0.85, pitch: 0.95 },
-  stammer: { rate: 1.18, pitch: 1.08 },
-  anger: { rate: 1.12, pitch: 0.88 },
-}
+// tell → 연기 지시는 `tts/emotion.ts` 가 소유한다 (공급자별로 번역이 다르므로).
 
 const clamp = (n: number): number => Math.min(2, Math.max(0.5, n))
 
@@ -101,14 +97,47 @@ export function speak(
   personaId: string,
   onBoundary?: (charIndex: number) => void,
 ): void {
-  if (isMuted() || !voice) return
-  speechSynthesis.cancel() // 이전 용의자 대사를 끊는다
+  if (isMuted()) return
+  stop()
+
+  // **좋을 때는 좋은 목소리, 나쁠 때는 상한이 고정된 목소리.**
+  // Supertone 을 예산 안에서 기다리되, 늦거나 없으면 내장 합성이 즉시 받는다.
+  // 기다리는 동안 내장 합성을 미리 시작하지는 않는다 — 두 목소리가 겹치면 그게 더 나쁘다.
+  if (!supertone.isDisabled()) {
+    setStage('synthesizing')
+    void supertone.synthesize(reply.speech, reply.tell, pressureOf(reply)).then((r) => {
+      if (isMuted()) return
+      if (r) {
+        setStage('speaking')
+        // 서버 음성에는 글자 경계 이벤트가 없다. 타이핑 연출은 길이로 근사한다.
+        approximateBoundary(reply.speech, onBoundary)
+        supertone.play(r.audio, () => setStage('idle'))
+      } else {
+        speakLocal(reply, personaId, onBoundary)
+      }
+    })
+    return
+  }
+
+  speakLocal(reply, personaId, onBoundary)
+}
+
+/** 브라우저 내장 합성 — 원래의 경로이자 최종 폴백 */
+function speakLocal(
+  reply: PersonaReply,
+  personaId: string,
+  onBoundary?: (charIndex: number) => void,
+): void {
+  if (!voice) return setStage('idle')
+  speechSynthesis.cancel()
+  setStage('speaking')
 
   const t = TIMBRE[personaId] ?? { rate: 1, pitch: 1 }
-  const e = TELL[reply.tell] ?? TELL.none
+  const e = prosodyOf(reply.tell)
   let offset = 0
 
-  for (const s of sentences(reply.speech)) {
+  const parts = sentences(reply.speech)
+  parts.forEach((s, i) => {
     const u = new SpeechSynthesisUtterance(s)
     const base = offset
     u.voice = voice
@@ -116,11 +145,30 @@ export function speak(
     u.rate = clamp(t.rate * e.rate)
     u.pitch = clamp(t.pitch * e.pitch)
     if (onBoundary) u.onboundary = (ev) => onBoundary(base + ev.charIndex)
+    if (i === parts.length - 1) u.onend = () => setStage('idle')
     speechSynthesis.speak(u) // 큐가 순서를 보장한다
     offset += s.length + 1
+  })
+}
+
+/**
+ * 서버 음성은 글자 경계를 알려주지 않는다. 한국어 발화 속도 실측(약 7.26자/초)으로
+ * 타이핑 연출을 근사한다 — 정확하지 않지만, 자막이 멈춰 있는 것보다 낫다.
+ */
+function approximateBoundary(text: string, onBoundary?: (i: number) => void): void {
+  if (!onBoundary) return
+  const perChar = 1000 / 7.26
+  for (let i = 0; i < text.length; i++) {
+    setTimeout(() => onBoundary(i), i * perChar)
   }
 }
 
+/** `pressureDelta` 는 검증기를 통과하지만 소비처가 없다. 연기 강도에만 쓴다. */
+const pressureOf = (r: PersonaReply): number =>
+  typeof r.pressureDelta === 'number' ? Math.abs(r.pressureDelta) : 0
+
 export function stop(): void {
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel()
+  supertone.stop()
+  setStage('idle')
 }

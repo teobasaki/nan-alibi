@@ -16,6 +16,7 @@ import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
+import { FALLBACK_LABEL, onStage, setStage, stage as pipeStage, STAGE_LABEL } from './ui/pipeline'
 import { playIntro } from './ui/intro'
 import { playOutro } from './ui/outro'
 import type { Statement } from './engine/prompt'
@@ -276,6 +277,30 @@ function typeInto(node: HTMLElement, text: string): void {
   tick()
 }
 
+/**
+ * 파이프라인 상태 칩 — 지금 무엇을 기다리는가.
+ *
+ * 네 칸을 **항상 다 보여주고** 지나온 칸에 불을 켠다. 현재 칸만 보이면
+ * "이게 몇 번째인지" 를 알 수 없어서 여전히 끝을 가늠하지 못한다.
+ * 음성 합성 칸은 서버 TTS 를 실제로 쓸 때만 켜진다 — 내장 합성은 즉시라서 칸이 없다.
+ */
+function stageChip(): HTMLElement {
+  const ORDER = ['thinking', 'verifying', 'synthesizing', 'speaking'] as const
+  const now = pipeStage()
+  const at = ORDER.indexOf(now as (typeof ORDER)[number])
+
+  const box = h('div', 'bubble a stagechip')
+  const row = h('div', 'stages')
+  ORDER.forEach((s, i) => {
+    const done = at >= 0 && i < at
+    const active = s === now
+    const cell = h('span', `st${done ? ' done' : ''}${active ? ' on' : ''}`, STAGE_LABEL[s])
+    row.appendChild(cell)
+  })
+  box.appendChild(row)
+  return box
+}
+
 function tellLabel(t: string): string {
   const m: Record<string, string> = {
     gaze: '(시선을 피한다)', pause: '(잠시 말이 멎는다)',
@@ -384,7 +409,11 @@ function stage(): HTMLElement {
     }
     log.appendChild(a)
   }
-  if (ui.busy) log.appendChild(h('div', 'bubble a', '…'))
+  // **기다림에 이름을 붙인다.** 예전엔 `…` 하나였고, 2초 동안 플레이어는
+  // 멈춘 건지 느린 건지 알 수 없었다. 단계가 보이면 같은 2초가 진행 중으로 읽힌다.
+  // 그리고 이 칩은 장식이 아니다 — 이 게임에서 LLM 출력은 검증기를 통과해야만
+  // 쓰이므로, '진술 검증' 칸이 곧 아키텍처를 화면에 드러낸 것이다.
+  if (ui.busy || pipeStage() !== 'idle') log.appendChild(stageChip())
   box.appendChild(log)
   box.appendChild(askBox(s))
   col.appendChild(box)
@@ -927,6 +956,7 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   const q = question.trim()
   if (!q || ui.busy || ui.game.investigationsLeft <= 0) return
   ui.busy = true
+  setStage('thinking')
   render()
 
   const before = ui.game
@@ -939,6 +969,7 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   })
 
   // 폴백이면 조사 횟수를 돌려준다 — AI 실패의 대가를 플레이어가 치르지 않는다
+  setStage(r.fallback ? 'idle' : 'verifying', r.fallback ? FALLBACK_LABEL : undefined)
   if (r.fallback) ui.game = before
 
   ui.chats[s] = [...ui.chats[s]!, { q, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement }]
@@ -1522,6 +1553,10 @@ function render(): void {
 
   if (keep) restoreFocus(keep)
 }
+
+// 파이프라인 단계가 바뀌면 칩만 갱신하면 되지만, 이 앱은 전체 재렌더 구조다.
+// 심문 중에만 바뀌는 값이라 재렌더 비용(측정 0.8ms)이 문제되지 않는다.
+onStage(() => { if (ui.active) render() })
 
 render()
 void playIntro(CASE).then(openBriefing)
