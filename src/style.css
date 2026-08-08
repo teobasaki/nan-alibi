@@ -750,3 +750,45 @@ body::after {
 }
 @keyframes stagepulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .stages .st.on { animation: none; } }
+
+/* ── AI 파이프라인 대시보드 ─────────────────────────────────
+ * 고칠 수 있는 건 둘뿐이다(음성·강도). 나머지는 **보여주기** 위한 것이다 —
+ * 무엇이 대사를 쓰고, 누가 그것을 검증하고, 어디서 시간이 갔는가.
+ */
+.dashbtn { font-size: 12px; padding: 5px 9px; }
+.dashbtn.on { border-color: var(--amber); color: var(--amber); }
+
+.dash {
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 12px 18px 14px; max-height: 46vh; overflow-y: auto;
+}
+.dash .cap { margin-bottom: 4px; }
+.dash .sub { margin-bottom: 10px; }
+
+.dbrow {
+  display: grid; grid-template-columns: 92px 1fr auto; gap: 10px;
+  align-items: baseline; padding: 5px 0; border-bottom: 1px dashed var(--line);
+}
+.dbrow.off { opacity: .45; }
+.db-k { font-family: var(--serif); font-size: 12px; color: var(--muted); }
+.db-who { font-size: 11.5px; color: var(--ink); word-break: keep-all; }
+.db-ms { font-family: var(--mono); font-size: 10.5px; color: var(--green); }
+
+.dbnote {
+  font-size: 11px; color: var(--muted); line-height: 1.6;
+  border-left: 2px solid var(--amber); padding: 6px 0 6px 9px; margin: 10px 0 4px;
+  background: rgba(200,145,47,.06);
+}
+.dbnote strong { color: var(--amber); }
+
+.dbmodes { display: flex; gap: 6px; margin: 6px 0 10px; flex-wrap: wrap; }
+.dbmode { flex: 1 1 150px; text-align: left; padding: 7px 9px; }
+.dbmode.on { border-color: var(--amber); background: rgba(200,145,47,.1); }
+.dbm-l { display: block; font-family: var(--serif); font-size: 12.5px; }
+.dbm-w { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+
+.dbslider { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.dbslider label { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.dbslider input[type=range] { flex: 1; accent-color: var(--amber); max-width: 260px; }
+
+@media (max-width: 1100px) { .dash { max-height: 60vh; } .dbrow { grid-template-columns: 76px 1fr auto; } }

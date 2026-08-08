@@ -17,6 +17,7 @@
  */
 
 import { emotionOf, scaleByPressure, type Tell } from './emotion'
+import { settings } from '../settings'
 
 /** 이 시간 안에 오디오가 오지 않으면 내장 합성으로 넘어간다 */
 const BUDGET_MS = 1500
@@ -63,7 +64,7 @@ export async function synthesize(
 ): Promise<SynthResult | null> {
   if (disabled || !text.trim()) return null
 
-  const e = scaleByPressure(emotionOf(tell), pressure)
+  const e = scaleByPressure(emotionOf(tell), pressure, settings().intensity)
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), BUDGET_MS)
 

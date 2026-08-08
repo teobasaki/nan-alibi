@@ -22,6 +22,7 @@ import { isMuted } from './sound'
 import { prosodyOf } from './tts/emotion'
 import * as supertone from './tts/supertone'
 import { setStage } from './pipeline'
+import { settings } from './settings'
 import type { PersonaReply } from '../engine/prompt'
 
 /** 이 순서로 찾는다. macOS=Yuna, Windows=Heami, Chrome 내장=Google 한국의 */
@@ -100,10 +101,14 @@ export function speak(
   if (isMuted()) return
   stop()
 
+  // 플레이어가 끈 것은 끈 것이다. 설정은 규칙이 아니라 편의라 여기서만 본다.
+  const mode = settings().voice
+  if (mode === 'off') return
+
   // **좋을 때는 좋은 목소리, 나쁠 때는 상한이 고정된 목소리.**
   // Supertone 을 예산 안에서 기다리되, 늦거나 없으면 내장 합성이 즉시 받는다.
   // 기다리는 동안 내장 합성을 미리 시작하지는 않는다 — 두 목소리가 겹치면 그게 더 나쁘다.
-  if (!supertone.isDisabled()) {
+  if (mode === 'auto' && !supertone.isDisabled()) {
     setStage('synthesizing')
     void supertone.synthesize(reply.speech, reply.tell, pressureOf(reply)).then((r) => {
       if (isMuted()) return

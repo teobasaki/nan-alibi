@@ -17,6 +17,7 @@ import { josa } from './josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
 import { FALLBACK_LABEL, onStage, setStage, stage as pipeStage, STAGE_LABEL } from './ui/pipeline'
+import { dashboard, probeProviders } from './ui/dashboard'
 import { playIntro } from './ui/intro'
 import { playOutro } from './ui/outro'
 import type { Statement } from './engine/prompt'
@@ -82,6 +83,8 @@ interface UI {
   /** 이미 화면에 찍힌 인장 — 재렌더 때 전부 다시 찍히는 걸 막는다 */
   stamped: Set<string>
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
+  /** AI 파이프라인 판을 펼쳤는가 */
+  dash: boolean
   scene: { slug: string; handle: Stage3D | null } | null
   /** 재렌더 때 캔버스를 새로 만들지 않고 옮겨 붙이기 위한 보관 */
   sceneCanvas: HTMLCanvasElement | null
@@ -113,6 +116,7 @@ const ui: UI = {
   flash: null,
   note: null,
   stamped: new Set(),
+  dash: false,
   scene: null,
   sceneCanvas: null,
 }
@@ -196,6 +200,13 @@ function topbar(): HTMLElement {
   budget.appendChild(h('span', 'label', '남은 조사'))
   for (let i = 0; i < INVESTIGATION_BUDGET; i++) budget.appendChild(h('i', `pip${i < ui.game.investigationsLeft ? '' : ' spent'}`))
   bar.appendChild(budget)
+
+  // AI 파이프라인 판 — 무엇이 무엇을 하고 있는지 여는 곳
+  const dash = focusKey(h('button', `dashbtn${ui.dash ? ' on' : ''}`, '⚙ AI'), 'dash') as HTMLButtonElement
+  dash.setAttribute('aria-expanded', String(ui.dash))
+  dash.setAttribute('aria-label', 'AI 파이프라인 설정')
+  dash.onclick = () => { ui.dash = !ui.dash; play('paper'); render() }
+  bar.appendChild(dash)
 
   const mute = focusKey(h('button', 'mutebtn', isMuted() ? '♪ 꺼짐' : '♪ 켜짐'), 'mute') as HTMLButtonElement
   mute.setAttribute('aria-label', isMuted() ? '소리 켜기' : '소리 끄기')
@@ -1456,6 +1467,8 @@ function openBriefing(): void {
     wake()
     // 음성 엔진 예열 — 여기서 안 깨우면 첫 심문에서만 소리가 ~800ms 늦는다
     void initVoice()
+    // 어떤 공급자가 실제로 살아 있는지 — 없는 걸 있는 것처럼 그리지 않기 위해
+    void probeProviders().then(() => { if (ui.dash) render() })
     ov.remove()
     render()
   }
@@ -1542,6 +1555,7 @@ function render(): void {
   app.replaceChildren()
   app.appendChild(topbar())
   app.appendChild(h('div', 'coach', coachLine()))
+  if (ui.dash) app.appendChild(dashboard(() => render()))
   const cols = h('div', 'cols')
   cols.appendChild(suspectColumn())
   cols.appendChild(stage())

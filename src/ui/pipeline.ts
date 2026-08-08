@@ -41,6 +41,20 @@ type Listener = (s: Stage, detail?: string) => void
 let current: Stage = 'idle'
 const listeners = new Set<Listener>()
 
+/**
+ * 단계별 마지막 소요 시간(ms).
+ *
+ * **새 계측기를 만들지 않았다** — 단계 기계가 이미 전이 시각을 알고 있으므로
+ * 여기서 재는 게 가장 싸고, 화면에 보이는 것과 재는 것이 같은 근원에서 나온다.
+ * 대시보드가 "어디서 시간이 갔나" 를 말할 수 있는 근거다.
+ */
+export type Timings = Partial<Record<Exclude<Stage, 'idle'>, number>>
+
+let timings: Timings = {}
+let enteredAt = 0
+
+export const lastTimings = (): Timings => ({ ...timings })
+
 export const stage = (): Stage => current
 
 export function onStage(fn: Listener): () => void {
@@ -54,6 +68,14 @@ export function onStage(fn: Listener): () => void {
  */
 export function setStage(s: Stage, detail?: string): void {
   if (s === current && !detail) return
+
+  const now = Date.now()
+  // 떠나는 단계의 체류 시간을 적는다. idle 에서 나갈 때는 잴 것이 없다.
+  if (current !== 'idle' && enteredAt) timings[current] = now - enteredAt
+  // 한 심문이 시작되면 지난 판의 숫자를 지운다 — 섞이면 읽는 사람이 속는다
+  if (s === 'thinking') timings = {}
+  enteredAt = s === 'idle' ? 0 : now
+
   current = s
   for (const fn of listeners) fn(s, detail)
 }

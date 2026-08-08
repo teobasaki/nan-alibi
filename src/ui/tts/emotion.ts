@@ -59,7 +59,8 @@ export const emotionOf = (tell: Tell): Emotion => EMOTION[tell] ?? EMOTION.none
  * 압박이 높으면 연기를 키운다. 같은 `tell` 이라도 3회차 심문의 더듬음이 더 심해야 한다.
  * 상한을 두는 이유는, 1.0 을 넘기면 어느 공급자에서든 연기가 아니라 소음이 되기 때문이다.
  */
-export function scaleByPressure(e: Emotion, pressure: number): Emotion {
+export function scaleByPressure(e: Emotion, pressure: number, gain = 1): Emotion {
   const p = Math.min(100, Math.max(0, pressure)) / 100
-  return { ...e, intensity: Math.min(1, e.intensity + p * 0.3) }
+  const g = Number.isFinite(gain) ? Math.min(1.5, Math.max(0, gain)) : 1
+  return { ...e, intensity: Math.min(1, (e.intensity + p * 0.3) * g) }
 }
