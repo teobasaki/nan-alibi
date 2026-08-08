@@ -30,6 +30,11 @@ PROJECT_DIR = Path.home() / '.claude/projects/-Users-teo-Project-Game-NHN'
 
 # 이 문서는 **공개 저장소로 나간다.** 조용히 지우면 지운 줄도 모르므로, 지운 것은 세어서 보고한다.
 REDACTIONS = [
+    # **이름으로 잡는다.** 접두사(`sk-`·`msy_`)로만 잡으면 그 형태가 아닌 키를 통째로 놓친다 —
+    # 실제로 varco·supertone 키가 이 목록을 그냥 통과했다. 값의 모양은 공급자마다 다르지만
+    # **변수 이름은 거의 항상 KEY/SECRET/TOKEN 을 포함한다.** 이름 쪽이 훨씬 안정적인 신호다.
+    (re.compile(r'(?i)\b([A-Z0-9_]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS?)[A-Z0-9_]*)'
+                r'\s*[:=]\s*["\']?[A-Za-z0-9._\-/+]{8,}["\']?'), r'\1=[키 삭제]'),
     (re.compile(r'\b(?:sk|msy|ghp|gho|xox[baprs])[-_][A-Za-z0-9_-]{16,}'), '[키 삭제]'),
     (re.compile(r'\bBearer\s+[A-Za-z0-9._-]{20,}'), 'Bearer [토큰 삭제]'),
     (re.compile(r'\bAKIA[0-9A-Z]{12,}\b'), '[키 삭제]'),
