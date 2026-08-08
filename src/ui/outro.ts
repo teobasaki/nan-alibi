@@ -17,7 +17,7 @@
  */
 
 import { play } from './sound'
-import { josa } from './josa'
+import { josa } from '../josa'
 import type { CaseFile, SuspectId } from '../types'
 
 const FILES = import.meta.glob('/public/outro/*.{webp,png,jpg}', {

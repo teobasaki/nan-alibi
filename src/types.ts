@@ -10,6 +10,7 @@ export const SLOT_LABEL = ['22:00', '22:10', '22:20', '22:30', '22:40'] as const
 
 /** 장소 index. 2번(1204호)이 범행 현장. */
 export type PlaceId = 0 | 1 | 2 | 3 | 4
+export const PLACES: readonly PlaceId[] = [0, 1, 2, 3, 4]
 export const PLACE_LABEL = ['로비', '복도', '1204호', '직원계단', '라운지'] as const
 
 export const CRIME_SLOT: Slot = 2

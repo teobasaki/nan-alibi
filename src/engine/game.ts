@@ -19,6 +19,7 @@ import {
   type SuspectId,
 } from '../types'
 import { INVESTIGATION_BUDGET } from '../data/config'
+import { josa } from '../josa'
 import { candidatesFrom } from './solver'
 
 /** 진술 카드 id — 인물의 특정 시각 주장 1건 */
@@ -196,7 +197,7 @@ export function connect(g: GameState, a: string, b: string): ConnectResult {
   let why: string | null = null
   if (inRecord && claimed !== ev.place) {
     // ① 대면 모순 — 기록에 찍힌 장소와 본인 진술이 다르다
-    why = `기록에는 ${PLACE_LABEL[ev.place]}인데 본인은 ${PLACE_LABEL[claimed]}이라 했다`
+    why = `기록에는 ${PLACE_LABEL[ev.place]}인데 본인은 ${josa(PLACE_LABEL[claimed], '이라/라')} 했다`
   } else if (!inRecord && claimed === ev.place && ev.exhaustive) {
     // ② 부재 모순 — 그 구역을 남김없이 담은 기록에 그 사람이 없다.
     //    사람이 가장 먼저 떠올리는 추리다. exhaustive 가 아닌 기록(영수증·카드키)에는

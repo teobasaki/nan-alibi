@@ -250,7 +250,7 @@ describe('최종 채점 (Task 7 — 완료기준 B4·B5)', () => {
 
 describe('한국어 조사 (UX 폴리시)', () => {
   it('받침 유무로 조사를 고른다', async () => {
-    const { josa } = await import('../src/ui/josa')
+    const { josa } = await import('../src/josa')
     expect(josa('남기훈', '이/가')).toBe('남기훈이')   // ㄴ 받침
     expect(josa('고은채', '이/가')).toBe('고은채가')   // 받침 없음
     expect(josa('정민호', '은/는')).toBe('정민호는')
