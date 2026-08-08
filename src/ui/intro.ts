@@ -14,7 +14,7 @@
 
 import { CRIME_SLOT, SLOT_LABEL, SUSPECTS, type CaseFile } from '../types'
 import { play } from './sound'
-import { josa } from './josa'
+import { josa } from '../josa'
 
 const FILES = import.meta.glob('/public/intro/*.{webp,png,jpg}', {
   eager: true,

@@ -13,7 +13,7 @@ import {
   presentEvidence, submit, type GameState,
 } from './engine/game'
 import { cardSummary, renderCard } from './ui/cards'
-import { josa } from './ui/josa'
+import { josa } from './josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
 import { playIntro } from './ui/intro'
@@ -26,9 +26,10 @@ import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
 import { candidatesFrom } from './engine/solver'
+import { pendingPairs, placeMatrix } from './engine/crossref'
 import { ask } from './api'
 import {
-  CRIME_PLACE, CRIME_SLOT, PLACE_LABEL, SLOT_LABEL, SUSPECTS,
+  CRIME_PLACE, CRIME_SLOT, PLACES, PLACE_LABEL, SLOTS, SLOT_LABEL, SUSPECTS,
   type CaseFile, type Evidence, type Slot, type SuspectId,
 } from './types'
 import { INVESTIGATION_BUDGET, METHODS } from './data/config'
@@ -60,13 +61,23 @@ interface Chat {
   st?: Statement
 }
 
+/**
+ * 상황판을 보는 **세 개의 각도** (QA 5.4).
+ * 같은 사실을 세 축으로 놓는다 — 사람 기준 · 자리 기준 · 개인 조서.
+ * 축을 바꾸면 안 보이던 것이 보인다. 정보를 더 주는 게 아니라 다르게 놓을 뿐이다.
+ */
+type View = 'time' | 'place' | 'person'
+
 interface UI {
   game: GameState
   active: SuspectId | null
+  view: View
   chats: Record<string, Chat[]>
   selected: string[]
   busy: boolean
   flash: string | null
+  /** 방금 맞대본 결과 한 줄 — 일치했을 때도 알려줘야 "아무 일도 안 일어났다" 로 안 읽힌다 */
+  note: string | null
   /** 이미 화면에 찍힌 인장 — 재렌더 때 전부 다시 찍히는 걸 막는다 */
   stamped: Set<string>
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
@@ -94,10 +105,12 @@ const CASE: CaseFile = generated.case
 const ui: UI = {
   game: createGame(CASE),
   active: null,
+  view: 'time',
   chats: Object.fromEntries(SUSPECTS.map((s) => [s, [] as Chat[]])),
   selected: [],
   busy: false,
   flash: null,
+  note: null,
   stamped: new Set(),
   scene: null,
   sceneCanvas: null,
@@ -276,7 +289,7 @@ function stage(): HTMLElement {
   const box = h('div', 'stage')
 
   if (!ui.active) {
-    box.appendChild(alibiGrid())
+    box.appendChild(situationBoard())
     col.appendChild(box)
     return col
   }
@@ -464,25 +477,272 @@ function alibiGrid(): HTMLElement {
     g.appendChild(h('div', `foot${n ? ' has' : ''}`, n ? `${n}건` : '없음'))
   }
   wrap.appendChild(g)
+  return wrap
+}
 
+/** 기록 한 건을 사람이 읽는 이름으로. `E1` 같은 내부 id 는 화면에 나오면 안 된다. */
+function evLabel(evId: string): string {
+  const e = CASE.evidence.find((x) => x.id === evId)
+  return e ? `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}` : evId
+}
+
+/**
+ * 상황판 — **같은 사실을 세 각도로 놓는다** (QA 5.4).
+ *
+ * 초회 플레이 지적의 핵심은 "기억하기 어렵다" 였고, 그 진단은 기억력이 아니라
+ * **정보 구조**였다. 다섯 사람 × 다섯 시각이 대화 로그와 카드 더미에 흩어져 있으니
+ * 플레이어가 머릿속에서 표를 다시 그리느라 추리할 시간을 다 썼다.
+ *
+ * 여기서 새 정보를 주지는 **않는다** — 이미 확보한 것을 다르게 놓을 뿐이다.
+ * 그래서 탭을 옮겨도 조사 횟수는 소모되지 않고, 아직 모르는 칸은 세 각도 모두에서 비어 있다.
+ */
+function situationBoard(): HTMLElement {
+  const wrap = h('div', 'boardview')
+
+  const tabs = h('div', 'viewtabs')
+  const TABS: [View, string, string][] = [
+    ['time', '시각별', '누가 · 언제 · 어디라고 했나'],
+    ['place', '장소별', '그 시각 그 자리에 누가 있었나'],
+    ['person', '인물별', '이 사람이 무엇을 말했나'],
+  ]
+  for (const [v, label, why] of TABS) {
+    const b = h('button', `viewtab${ui.view === v ? ' on' : ''}`) as HTMLButtonElement
+    b.appendChild(h('span', 'vt-l', label))
+    b.appendChild(h('span', 'vt-w', why))
+    b.setAttribute('aria-pressed', String(ui.view === v))
+    focusKey(b, `view:${v}`)
+    b.onclick = () => { play('paper'); ui.view = v; render() }
+    tabs.appendChild(b)
+  }
+  wrap.appendChild(tabs)
+
+  wrap.appendChild(ui.view === 'time' ? alibiGrid() : ui.view === 'place' ? placeGrid() : personSheets())
+  wrap.appendChild(pendingBlock())
+  wrap.appendChild(findingsBlock())
+  return wrap
+}
+
+/**
+ * 장소별 대조표 — **알리바이 격자의 축을 뒤집은 것.**
+ *
+ * 인물 격자는 "그 사람이 어디 있었다고 하는가" 를 답한다. 뒤집으면 인물 격자가
+ * 구조적으로 못 보여주는 두 가지가 보인다.
+ *
+ * ① **누가 누구와 함께 있었다고 주장하는가** — 한 칸에 이름이 둘 모이면 서로의 알리바이다.
+ * ② **한 사람이 같은 세로줄에 두 번 나오는가** — 본인 말로 한 번, 기록으로 한 번.
+ *    사람은 한 시각에 한 곳에만 있으므로 둘 중 하나는 거짓이다.
+ *
+ * ②를 **시스템이 판정하지 않는다는 점이 중요하다.** 이름을 제자리에 놓는 것까지가
+ * 기록 노동이고, 두 번 나온 이름을 알아보는 것이 추리다. QA 가 요구한 경계도 이것이다 —
+ * "모순 후보를 표시하되, 모순의 의미는 플레이어가 판단하게 한다."
+ */
+function placeGrid(): HTMLElement {
+  const wrap = h('div', 'gridwrap')
+  wrap.appendChild(h('div', 'cap', '장소별 대조표'))
+  wrap.appendChild(h('div', 'sub',
+    `가로는 시각, 세로는 장소다. 한 칸에 이름이 모이면 그 시각 그 자리에 함께 있었다는 주장이다. ` +
+    `테두리만 있는 이름은 본인 주장이고, 채워진 이름은 기록으로 확정된 위치다. ` +
+    `사람은 한 시각에 한 곳에만 있다 — 같은 세로줄에 한 이름이 두 번 나오면 둘 중 하나는 거짓이다.`))
+
+  const m = placeMatrix(ui.game)
+  const g = h('div', 'pgrid')
+  g.appendChild(h('div', 'hd', ''))
+  for (const t of SLOTS) g.appendChild(h('div', `hd${t === CRIME_SLOT ? ' now' : ''}`, SLOT_LABEL[t]))
+
+  for (const p of PLACES) {
+    const rowHd = h('div', `pwho${p === CRIME_PLACE ? ' scene' : ''}`)
+    rowHd.appendChild(document.createTextNode(PLACE_LABEL[p]))
+    if (p === CRIME_PLACE) rowHd.appendChild(h('small', 'cleared', '사건 현장'))
+    g.appendChild(rowHd)
+
+    for (const t of SLOTS) {
+      const cell = m[p]![t]!
+      const box = h('div', `pcell${t === CRIME_SLOT ? ' now' : ''}${p === CRIME_PLACE ? ' scene' : ''}`)
+
+      // 기록으로 확정된 사람이 먼저다 — 진술보다 무겁다
+      for (const s of cell.pinned) {
+        const chip = h('span', 'nchip pin', CASE.suspects[s].name)
+        const evId = cell.records[0]!
+        chip.setAttribute('role', 'button')
+        chip.tabIndex = 0
+        chip.setAttribute('aria-label', `${CASE.suspects[s].name} — ${evLabel(evId)} 기록으로 확정. 연결하려면 선택`)
+        if (ui.selected.includes(evId)) chip.classList.add('sel')
+        focusKey(chip, `pchip:${evId}:${s}`)
+        chip.onclick = () => pickCard(evId)
+        chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCard(evId) } }
+        box.appendChild(chip)
+      }
+      // 진술은 **기록에 이미 확정된 사람은 빼고** 그린다 — 같은 칸에 같은 이름을 두 번 그리면
+      // 세로줄의 중복(진짜 신호)이 안 보인다
+      for (const s of cell.claimants) {
+        if (cell.pinned.includes(s)) continue
+        const cid = claimCardId(s, t)
+        // 이미 찾아낸 모순은 **두 표에서 같게 보여야 한다.** 시각별 격자가 붉은 인장을 찍는
+        // 진술에 장소별 표만 아무 표시가 없으면, 같은 사실이 화면마다 달라 보인다.
+        const bad = ui.game.foundContradictions.some((k) => {
+          const [, who, slot] = k.split('|')
+          return who === s && Number(slot) === t
+        })
+        const chip = h('span',
+          `nchip say${bad ? ' bad' : ''}${ui.selected.includes(cid) ? ' sel' : ''}`, CASE.suspects[s].name)
+        chip.setAttribute('role', 'button')
+        chip.tabIndex = 0
+        chip.setAttribute('aria-label', `${CASE.suspects[s].name} ${SLOT_LABEL[t]} 진술 — 연결하려면 선택`)
+        focusKey(chip, `pchip:${cid}`)
+        chip.onclick = () => pickCard(cid)
+        chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCard(cid) } }
+        box.appendChild(chip)
+      }
+
+      if (cell.records.length) {
+        // 남김없는 기록(CCTV)은 **없는 이름이 곧 정보**다. 그 사실을 칸에 적어둔다.
+        box.appendChild(h('div', 'prec',
+          cell.exhaustive
+            ? `${cell.records.map(evLabel).join(' · ')} — 구역 전체`
+            : cell.records.map(evLabel).join(' · ')))
+      }
+      if (!cell.pinned.length && !cell.claimants.length && !cell.records.length) {
+        box.classList.add('unknown')
+        box.appendChild(h('span', 'pdash', '—'))
+      }
+      g.appendChild(box)
+    }
+  }
+  wrap.appendChild(g)
+  return wrap
+}
+
+/**
+ * 인물별 조서 — 한 사람이 지금까지 말한 것을 **말한 순서대로** 모은다.
+ *
+ * 조서는 원래 그 사람 대화 로그 안에만 있었다. 방을 나오면 사라지니,
+ * "누가 뭐라고 했더라" 를 확인하려면 다시 들어가 스크롤해야 했다 — 그게 QA 가 말한
+ * "메모와 재확인에 시간이 많이 든다" 의 실체다. 순서대로 쌓아두면 **진술이 바뀐 것도
+ * 같이 드러난다** — 앞뒤로 다른 말을 했으면 두 줄이 나란히 남는다.
+ */
+function personSheets(): HTMLElement {
+  const wrap = h('div', 'gridwrap')
+  wrap.appendChild(h('div', 'cap', '인물별 조서'))
+  wrap.appendChild(h('div', 'sub',
+    '심문에서 받아 적은 것을 사람마다 말한 순서대로 모았다. ' +
+    '앞뒤로 다른 말을 했으면 두 줄이 나란히 남는다 — 그 사이가 볼 만한 자리다.'))
+
+  const cands = candidatesFrom(CASE, new Set(ui.game.cards))
+  for (const s of SUSPECTS) {
+    const sus = CASE.suspects[s]
+    const sheet = h('div', `dossier${cands.includes(s) ? '' : ' out'}`)
+
+    const head = h('div', 'dossier-hd')
+    head.setAttribute('role', 'button')
+    head.tabIndex = 0
+    head.setAttribute('aria-label', `${sus.name} 심문하기`)
+    focusKey(head, `sheet:${s}`)
+    const choose = (): void => { ui.active = s; render() }
+    head.onclick = choose
+    head.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
+    head.appendChild(h('span', 'dossier-name', sus.name))
+    head.appendChild(h('span', 'dossier-job', sus.job))
+    if (!cands.includes(s)) head.appendChild(h('span', 'dossier-out', '기록으로 소거됨'))
+    else if (ui.game.pressure[s] >= 60) head.appendChild(h('span', 'dossier-hot', '동요 높음'))
+    sheet.appendChild(head)
+
+    sheet.appendChild(h('div', 'dossier-rel', `피해자와의 관계 — ${sus.relation}`))
+
+    // 확보한 궤적 한 줄. 모르는 칸은 감춘다.
+    const traj = SLOTS
+      .filter((t) => ui.game.cards.includes(claimCardId(s, t)))
+      .map((t) => `${SLOT_LABEL[t]} ${PLACE_LABEL[sus.claim[t]!]}`)
+    sheet.appendChild(h('div', 'dossier-traj', traj.length ? traj.join('  ›  ') : '아직 받아낸 진술이 없다'))
+
+    const said = ui.chats[s]!.filter((c) => c.st && (c.st.time || c.st.place || c.st.action))
+    if (said.length === 0) {
+      sheet.appendChild(h('div', 'hintline', '아직 조서에 적힌 것이 없다. 심문해야 채워진다.'))
+    }
+    for (const c of said) {
+      const st = c.st!
+      const row = h('div', `stmt${st.newInfo ? ' fresh' : ''}`)
+      row.appendChild(h('span', 'stmt-k', st.newInfo ? '새 진술' : '기존 진술'))
+      row.appendChild(h('span', 'stmt-v', [st.time, st.place, st.action].filter(Boolean).join(' · ')))
+      if (st.certainty !== '확언') row.appendChild(h('span', 'stmt-c', st.certainty))
+      sheet.appendChild(row)
+    }
+
+    const mine = ui.game.foundContradictions.filter((k) => k.split('|')[1] === s)
+    for (const k of mine) {
+      const [evId, , slot] = k.split('|') as [string, string, string]
+      sheet.appendChild(h('div', 'contradiction',
+        `${SLOT_LABEL[Number(slot) as Slot]} 진술이 ${evLabel(evId)} 기록과 어긋난다.`))
+    }
+    wrap.appendChild(sheet)
+  }
+  return wrap
+}
+
+/**
+ * 미대조 조합 — **판정이 아니라 장부다.**
+ *
+ * "손에 쥔 기록과 진술 중 아직 안 맞춰본 것" 만 말한다. 맞춰보면 무슨 일이 나는지는
+ * 말하지 않는다 — 그걸 말하면 이 게임에 남은 유일한 추론 행위가 사라진다.
+ * 연결은 조사를 소모하지 않으므로 이 목록을 비우는 것은 언제나 이득이고,
+ * 그래서 "다음에 뭘 하지" 가 막힌 플레이어에게 **공짜 다음 수**가 된다.
+ */
+function pendingBlock(): HTMLElement {
+  const pend = pendingPairs(ui.game)
+  const wrap = h('div', 'findings pending')
+  wrap.appendChild(h('h3', undefined, `아직 안 맞춰본 조합 (${pend.length})`))
+  if (pend.length === 0) {
+    wrap.appendChild(h('div', 'hintline',
+      '지금 손에 쥔 기록과 진술은 전부 맞대봤다. 새 기록을 조회하거나 심문해야 새 조합이 생긴다.'))
+    return wrap
+  }
+  wrap.appendChild(h('div', 'hintline',
+    '맞대보면 어긋나는지 아닌지 알 수 있다. 연결은 조사를 소모하지 않는다.'))
+  if (ui.note) wrap.appendChild(h('div', 'pendnote', ui.note))
+  // 너무 길어지면 목록이 곧 소음이 된다 — 범행 시각이 위로 오도록 이미 정렬돼 있다
+  const SHOW = 6
+  for (const p of pend.slice(0, SHOW)) {
+    const row = h('div', 'pendrow')
+    row.appendChild(h('span', 'pend-t',
+      `${evLabel(p.evidenceId)}  ↔  ${CASE.suspects[p.suspect].name}의 ${SLOT_LABEL[p.slot]} 진술`))
+    const b = h('button', 'pendbtn', '맞대보기') as HTMLButtonElement
+    b.disabled = ui.busy
+    focusKey(b, `pend:${p.evidenceId}:${p.claimCardId}`)
+    b.onclick = () => {
+      // 선택 상태를 거치지 않고 바로 연결한다 — 두 번 클릭시키면 장부의 값이 사라진다
+      ui.selected = []
+      const r = connect(ui.game, p.evidenceId, p.claimCardId)
+      ui.game = r.state
+      play(r.contradiction ? 'stamp' : 'deny')
+      ui.flash = r.contradiction ? p.evidenceId : null
+      ui.note = r.message
+      render()
+      if (r.contradiction) setTimeout(() => { ui.flash = null; render() }, 600)
+    }
+    row.appendChild(b)
+    wrap.appendChild(row)
+  }
+  if (pend.length > SHOW) {
+    wrap.appendChild(h('div', 'hintline', `그 밖에 ${pend.length - SHOW}건 더 있다.`))
+  }
+  return wrap
+}
+
+/** 발견한 모순 — 세 각도 어디에서 보든 같은 자리에 있어야 한다. */
+function findingsBlock(): HTMLElement {
   const f = h('div', 'findings')
   f.appendChild(h('h3', undefined, `발견한 모순 (${ui.game.foundContradictions.length})`))
   if (ui.game.foundContradictions.length === 0) {
     f.appendChild(h('div', 'hintline',
-      '오른쪽 카드 두 장을 눌러 연결하십시오 — 기록 한 장과 진술 한 장. 연결은 조사를 소모하지 않습니다.'))
+      '기록 한 장과 진술 한 장을 연결하십시오. 연결은 조사를 소모하지 않습니다.'))
   }
   for (const key of ui.game.foundContradictions) {
     const parts = key.split('|')
     const sid = parts[1] as SuspectId
     const slot = Number(parts[2]) as Slot
-    // `E1` 같은 내부 id 는 화면에 나오면 안 된다 — 사람은 "CCTV · 22:20 라운지" 로 기억한다
-    const ev = CASE.evidence.find((e) => e.id === parts[0])
-    const evName = ev ? `${labelOfKind(ev.kind)} · ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]}` : parts[0]!
     f.appendChild(h('div', 'contradiction',
-      `${CASE.suspects[sid].name}의 ${SLOT_LABEL[slot]} 진술이 ${evName} 기록과 어긋난다.`))
+      `${CASE.suspects[sid].name}의 ${SLOT_LABEL[slot]} 진술이 ${evLabel(parts[0]!)} 기록과 어긋난다.`))
   }
-  wrap.appendChild(f)
-  return wrap
+  return f
 }
 
 function askBox(s: SuspectId): HTMLElement {
