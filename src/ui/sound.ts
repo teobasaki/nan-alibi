@@ -91,8 +91,44 @@ function noise(at: number, dur: number, gain: number, cutoff: number): void {
   src.start(at)
 }
 
+/**
+ * 생성된 효과음(`public/sfx/<key>.wav`) — **있으면 쓰고, 없으면 아래 합성음이 그대로 돈다.**
+ *
+ * `import.meta.glob` 이 빌드 타임에 실제 파일만 잡으므로, 폴더가 비어 있으면
+ * 이 맵도 비고 코드 경로가 통째로 사라진다. 에셋이 없어도 화면·소리가 안 깨진다는
+ * 이 프로젝트의 규칙(인물 사진·3D·인트로와 같은 원칙)을 소리에도 그대로 적용한 것이다.
+ */
+const FILES = import.meta.glob('/public/sfx/*.{wav,mp3,ogg}', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+
+const SFX_URL = new Map<string, string>()
+for (const [path, url] of Object.entries(FILES)) {
+  const name = path.split('/').pop()?.replace(/\.\w+$/, '')
+  if (name) SFX_URL.set(name, (url as string).replace(/^\/public/, ''))
+}
+
+/** 한 번 받은 것은 다시 받지 않는다 — `paper` 는 한 판에 수십 번 난다 */
+const cache = new Map<string, HTMLAudioElement>()
+
+function playFile(v: Voice): boolean {
+  const url = SFX_URL.get(v)
+  if (!url) return false
+  let el = cache.get(v)
+  if (!el) {
+    el = new Audio(url)
+    cache.set(v, el)
+  }
+  el.currentTime = 0
+  // 재생 실패(자동재생 정책 등)는 조용히 넘긴다. 합성음으로 되돌리지는 않는다 —
+  // 두 소리가 겹쳐 나는 것이 안 나는 것보다 나쁘다.
+  void el.play().catch(() => {})
+  return true
+}
+
 export function play(v: Voice): void {
   if (muted) return
+  if (playFile(v)) return
   wake()
   if (!ctx) return
   const t = ctx.currentTime

@@ -28,6 +28,8 @@ import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
 import { candidatesFrom } from './engine/solver'
+import { newTrace, profile, record as trace, type TraceEvent, type TraceInput } from './engine/journey'
+import { saveTrace } from './ui/journeyStore'
 import { pendingPairs, placeMatrix } from './engine/crossref'
 import { ask } from './api'
 import {
@@ -85,6 +87,8 @@ interface UI {
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
   /** AI 파이프라인 판을 펼쳤는가 */
   dash: boolean
+  /** 플레이 여정 — 개인화의 재료. 규칙에는 영향을 주지 않는다 */
+  journey: ReturnType<typeof newTrace>
   scene: { slug: string; handle: Stage3D | null } | null
   /** 재렌더 때 캔버스를 새로 만들지 않고 옮겨 붙이기 위한 보관 */
   sceneCanvas: HTMLCanvasElement | null
@@ -117,6 +121,7 @@ const ui: UI = {
   note: null,
   stamped: new Set(),
   dash: false,
+  journey: newTrace(seed, Date.now()),
   scene: null,
   sceneCanvas: null,
 }
@@ -474,7 +479,7 @@ function alibiGrid(): HTMLElement {
     who.appendChild(document.createTextNode(sus.name))
     who.appendChild(h('small', undefined, sus.job))
     if (!cands.includes(s)) who.appendChild(h('small', 'cleared', '기록으로 소거됨'))
-    const choose = (): void => { ui.active = s; render() }
+    const choose = (): void => { mark({ k: 'open', who: s }); ui.active = s; render() }
     who.onclick = choose
     who.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
     g.appendChild(who)
@@ -551,7 +556,7 @@ function situationBoard(): HTMLElement {
     b.appendChild(h('span', 'vt-w', why))
     b.setAttribute('aria-pressed', String(ui.view === v))
     focusKey(b, `view:${v}`)
-    b.onclick = () => { play('paper'); ui.view = v; render() }
+    b.onclick = () => { play('paper'); mark({ k: 'view', to: v }); ui.view = v; render() }
     tabs.appendChild(b)
   }
   wrap.appendChild(tabs)
@@ -677,7 +682,7 @@ function personSheets(): HTMLElement {
     head.tabIndex = 0
     head.setAttribute('aria-label', `${sus.name} 심문하기`)
     focusKey(head, `sheet:${s}`)
-    const choose = (): void => { ui.active = s; render() }
+    const choose = (): void => { mark({ k: 'open', who: s }); ui.active = s; render() }
     head.onclick = choose
     head.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
     head.appendChild(h('span', 'dossier-name', sus.name))
@@ -873,7 +878,7 @@ function board(): HTMLElement {
     // 기록번호를 붙여 구분한다 — 내용을 흘리지 않으면서 "다른 문서" 임을 알린다 (자동 리뷰 minor/fairness).
     const b = h('button', undefined, `[${e.id}] ${label} — ${use} (조사 1회)`) as HTMLButtonElement
     b.disabled = ui.game.investigationsLeft <= 0 || ui.busy
-    b.onclick = () => { play('paper'); act(() => lookupEvidence(ui.game, e.id)) }
+    b.onclick = () => { play('paper'); mark({ k: 'lookup', ev: e.id }); act(() => lookupEvidence(ui.game, e.id)) }
     focusKey(b, `lookup:${e.id}`)
     into.appendChild(b)
   }
@@ -931,6 +936,11 @@ function board(): HTMLElement {
   return col
 }
 
+/** 여정 한 줄. **시각은 판 시작 기준 상대 밀리초** — 절대 시각은 생활 패턴이 된다. */
+function mark(e: TraceInput): void {
+  ui.journey = trace(ui.journey, { ...e, t: Date.now() - ui.journey.startedAt } as TraceEvent)
+}
+
 function pickCard(id: string): void {
   if (ui.selected.includes(id)) {
     ui.selected = ui.selected.filter((x) => x !== id)
@@ -941,6 +951,7 @@ function pickCard(id: string): void {
     const a = ui.selected[0]!
     const b = ui.selected[1]!
     const r = connect(ui.game, a, b)
+    mark({ k: 'connect', hit: r.contradiction })
     ui.game = r.state
     ui.flash = r.contradiction ? b : null
     play(r.contradiction ? 'stamp' : 'deny')
@@ -983,6 +994,7 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   setStage(r.fallback ? 'idle' : 'verifying', r.fallback ? FALLBACK_LABEL : undefined)
   if (r.fallback) ui.game = before
 
+  mark({ k: 'ask', who: s, preset: PRESETS.some((p) => p.q === q), fallback: r.fallback })
   ui.chats[s] = [...ui.chats[s]!, { q, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement }]
   ui.busy = false
   render()
@@ -1017,6 +1029,7 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   // **판별은 엔진이 소유한다.** 폴백이면 해금 여부를 알려선 안 된다 —
   // 해금 쌍은 범인에게만 있어서 그 한 줄이 곧 정답이다 (`presentReveal` 주석).
   const reveal = presentReveal(before, advanced, r.fallback)
+  mark({ k: 'present', ev: evId, who: s, opened: reveal === 'opened' })
   play(reveal === 'opened' ? 'open' : 'deny')
   ui.chats[s] = [...ui.chats[s]!, {
     q: `[증거 제시] ${cardSummary(CASE, evId)}`,
@@ -1226,6 +1239,18 @@ function diagnosis(): HTMLElement {
     lines.push('놓친 절차는 없습니다. 근거는 모였지만 해석이 갈린 판입니다 — 같은 기록을 다른 순서로 읽어 보십시오.')
   }
   for (const t of lines) box.appendChild(h('div', 'hintline', t))
+
+  /**
+   * **여정 로그의 첫 실사용처.**
+   * 위 ①~④는 전부 "지금 무엇을 갖고 있나"(상태)에서 나온다. 그래서
+   * "한 사람만 계속 팠다" 같은 건 원리상 말할 수 없다 — 그건 지나간 과정이라
+   * 상태에 안 남기 때문이다. 여정을 남기면 그 한 줄이 가능해진다.
+   */
+  const pf = profile(ui.journey)
+  if (pf.note) {
+    box.appendChild(h('div', 'diag-style', `읽힌 수사 방식: ${pf.style} — ${pf.note}`))
+  }
+
   box.appendChild(h('div', 'diag-note', '진범은 밝히지 않습니다. 같은 사건번호로 다시 수사할 수 있습니다.'))
   return box
 }
@@ -1261,6 +1286,10 @@ function storyBlock(): HTMLElement {
 }
 
 function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): void {
+  // 판이 끝났다 — 여정을 닫고 남긴다. **로컬에만 쌓이고 서버로 가지 않는다.**
+  mark({ k: 'submit', who: culprit, correct: r.correct.culprit, score: r.total })
+  saveTrace(ui.journey)
+
   const ov = h('div', 'overlay')
   const sheet = h('div', 'sheet casefile')
   // 붉은 인장은 '확정' 의 색이다. 못 맞혔으면 색을 빼야 한다 — 색이 곧 판정이다.
