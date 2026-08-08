@@ -5,6 +5,7 @@ import {
   lookupEvidence,
   interview,
   presentEvidence,
+  presentReveal,
   connect,
   submit,
   claimCardId,
@@ -310,5 +311,46 @@ describe('부재 모순 — "그 구역 기록에 저 사람이 없다" (플레�
       for (const e of noise) for (const s of e.subjects) per.set(s, (per.get(s) ?? 0) + 1)
       for (const [, n] of per) expect(n).toBeLessThanOrEqual(1)
     }
+  })
+})
+
+describe('폴백은 범인을 알려주지 않는다 (정답 유출 회귀)', () => {
+  const C = generateValidCase(4242).case
+  const unlock = C.presentUnlocks[0]!
+
+  it('해금 쌍은 사건당 하나뿐이고 그 대상은 범인이다 — 그래서 해금 여부가 곧 정답이다', () => {
+    expect(C.presentUnlocks).toHaveLength(1)
+    expect(unlock.suspectId).toBe(C.culprit)
+  })
+
+  it('정상 응답이면 열렸는지 알려준다', () => {
+    const g = lookupEvidence(createGame(C, 99), unlock.evidenceId)
+    const after = presentEvidence(g, unlock.evidenceId, unlock.suspectId)
+    expect(presentReveal(g, after, false)).toBe('opened')
+  })
+
+  it('무관한 조합이면 열리지 않았다고 알려준다', () => {
+    const other = SUSPECTS.find((s) => s !== C.culprit)!
+    const g = lookupEvidence(createGame(C, 99), unlock.evidenceId)
+    const after = presentEvidence(g, unlock.evidenceId, other)
+    expect(presentReveal(g, after, false)).toBe('nothing')
+  })
+
+  /**
+   * 핵심. 폴백이면 조사를 환불하는데, 해금 여부까지 알려주면
+   * **조사 0회로 범인을 특정할 수 있다.** 로컬 dev 는 Function 이 없어 항상 이 경로다.
+   */
+  it('폴백이면 범인에게 제시해도 열렸다고 말하지 않는다', () => {
+    const g = lookupEvidence(createGame(C, 99), unlock.evidenceId)
+    const after = presentEvidence(g, unlock.evidenceId, unlock.suspectId)
+    expect(presentReveal(g, after, true)).toBe('void')
+  })
+
+  it('폴백 결과는 범인이든 아니든 구별되지 않는다 — 구별되면 그게 유출이다', () => {
+    const g = lookupEvidence(createGame(C, 99), unlock.evidenceId)
+    const seen = new Set(
+      SUSPECTS.map((s) => presentReveal(g, presentEvidence(g, unlock.evidenceId, s), true)),
+    )
+    expect([...seen]).toEqual(['void'])
   })
 })
