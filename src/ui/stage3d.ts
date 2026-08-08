@@ -11,7 +11,13 @@
  * 심문을 시작하는 순간에만 받는다. 60초 시연에서 첫 화면 지연은 치명적이다.
  *
  * ## 애니메이션은 절차적이다
- * Meshy 오토리깅이 주는 클립은 **걷기·달리기뿐**이라 심문 장면에 쓸 데가 없다.
+ * ⚠️ **2026-08-09 정정:** 아래 문장은 리깅 직후에는 맞았지만 지금은 틀렸다.
+ * 배포되는 9개 GLB 를 전부 열어 보니 **`animations` 가 0개다** — 걷기·달리기 클립이
+ * 남아 있지 않다. 최적화(`gltf-transform`)와 앉은 자세 재익스포트(단일 프레임 굽기)를
+ * 거치며 걷어졌고, 아무도 다시 재지 않았다. ADR 016 §31 도 같은 이유로 낡았다.
+ * **결과: 이 프로젝트에 캐릭터 이동을 붙이려면 클립을 새로 구해야 한다** (ADR 018).
+ *
+ * 원래 문장 — Meshy 오토리깅이 주는 클립은 **걷기·달리기뿐**이라 심문 장면에 쓸 데가 없다.
  * 대신 뼈대를 직접 흔든다 — 호흡, 미세한 고개 움직임, 압박이 높을 때의 떨림.
  * 사람이 가만히 서 있을 때 실제로 하는 것이 그것이고, 클립보다 상태에 잘 반응한다.
  */
@@ -134,7 +140,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      */
     const ROOM_SCALE = 1.9
     const roomGltf = await new GLTFLoader().setDRACOLoader(
-      new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/'),
+      new DRACOLoader().setDecoderPath('/draco/'),
     ).loadAsync(ROOM_URL)
     const room = roomGltf.scene
     room.scale.setScalar(ROOM_SCALE)
@@ -215,7 +221,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     scene.add(shoulder)
 
     const draco = new DRACOLoader()
-    draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/')
+    draco.setDecoderPath('/draco/')
     const loader = new GLTFLoader()
     loader.setDRACOLoader(draco)
 

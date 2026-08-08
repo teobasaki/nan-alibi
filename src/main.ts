@@ -479,7 +479,10 @@ function alibiGrid(): HTMLElement {
     who.appendChild(document.createTextNode(sus.name))
     who.appendChild(h('small', undefined, sus.job))
     if (!cands.includes(s)) who.appendChild(h('small', 'cleared', '기록으로 소거됨'))
-    const choose = (): void => { mark({ k: 'open', who: s }); ui.active = s; render() }
+    // **인물을 바꾸면 이전 사람의 목소리와 말풍선을 끊는다.** 안 끊으면 두 용의자가
+    // 겹쳐 말한다. 원래 진입 경로(용의자 열)에는 있었는데, 격자·조서에서 들어가는
+    // 새 경로 두 곳에 빠져 있었다 — 경로를 늘리면 정리도 같이 늘려야 한다.
+    const choose = (): void => { hush(); stopVoice(); mark({ k: 'open', who: s }); ui.active = s; render() }
     who.onclick = choose
     who.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
     g.appendChild(who)
@@ -682,7 +685,10 @@ function personSheets(): HTMLElement {
     head.tabIndex = 0
     head.setAttribute('aria-label', `${sus.name} 심문하기`)
     focusKey(head, `sheet:${s}`)
-    const choose = (): void => { mark({ k: 'open', who: s }); ui.active = s; render() }
+    // **인물을 바꾸면 이전 사람의 목소리와 말풍선을 끊는다.** 안 끊으면 두 용의자가
+    // 겹쳐 말한다. 원래 진입 경로(용의자 열)에는 있었는데, 격자·조서에서 들어가는
+    // 새 경로 두 곳에 빠져 있었다 — 경로를 늘리면 정리도 같이 늘려야 한다.
+    const choose = (): void => { hush(); stopVoice(); mark({ k: 'open', who: s }); ui.active = s; render() }
     head.onclick = choose
     head.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
     head.appendChild(h('span', 'dossier-name', sus.name))
