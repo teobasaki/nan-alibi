@@ -10,7 +10,7 @@ import './style.css'
 import { generateValidCase } from './engine/validate'
 import {
   availableEvidence, claimCardId, connect, createGame, interview, lockedRecords, lookupEvidence,
-  presentEvidence, submit, type GameState,
+  presentEvidence, presentReveal, submit, type GameState, type PresentReveal,
 } from './engine/game'
 import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './josa'
@@ -972,11 +972,13 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   })
   if (r.fallback) ui.game = before
 
-  const opened = advanced.cards.length > before.cards.length
-  play(opened ? 'open' : 'deny')
+  // **판별은 엔진이 소유한다.** 폴백이면 해금 여부를 알려선 안 된다 —
+  // 해금 쌍은 범인에게만 있어서 그 한 줄이 곧 정답이다 (`presentReveal` 주석).
+  const reveal = presentReveal(before, advanced, r.fallback)
+  play(reveal === 'opened' ? 'open' : 'deny')
   ui.chats[s] = [...ui.chats[s]!, {
     q: `[증거 제시] ${cardSummary(CASE, evId)}`,
-    a: r.reply.speech + unlockNote(before, advanced, opened),
+    a: r.reply.speech + unlockNote(before, advanced, reveal),
     fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement,
   }]
   ui.busy = false
@@ -1020,8 +1022,12 @@ function voiceOut(reply: { speech: string; tell: string }, personaId: string): v
  * 모르고 무반응이 무엇을 배제했는지도 알 수 없었다 (자동 리뷰 minor 2건).
  * 정답은 여전히 감춘다 — 알려주는 건 **자물쇠의 진행도**뿐이다.
  */
-function unlockNote(before: GameState, after: GameState, opened: boolean): string {
-  if (!opened) {
+function unlockNote(before: GameState, after: GameState, reveal: PresentReveal): string {
+  if (reveal === 'void') {
+    // 행동이 없던 일이 됐다. **무엇이 열렸는지 열리지 않았는지 말하지 않는다** — 그게 곧 정답이다.
+    return '\n\n▸ 응답을 받지 못했다. 조사 횟수를 돌려주고, 이 제시는 없던 것으로 한다.'
+  }
+  if (reveal === 'nothing') {
     return '\n\n▸ 이 사람은 이 기록에 대해 열어줄 진술이 없다 — 이 조합은 해금 경로가 아니다.' +
       ' 다만 이것은 **자물쇠에 대한 소거일 뿐, 범인 후보를 지우지는 않는다.**' +
       ' 사람을 지우는 건 범행 시각의 기록뿐이다.'

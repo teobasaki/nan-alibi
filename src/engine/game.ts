@@ -162,6 +162,24 @@ export function presentYields(g: GameState, evId: string, s: SuspectId): boolean
   return g.case.presentUnlocks.some((u) => u.evidenceId === evId && u.suspectId === s)
 }
 
+/** 제시 결과를 화면에 무엇으로 알릴지 */
+export type PresentReveal = 'opened' | 'nothing' | 'void'
+
+/**
+ * **폴백이면 아무 일도 없었던 것이다 — 판별 결과조차 남기면 안 된다.**
+ *
+ * 위 `presentEvidence` 주석이 닫았다고 적어 둔 그 유출이 **폴백 경로로 되살아나 있었다.**
+ * 해금 쌍은 범인에게만 존재하므로(`caseGen`) "열렸다" 는 곧 "이 사람이 범인" 이다.
+ * 그런데 AI 응답이 실패하면 조사를 환불하면서도 해금 여부는 이미 소리와 로그로 나갔다 —
+ * **조사 0회로 답이 새어나간다.** 로컬 `npm run dev` 는 Function 이 없어 항상 이 경로를 탄다.
+ *
+ * 그래서 판별을 UI 에서 계산하지 않고 여기서 소유한다. 화면은 이 값을 읽어 그리기만 한다.
+ */
+export function presentReveal(before: GameState, after: GameState, fallback: boolean): PresentReveal {
+  if (fallback) return 'void'
+  return after.cards.length > before.cards.length ? 'opened' : 'nothing'
+}
+
 export interface ConnectResult {
   state: GameState
   contradiction: boolean
