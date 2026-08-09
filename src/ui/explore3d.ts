@@ -132,14 +132,33 @@ export const hasStation = (): boolean => Boolean(STATION_URL)
  * 상수를 방에 맞추는 게 아니라 방에서 상수를 뽑는다.
  */
 const EDGE_MARGIN = 0.45   // 바깥벽 안쪽으로 이만큼 물러선다
-const SPEED = 2.6          // m/s. 공간이 넓어져 취조실(1.25)보다 빨라야 답답하지 않다
+/**
+ * m/s. 사람 걷기는 1.4, 뛰기는 3 이다. 방이 31.8 × 21.1m 라 실제 걷기 속도로는
+ * 가로지르는 데 23초가 걸린다 — 조사 9회짜리 게임에서 그건 기다림이다.
+ * 빠른 걸음(2.2)으로 타협한다. 1인칭에서 2.6 은 뛰는 것처럼 느껴졌다.
+ */
+const SPEED = 2.2
 const PICK_RADIUS = 1.1    // 공간에 비례해 넓힌다 — 좁으면 계속 빗나간다
+/** 표식이 뜨는 높이(m). 실척 인물의 허리쯤이라 눈에 걸린다. */
+const MARK_Y = 0.85
 /** 이 높이 위는 천장이다. 탑다운이므로 숨긴다. */
 const CEILING_HIDE = true
-/** 앉은 사람의 화면상 높이(m). 실척(1.2)이면 이 공간에서 점이 된다 — 읽히는 크기를 쓴다. */
-const SEAT_HEIGHT = 2.6
-/** 걸어 다니는 나. 앉은 사람보다 조금 커야 눈이 따라간다. */
-const ACTOR_HEIGHT = 3.0
+/**
+ * 앉은 사람의 키(m). **실척으로 되돌렸다** (2.6 → 1.35).
+ *
+ * 처음엔 "탑다운에서 점이 된다" 는 이유로 2배 넘게 키웠다. 그건 화각이 22 이고
+ * 카메라가 고정이던 시절의 이야기다. 지금은 화각 13 에 인물을 따라다니므로
+ * 1.35m 짜리도 화면에서 **약 90px** 로 읽힌다.
+ *
+ * 그리고 키운 대가가 컸다 — 이 방은 **실척**이다(책상 0.7~0.8m · 카운터 1.0m ·
+ * 칸막이 1.2m, 실측). 사람만 2배면 책상에 앉은 거인이 되고, 1인칭으로 바꾸면
+ * 그 어긋남이 그대로 눈높이로 온다.
+ */
+const SEAT_HEIGHT = 1.35
+/** 걸어 다니는 나. 방이 실척이므로 사람도 실척이다. */
+const ACTOR_HEIGHT = 1.78
+/** 1인칭 눈높이(m). 키 1.78 인 사람의 눈은 대략 여기다. */
+const EYE_HEIGHT = 1.64
 
 /**
  * 모델의 **화면에 나오는 키**를 잰다.
@@ -340,7 +359,11 @@ export async function mountExplore(
     camera.lookAt(0, 0, 0)
 
     /** 1인칭 눈. 정사영으로 1인칭을 하면 원근이 없어 방이 납작해진다. */
-    const eye = new THREE.PerspectiveCamera(72, w / h, 0.08, 200)
+    /**
+     * 1인칭 눈. 화각 72 → **60**. Three 의 fov 는 **세로** 화각이라 72 는 16:9 에서
+     * 가로 100° 가 넘는다 — 방이 휘어 보이고 가까운 물건이 과장된다.
+     */
+    const eye = new THREE.PerspectiveCamera(60, w / h, 0.08, 200)
 
     const draco = new DRACOLoader().setDecoderPath('/draco/')
     const loader = new GLTFLoader().setDRACOLoader(draco)
@@ -802,7 +825,7 @@ export async function mountExplore(
             roughness: 0.45, metalness: 0.3,
           }),
         )
-        g.position.set(m.at[0], 0.4, m.at[1])
+        g.position.set(m.at[0], MARK_Y, m.at[1])
         g.userData.id = m.id
         markerRoot.add(g)
 
@@ -876,8 +899,10 @@ export async function mountExplore(
       const tex = new THREE.CanvasTexture(c)
       tex.colorSpace = THREE.SRGBColorSpace
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }))
-      sp.scale.set(4.4, 1.1, 1)
-      sp.position.set(st.at[0], SEAT_HEIGHT + 1.0, st.at[1])
+      // 이름표는 4.4m 폭이었다 — 키 2.6m 인물 옆에서는 맞았지만 실척(1.35m)에서는
+      // 사람보다 세 배 넓은 간판이 된다. 사람 어깨폭의 네 배쯤으로 줄인다.
+      sp.scale.set(2.2, 0.55, 1)
+      sp.position.set(st.at[0], SEAT_HEIGHT + 0.55, st.at[1])
       sp.renderOrder = 10
       return sp
     }
@@ -912,7 +937,19 @@ export async function mountExplore(
          * 60 Seconds! 도 캐릭터를 방 대비 크게 그린다 — 조작 대상이 보여야 하기 때문이다.
          * 사실적 비례를 버리고 **읽히는 크기**를 택한다.
          */
-        if (hgt > 0) o.scale.setScalar(SEAT_HEIGHT / hgt)
+        /**
+         * **말이 안 되는 배율은 거부한다.**
+         * 착석 모델 세 개가 포즈가 안 먹은 채(리그가 달라서) 배포된 적이 있다.
+         * 그중 하나는 **누워 있었고**(가장 긴 축이 깊이), 키가 0.34m 로 재져서
+         * 배율이 **4.03배**가 됐다 — 책상 위에 뻗은 거인이 나왔다.
+         * 정상적으로 앉은 사람은 1.30~1.40m 로 재지고 배율이 0.96~1.04 다.
+         * 그 밖이면 **키우지 않고 그대로 둔다** — 작게 나오는 게 괴물보다 낫다.
+         */
+        const scale = hgt > 0 ? SEAT_HEIGHT / hgt : 1
+        if (scale > 0.6 && scale < 1.8) o.scale.setScalar(scale)
+        else if (import.meta.env.DEV) {
+          console.warn(`[탐색] ${st.slug} 착석 모델이 이상하다 — 키 ${hgt.toFixed(2)}m, 배율 ${scale.toFixed(2)}. 배율을 적용하지 않는다.`)
+        }
         groundIt(o)
         // **벽 안에 앉히지 않는다.** 못 닿는 자리에 두면 그 사람은 없는 것과 같다.
         placeReachable(o, st.at[0], st.at[1])
@@ -1176,11 +1213,14 @@ export async function mountExplore(
       camera.lookAt(actor.position.x, 0.6, actor.position.z)
 
       if (firstPerson) {
-        // 눈높이는 실제 사람 눈(1.62m)이 아니라 **모델 키에 비례**한다 —
-        // 인물을 화면에 읽히게 키워 놨으므로(3.0m) 눈도 같이 올라가야 바닥이 안 보인다.
-        eye.position.set(actor.position.x, ACTOR_HEIGHT * 0.92, actor.position.z)
+        /**
+         * **사람 눈높이에 둔다.** 예전엔 `ACTOR_HEIGHT * 0.92 = 2.76m` 였다 —
+         * 방은 실척인데(책상 0.7~0.8m) 눈만 2.76m 라 책상을 내려다보는 거인이었다.
+         * 인물을 실척으로 되돌렸으므로 눈도 제자리로 온다.
+         */
+        eye.position.set(actor.position.x, EYE_HEIGHT, actor.position.z)
         const fwd = new THREE.Vector3(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y))
-        eye.lookAt(eye.position.clone().add(fwd).setY(ACTOR_HEIGHT * 0.8))
+        eye.lookAt(eye.position.clone().add(fwd).setY(EYE_HEIGHT))
         // 1인칭에서는 내 몸이 시야를 가린다
         actor.visible = false
         renderer.render(scene, eye)
