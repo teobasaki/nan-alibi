@@ -29,6 +29,7 @@ import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
 import { candidatesFrom } from './engine/solver'
 import { newTrace, profile, record as trace, type TraceEvent, type TraceInput } from './engine/journey'
+import { journalLines, tally } from './ui/journal'
 import { saveTrace } from './ui/journeyStore'
 import { pendingPairs, placeMatrix } from './engine/crossref'
 import { ask } from './api'
@@ -201,10 +202,8 @@ function topbar(): HTMLElement {
   bar.appendChild(h('div', 'brief',
     `${CASE.venue.name} ${CASE.venue.room} · 피해자 ${CASE.victim.name}(${CASE.victim.title}) · 추정 범행 ${SLOT_LABEL[CRIME_SLOT]}`))
 
-  const budget = h('div', 'budget')
-  budget.appendChild(h('span', 'label', '남은 조사'))
-  for (let i = 0; i < INVESTIGATION_BUDGET; i++) budget.appendChild(h('i', `pip${i < ui.game.investigationsLeft ? '' : ' spent'}`))
-  bar.appendChild(budget)
+  // 조사 pip 은 삭제했다 — 일지의 여백 눈금이 같은 정보를 더 잘 말한다(ADR 018 3단계).
+  // 같은 것을 두 곳에서 말하면 하나는 잉여이고, 눈금 쪽이 무엇에 썼는지까지 말한다.
 
   // AI 파이프라인 판 — 무엇이 무엇을 하고 있는지 여는 곳
   const dash = focusKey(h('button', `dashbtn${ui.dash ? ' on' : ''}`, '⚙ AI'), 'dash') as HTMLButtonElement
@@ -312,15 +311,58 @@ function deskOrRoom(): HTMLElement {
 function rightPage(): HTMLElement {
   const page = h('div', 'nb-page nb-right')
 
-  const journal = h('div', 'nb-journal')
-  journal.appendChild(h('div', 'nb-cap', '수사 일지'))
-  journal.appendChild(pendingBlock())
-  journal.appendChild(findingsBlock())
-  page.appendChild(journal)
+  page.appendChild(journalBlock())
 
   page.appendChild(h('div', 'nb-rule'))
   page.appendChild(board())
   return page
+}
+
+/**
+ * 수사 일지 — **내가 지출한 내역.** 새 정보를 주는 면이 아니다.
+ *
+ * 조사 1회 = 정확히 한 줄이고, 그 줄 왼쪽에 눈금이 하나 그어진다.
+ * 상단바의 조사 pip 을 없앤 것이 이 눈금 때문이다 — 같은 정보를 두 곳에서
+ * 말하면 하나는 잉여이고, 눈금 쪽이 **무엇에 썼는지까지** 말한다.
+ *
+ * 미대조 조합과 모순은 별도 목록이 아니라 여기에 흡수된다. 모순은 일지 안의 인장이다.
+ */
+function journalBlock(): HTMLElement {
+  const wrap = h('div', 'nb-journal')
+
+  // 조서는 `ui.chats` 에 있다. journal.ts 는 인물별 배열만 받고 순번으로 맞춘다.
+  const statements = Object.fromEntries(
+    SUSPECTS.map((s) => [s, ui.chats[s]!.map((c) => {
+      const st = c.st
+      if (!st || !(st.time || st.place || st.action)) return undefined
+      return [st.time, st.place, st.action].filter(Boolean).join(' · ')
+    })]),
+  ) as Partial<Record<SuspectId, (string | undefined)[]>>
+
+  const lines = journalLines(CASE, ui.journey, statements)
+  const t = tally(lines, INVESTIGATION_BUDGET)
+
+  const head = h('div', 'nb-cap')
+  head.appendChild(document.createTextNode('수사 일지'))
+  head.appendChild(h('span', 'nb-tally', `조사 ${t.spent} / ${INVESTIGATION_BUDGET}`))
+  wrap.appendChild(head)
+
+  if (lines.length === 0) {
+    wrap.appendChild(h('div', 'hintline', '아직 적을 것이 없다. 기록을 조회하거나 사람을 만나야 한다.'))
+  }
+
+  for (const l of lines) {
+    const row = h('div', `jl${l.spent ? ' spent' : ''}${l.stamp ? ` st-${l.stamp}` : ''}`)
+    row.appendChild(h('span', 'jl-mark', l.spent ? '│' : ''))
+    const body = h('div', 'jl-body')
+    body.appendChild(h('span', 'jl-t', l.text))
+    if (l.note) body.appendChild(h('span', 'jl-note', l.note))
+    row.appendChild(body)
+    wrap.appendChild(row)
+  }
+
+  wrap.appendChild(pendingBlock())
+  return wrap
 }
 
 /**
@@ -748,6 +790,10 @@ function pendingBlock(): HTMLElement {
       // 선택 상태를 거치지 않고 바로 연결한다 — 두 번 클릭시키면 장부의 값이 사라진다
       ui.selected = []
       const r = connect(ui.game, p.evidenceId, p.claimCardId)
+      // **연결 경로가 둘이다** — 격자에서 카드 두 장을 집는 길과 이 버튼.
+      // 여기에 기록이 빠져 있어서 맞대본 것이 일지에 한 줄도 안 남았다.
+      // 행동을 늘리면 기록도 같이 늘려야 한다 (음성 정리와 같은 실수였다).
+      mark({ k: 'connect', hit: r.contradiction })
       ui.game = r.state
       play(r.contradiction ? 'stamp' : 'deny')
       ui.flash = r.contradiction ? p.evidenceId : null
@@ -762,24 +808,6 @@ function pendingBlock(): HTMLElement {
     wrap.appendChild(h('div', 'hintline', `그 밖에 ${pend.length - SHOW}건 더 있다.`))
   }
   return wrap
-}
-
-/** 발견한 모순 — 세 각도 어디에서 보든 같은 자리에 있어야 한다. */
-function findingsBlock(): HTMLElement {
-  const f = h('div', 'findings')
-  f.appendChild(h('h3', undefined, `발견한 모순 (${ui.game.foundContradictions.length})`))
-  if (ui.game.foundContradictions.length === 0) {
-    f.appendChild(h('div', 'hintline',
-      '기록 한 장과 진술 한 장을 연결하십시오. 연결은 조사를 소모하지 않습니다.'))
-  }
-  for (const key of ui.game.foundContradictions) {
-    const parts = key.split('|')
-    const sid = parts[1] as SuspectId
-    const slot = Number(parts[2]) as Slot
-    f.appendChild(h('div', 'contradiction',
-      `${CASE.suspects[sid].name}의 ${SLOT_LABEL[slot]} 진술이 ${evLabel(parts[0]!)} 기록과 어긋난다.`))
-  }
-  return f
 }
 
 function askBox(s: SuspectId): HTMLElement {
