@@ -36,23 +36,20 @@ const SPECS = [
 ]
 
 /** 문서 URL(`/en/reference/sound-mono2stereo`)에서 유추한 경로들 */
-const ENDPOINTS = [
-  'https://api.varco.ai/v1/sound/generate',
-  'https://api.varco.ai/v1/sound/text-to-sound',
-  'https://api.varco.ai/v1/sound/text2sound',
-  'https://api.varco.ai/v1/sound',
-  'https://api.varco.ai/api/v1/sound/generate',
-  'https://api.varco.ai/sound/generate',
-  'https://api.varco.ai/v1/audio/generate',
-]
+/**
+ * 사용자가 문서에서 확인해 준 실제 규약:
+ *   POST /sound/varco/v1/api/mono2stereo · 헤더 `openapi_key`
+ * 접두사가 `/sound/varco/v1/api/` 였다. 내 후보는 전부 이 앞부분이 틀렸다.
+ * 이제 접두사를 고정하고 **연산 이름만** 찾는다.
+ */
+const BASES = ['https://api.varco.ai', 'https://sound.varco.ai']
+const OPS = ['text2sound', 'txt2sound', 'text-to-sound', 'generate', 'sound',
+             'create', 'txt2audio', 'text2audio', 'prompt2sound', 'mono2stereo']
+const ENDPOINTS = BASES.flatMap((b) => OPS.map((o) => `${b}/sound/varco/v1/api/${o}`))
 
 /** 인증 헤더 이름도 공급자마다 다르다 — 이것도 재본다 */
-const AUTHS = (k) => [
-  ['Authorization', `Bearer ${k}`],
-  ['x-api-key', k],
-  ['api-key', k],
-  ['X-VARCO-API-KEY', k],
-]
+// 문서가 `openapi_key` 라고 못박았다. 다른 후보는 이제 볼 이유가 없다.
+const AUTHS = (k) => [['openapi_key', k]]
 
 const short = (s) => s.replace(/\s+/g, ' ').slice(0, 120)
 

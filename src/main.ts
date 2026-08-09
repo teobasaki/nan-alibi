@@ -25,7 +25,7 @@ import type { Statement } from './engine/prompt'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
-import { hasWalkModel, mountExplore, type Explore3D, type Marker } from './ui/explore3d'
+import { hasStation, hasWalkModel, mountExplore, type Explore3D, type Marker, type Seat } from './ui/explore3d'
 import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
@@ -95,7 +95,7 @@ interface UI {
   /** 마지막으로 그린 일지 줄 수 — 새 줄만 써지는 연출을 주기 위해 */
   journalSeen: number
   /** 탐색 모드 — 방을 걸어 다니며 기록을 줍는다 */
-  explore: { handle: Explore3D | null; near: string | null } | null
+  explore: { handle: Explore3D | null; near: string | null; nearSeat: string | null } | null
   /** 플레이 여정 — 개인화의 재료. 규칙에는 영향을 주지 않는다 */
   journey: ReturnType<typeof newTrace>
   scene: { slug: string; handle: Stage3D | null } | null
@@ -304,12 +304,33 @@ function tellLabel(t: string): string {
  * 방 안의 실제 위치로 옮기기만 한다.
  */
 const PLACE_AT: readonly [number, number][] = [
-  [-1.05, 0.95],   // 로비 — 문 쪽
-  [1.05, 0.95],    // 복도
-  [0, -1.05],      // 1204호 — 안쪽
-  [-1.05, -0.7],   // 직원계단
-  [1.05, -0.7],    // 라운지
+  [-9.5, 5.5],    // 로비 — 입구 쪽
+  [9.5, 5.5],     // 복도
+  [0, -6.5],      // 1204호 — 가장 안쪽
+  [-9.5, -5.0],   // 직원계단
+  [9.5, -5.0],    // 라운지
 ]
+
+/**
+ * 용의자들이 앉아 있는 자리. **경찰서 대기 구역이다.**
+ * 방 가운데를 비워 두고 좌우로 벌려 놓는다 — 한 명에게 다가갈 때
+ * 다른 사람의 원에 같이 걸리면 누구를 연행하는지 헷갈린다.
+ */
+const SEAT_AT: readonly [number, number][] = [
+  [-5.0, 1.5], [-2.5, 3.0], [0, 1.5], [2.5, 3.0], [5.0, 1.5],
+]
+
+/** 경찰서에 앉아 있는 다섯 사람 */
+function exploreSeats(): Seat[] {
+  return SUSPECTS.map((s, i) => ({
+    id: s,
+    slug: SLUG_BY_JOB[CASE.suspects[s].job] ?? 'security',
+    at: SEAT_AT[i] ?? [0, 0],
+    label: `${CASE.suspects[s].name} · ${CASE.suspects[s].job}`,
+    // 이미 말을 걸어본 사람인가 — 발치 표식 색이 갈린다
+    done: (ui.chats[s]?.length ?? 0) > 0,
+  }))
+}
 
 /**
  * 탐색 모드 화면 — **방을 걸어 다닌다.**
@@ -348,10 +369,14 @@ function exploreRoom(): HTMLElement {
   }
   bar.appendChild(back)
   const nearId = ui.explore?.near ?? null
+  const seatId = ui.explore?.nearSeat as SuspectId | null | undefined
   const ev = nearId ? CASE.evidence.find((e) => e.id === nearId) : null
-  bar.appendChild(h('div', 'exhint', ev
-    ? `${labelOfKind(ev.kind)} · ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]} — E 키 또는 표식을 눌러 조회 (조사 1회)`
-    : '방향키·WASD 로 걷거나 바닥을 눌러 이동. 금색 표식에 다가가면 조회할 수 있다.'))
+  // **사람이 우선한다** — 연행이 조회보다 큰 행동이라 힌트도 그 순서다
+  bar.appendChild(h('div', 'exhint', seatId
+    ? `${CASE.suspects[seatId].name} · ${CASE.suspects[seatId].job} — E 키를 눌러 취조실로 데려간다`
+    : ev
+      ? `${labelOfKind(ev.kind)} · ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]} — E 키 또는 표식을 눌러 조회 (조사 1회)`
+      : '방향키·WASD 로 걷는다. 앉아 있는 사람에게 다가가면 취조실로 데려갈 수 있다.'))
   page.appendChild(bar)
 
   // 씬은 한 번만 만든다. 재렌더마다 새로 만들면 WebGL 컨텍스트가 쌓인다.
@@ -361,6 +386,25 @@ function exploreRoom(): HTMLElement {
       onNear: (id) => {
         if (!ui.explore || ui.explore.near === id) return
         ui.explore.near = id
+        render()
+      },
+      onNearSeat: (id) => {
+        if (!ui.explore || ui.explore.nearSeat === id) return
+        ui.explore.nearSeat = id
+        render()
+      },
+      /**
+       * **취조실로 데려간다.** 여기서 규칙은 계산하지 않는다 —
+       * 심문 자체(조사 소모·증언 해금)는 `doAsk` 가 호출하는 engine 이 정한다.
+       * 이 화면은 장면을 바꾸기만 한다.
+       */
+      onTake: (id) => {
+        play('doorOpen')
+        ui.explore?.handle?.dispose()
+        ui.explore = null
+        hush(); stopVoice()
+        mark({ k: 'open', who: id as SuspectId })
+        ui.active = id as SuspectId
         render()
       },
       onPick: (id) => {
@@ -381,10 +425,11 @@ function exploreRoom(): HTMLElement {
       }
       ui.explore.handle = hd
       hd.setMarkers(exploreMarkers())
+      void hd.setSeats(exploreSeats())
     })
   } else if (ui.explore?.handle) {
-    // 재렌더로 호스트가 새로 생겼으므로 캔버스를 옮겨 붙인다
     ui.explore.handle.setMarkers(exploreMarkers())
+    void ui.explore.handle.setSeats(exploreSeats())
   }
   return page
 }
@@ -536,12 +581,12 @@ function indexTabs(): HTMLElement {
   // 방으로 나간다 — 걷기 모델이 실린 배포에서만 보인다.
   // 없는 기능의 버튼을 두면 눌렀는데 아무 일도 안 일어나는 화면이 된다.
   const anySlug = SLUG_BY_JOB[CASE.suspects[SUSPECTS[0]!].job] ?? 'security'
-  if (hasWalkModel(anySlug)) {
+  if (hasWalkModel(anySlug) && hasStation()) {
     const go = h('button', 'nb-tab exgo') as HTMLButtonElement
-    go.appendChild(h('span', 'nbt-l', '현장'))
-    go.title = '방을 걸어 다니며 기록을 줍는다'
+    go.appendChild(h('span', 'nbt-l', '경찰서'))
+    go.title = '경찰서를 걸어 다니며 사람을 만나고 기록을 줍는다'
     focusKey(go, 'view:explore')
-    go.onclick = () => { play('doorOpen'); ui.explore = { handle: null, near: null }; render() }
+    go.onclick = () => { play('doorOpen'); ui.explore = { handle: null, near: null, nearSeat: null }; render() }
     tabs.appendChild(go)
   }
   return tabs

@@ -39,8 +39,23 @@ export interface Explore3D {
   dispose(): void
   /** 마커 갱신 — 조회한 기록은 사라진다 */
   setMarkers(list: Marker[]): void
+  /** 앉아 있는 사람들 배치 */
+  setSeats(list: Seat[]): Promise<void>
   /** 지금 걷고 있는가 (UI 힌트용) */
   isMoving(): boolean
+}
+
+/** 경찰서에 앉아 있는 사람. **다가가면 취조실로 데려간다.** */
+export interface Seat {
+  /** 용의자 id */
+  id: string
+  /** 착석 모델 slug — 심문 씬이 쓰는 것과 같은 표(roleSlug)에서 온다 */
+  slug: string
+  at: [number, number]
+  /** 화면에 뜰 이름 */
+  label: string
+  /** 이미 심문했는가 — 표시가 달라진다 */
+  done: boolean
 }
 
 export interface ExploreHandlers {
@@ -51,6 +66,13 @@ export interface ExploreHandlers {
   onNear(id: string | null): void
   /** 플레이어가 **집겠다고 한 것** — E 키 또는 마커 클릭 */
   onPick(id: string): void
+  /** 용의자에게 닿았을 때 */
+  onNearSeat(id: string | null): void
+  /**
+   * **이 사람을 취조실로 데려간다.**
+   * 화면은 "데려가겠다" 만 말한다 — 조사를 소모할지, 지금 가능한지는 engine 이 정한다.
+   */
+  onTake(id: string): void
 }
 
 const CHAR = import.meta.glob('/public/characters/*.walk.opt.glb', {
@@ -63,24 +85,56 @@ for (const [p, url] of Object.entries(CHAR)) {
   if (slug) WALK_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
 }
 
-const ROOM_URL = (Object.values(
-  import.meta.glob('/public/room/room.opt.glb', { eager: true, query: '?url', import: 'default' }),
+/** 앉아 있는 사람들은 **심문 씬이 쓰는 착석 모델**을 그대로 쓴다 — 같은 사람이어야 한다 */
+const SEATED = import.meta.glob('/public/characters/*.opt.glb', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+
+const SEAT_BY_SLUG = new Map<string, string>()
+for (const [p, url] of Object.entries(SEATED)) {
+  const f = p.split('/').pop() ?? ''
+  if (f.includes('.walk.')) continue          // 걷기 모델은 여기서 제외
+  const slug = f.replace('.opt.glb', '')
+  SEAT_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
+}
+
+/**
+ * 경찰서. **취조실(`room.opt.glb`)은 그대로 둔다** — 심문 씬이 그 방의 좌석·조명을
+ * 실측으로 못박고 있어서 건드리면 전부 다시 재야 한다. 여기는 그 앞 단계의 다른 공간이다.
+ *
+ * 원본은 노드 2,889개였다. 재질이 21종뿐이라 **전부 한 메시로 합쳐** 드로우콜을
+ * 노드 수가 아니라 재질 수로 떨어뜨렸다(`scripts/merge_by_material.py`).
+ * 천장(`Ceiling`)만 따로 남긴 이유는 **위에서 내려다보려면 그것을 숨겨야** 하기 때문이다 —
+ * 합쳐버리면 숨길 수가 없다.
+ */
+const STATION_URL = (Object.values(
+  import.meta.glob('/public/room/station.opt.glb', { eager: true, query: '?url', import: 'default' }),
 )[0] as string | undefined)?.replace(/^\/public/, '')
 
 export const hasWalkModel = (slug: string): boolean => WALK_BY_SLUG.has(slug)
+export const hasStation = (): boolean => Boolean(STATION_URL)
 
-/** 방 크기(미터). 심문 씬과 같은 배율에서 나온 값이다. */
-const ROOM_SCALE = 1.9
-const HALF = 1.35          // 걸어 다닐 수 있는 반경 — 벽 안쪽
-const SPEED = 1.25         // m/s. 32프레임 걷기 클립의 보폭에 맞췄다
-const PICK_RADIUS = 0.42   // 이 거리 안에 들어오면 주울 수 있다
+/**
+ * 경찰서 실측 31.8 × 21.1 × 4.1m. 배율 1 로 그대로 쓴다 —
+ * 취조실(1.8×2.0m)은 원본이 작아 1.9배를 곱했지만 이건 이미 실척이다.
+ */
+const HALF_X = 13.0        // 걸어 다닐 수 있는 범위. 벽 안쪽으로 여유를 뒀다
+const HALF_Z = 8.0
+const SPEED = 2.6          // m/s. 공간이 넓어져 취조실(1.25)보다 빨라야 답답하지 않다
+const PICK_RADIUS = 1.1    // 공간에 비례해 넓힌다 — 좁으면 계속 빗나간다
+/** 이 높이 위는 천장이다. 탑다운이므로 숨긴다. */
+const CEILING_HIDE = true
+/** 앉은 사람의 화면상 높이(m). 실척(1.2)이면 이 공간에서 점이 된다 — 읽히는 크기를 쓴다. */
+const SEAT_HEIGHT = 2.6
+/** 걸어 다니는 나. 앉은 사람보다 조금 커야 눈이 따라간다. */
+const ACTOR_HEIGHT = 3.0
 
 export async function mountExplore(
   host: HTMLElement,
   slug: string,
   handlers: ExploreHandlers,
 ): Promise<Explore3D | null> {
-  if (!ROOM_URL || !WALK_BY_SLUG.has(slug)) return null
+  if (!STATION_URL || !WALK_BY_SLUG.has(slug)) return null
 
   try {
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
@@ -103,23 +157,25 @@ export async function mountExplore(
      * **정사영 탑다운.** 60 Seconds! 가 그렇듯 방 전체가 한 화면에 들어와야
      * "어디로 갈지" 를 고를 수 있다. 원근이면 벽이 시야를 가린다.
      */
-    const view = 3.4
+    // 경찰서가 31.8 × 21.1m 다. 세로가 병목이라 그쪽을 기준으로 화각을 잡는다.
+    const view = 22
     const camera = new THREE.OrthographicCamera(
-      -view * (w / h) / 2, view * (w / h) / 2, view / 2, -view / 2, 0.1, 40)
-    camera.position.set(2.6, 3.4, 2.6)
-    camera.lookAt(0, 0.55, 0)
+      -view * (w / h) / 2, view * (w / h) / 2, view / 2, -view / 2, 0.1, 200)
+    camera.position.set(16, 20, 16)
+    camera.lookAt(0, 0, 0)
 
     const draco = new DRACOLoader().setDecoderPath('/draco/')
     const loader = new GLTFLoader().setDRACOLoader(draco)
 
     const [roomGltf, charGltf] = await Promise.all([
-      loader.loadAsync(ROOM_URL),
+      loader.loadAsync(STATION_URL),
       loader.loadAsync(WALK_BY_SLUG.get(slug)!),
     ])
 
     const room = roomGltf.scene
-    room.scale.setScalar(ROOM_SCALE)
     room.traverse((o) => {
+      // 천장은 숨긴다 — 위에서 내려다보는 화면이므로. 합치지 않고 남겨둔 이유가 이것이다.
+      if (CEILING_HIDE && /ceiling/i.test(o.name)) o.visible = false
       const m = o as THREE.Mesh
       if (!m.isMesh) return
       m.receiveShadow = true
@@ -136,8 +192,8 @@ export async function mountExplore(
     // 걷기 리그는 A포즈 rest 라 원래 크기다. 방 배율에 맞춘다.
     const box = new THREE.Box3().setFromObject(actor)
     const height = box.max.y - box.min.y
-    actor.scale.setScalar(height > 0 ? 1.7 / height : 1)   // 사람 키 1.7m
-    actor.position.set(0, 0, 0.9)
+    actor.scale.setScalar(height > 0 ? ACTOR_HEIGHT / height : 1)
+    actor.position.set(0, 0, 5)
     scene.add(actor)
 
     const mixer = new THREE.AnimationMixer(actor)
@@ -147,10 +203,12 @@ export async function mountExplore(
     if (walk) walk.paused = true      // 멈춰 있을 때는 정지 프레임
 
     // 조명 — 심문실보다 밝게. 어두우면 어디로 갈지 안 보인다.
-    scene.add(new THREE.AmbientLight(0xffd9b0, 0.55))
-    const lamp = new THREE.PointLight(0xffcf9a, 14, 7, 2)
-    lamp.position.set(0.05, 1.75, 0.02)
-    scene.add(lamp)
+    // 넓은 실내라 점광 하나로는 구석이 안 보인다. 환경광을 올리고 위에서 넓게 비춘다.
+    scene.add(new THREE.AmbientLight(0xffd9b0, 0.85))
+    const key = new THREE.DirectionalLight(0xfff0d8, 1.5)
+    key.position.set(8, 18, 6)
+    scene.add(key)
+    scene.add(new THREE.HemisphereLight(0x8899bb, 0x2a1c20, 0.5))
 
     // ── 마커 ──
     const markerRoot = new THREE.Group()
@@ -160,10 +218,10 @@ export async function mountExplore(
     /** 기록 종류마다 다른 실루엣 — 멀리서도 무엇인지 읽힌다 */
     const shapeOf = (k: Marker['kind']): THREE.BufferGeometry => {
       switch (k) {
-        case 'cctv':    return new THREE.ConeGeometry(0.09, 0.16, 4)          // 렌즈가 향하는 원뿔
-        case 'keycard': return new THREE.BoxGeometry(0.14, 0.015, 0.09)       // 납작한 카드
-        case 'call':    return new THREE.TorusGeometry(0.07, 0.022, 8, 20)    // 수화기 코드
-        default:        return new THREE.CylinderGeometry(0.02, 0.02, 0.17, 6) // 말린 영수증
+        case 'cctv':    return new THREE.ConeGeometry(0.28, 0.5, 4)            // 렌즈가 향하는 원뿔
+        case 'keycard': return new THREE.BoxGeometry(0.44, 0.05, 0.28)         // 납작한 카드
+        case 'call':    return new THREE.TorusGeometry(0.22, 0.07, 8, 20)      // 수화기 코드
+        default:        return new THREE.CylinderGeometry(0.06, 0.06, 0.52, 6) // 말린 영수증
       }
     }
 
@@ -185,22 +243,82 @@ export async function mountExplore(
             roughness: 0.45, metalness: 0.3,
           }),
         )
-        g.position.set(m.at[0], 0.12, m.at[1])
+        g.position.set(m.at[0], 0.4, m.at[1])
         g.userData.id = m.id
         markerRoot.add(g)
 
         // 바닥에 옅은 원 — 어디까지 가야 닿는지 보인다
         const halo = new THREE.Mesh(
-          new THREE.RingGeometry(PICK_RADIUS - 0.03, PICK_RADIUS, 28),
+          new THREE.RingGeometry(PICK_RADIUS - 0.1, PICK_RADIUS, 28),
           new THREE.MeshBasicMaterial({
             color: m.crime ? 0xb3372c : 0xc8912f,
             transparent: true, opacity: 0.16, side: THREE.DoubleSide,
           }),
         )
         halo.rotation.x = -Math.PI / 2
-        halo.position.set(m.at[0], 0.012, m.at[1])
+        halo.position.set(m.at[0], 0.04, m.at[1])
         halo.userData.id = m.id
         markerRoot.add(halo)
+      }
+    }
+
+    // ── 앉아 있는 사람들 ──
+    const seatRoot = new THREE.Group()
+    scene.add(seatRoot)
+    let seats: Seat[] = []
+    /** 같은 모델을 두 번 받지 않는다 — 다섯 명이 같은 직업이면 한 번만 받는다 */
+    const seatCache = new Map<string, THREE.Object3D>()
+
+    const setSeats = async (list: Seat[]): Promise<void> => {
+      seats = list
+      seatRoot.clear()
+      for (const st of list) {
+        const url = SEAT_BY_SLUG.get(st.slug)
+        if (!url) continue
+        let proto = seatCache.get(st.slug)
+        if (!proto) {
+          const g = await loader.loadAsync(url)
+          proto = g.scene
+          proto.traverse((o) => {
+            const m = o as THREE.Mesh
+            if (!m.isMesh) return
+            for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
+              if (!mm) continue
+              mm.emissive?.setScalar(0)      // Meshy·Sketchfab 은 기본적으로 자가발광한다
+              mm.emissiveMap = null
+            }
+          })
+          seatCache.set(st.slug, proto)
+        }
+        const o = proto.clone(true)
+        // 착석 모델은 rest pose 가 앉은 자세라 그대로 놓으면 된다.
+        // 크기는 사람 키(1.7m)에 맞춘다 — 모델마다 원본 스케일이 다르다.
+        const box = new THREE.Box3().setFromObject(o)
+        const hgt = box.max.y - box.min.y
+        /**
+         * **탑다운에서는 실척이 곧 안 보임이다.**
+         * 공간이 31.8×21.1m 인데 앉은 사람은 1.2m 라 화면에서 점이 된다.
+         * 60 Seconds! 도 캐릭터를 방 대비 크게 그린다 — 조작 대상이 보여야 하기 때문이다.
+         * 사실적 비례를 버리고 **읽히는 크기**를 택한다.
+         */
+        if (hgt > 0) o.scale.setScalar(SEAT_HEIGHT / hgt)
+        o.position.set(st.at[0], 0, st.at[1])
+        o.rotation.y = Math.atan2(-st.at[0], -st.at[1])   // 방 가운데를 본다
+        o.userData.seatId = st.id
+        seatRoot.add(o)
+
+        // 발치 표식 — 이미 심문한 사람은 초록, 아직이면 놋쇠
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(PICK_RADIUS - 0.14, PICK_RADIUS + 0.25, 32),
+          new THREE.MeshBasicMaterial({
+            color: st.done ? 0x4f9b6e : 0xc8912f,
+            transparent: true, opacity: st.done ? 0.2 : 0.45, side: THREE.DoubleSide,
+          }),
+        )
+        ring.rotation.x = -Math.PI / 2
+        ring.position.set(st.at[0], 0.03, st.at[1])
+        ring.userData.seatId = st.id
+        seatRoot.add(ring)
       }
     }
 
@@ -208,10 +326,16 @@ export async function mountExplore(
     // **`tick()`·핸들러가 참조하는 것은 전부 그보다 먼저 선언한다.**
     // 이 프로젝트는 stage3d.ts 에서 같은 TDZ 를 두 번 밟았다(lastFrame·applyCam).
     let near: string | null = null
+    /** 지금 닿아 있는 사람 */
+    let nearSeat: string | null = null
     const keys = new Set<string>()
     const onDown = (e: KeyboardEvent): void => {
       const k = e.key.toLowerCase()
-      if (k === 'e' && near) { handlers.onPick(near); e.preventDefault(); return }
+      if (k === 'e') {
+        // **사람이 우선한다.** 둘 다 닿아 있으면 연행이 조회보다 큰 행동이다.
+        if (nearSeat) { handlers.onTake(nearSeat); e.preventDefault(); return }
+        if (near) { handlers.onPick(near); e.preventDefault(); return }
+      }
       if ('wasd'.includes(k) || k.startsWith('arrow')) { keys.add(k); e.preventDefault() }
     }
     const onUp = (e: KeyboardEvent): void => { keys.delete(e.key.toLowerCase()) }
@@ -229,6 +353,13 @@ export async function mountExplore(
         -((e.clientY - r.top) / r.height) * 2 + 1)
       ray.setFromCamera(ndc, camera)
       // 마커를 눌렀으면 줍는 것이지 거기로 걸어가는 게 아니다
+      const onSeat = ray.intersectObjects(seatRoot.children, true)[0]
+      if (onSeat) {
+        // 클릭한 것이 사람이면 연행이다. 자식 메시가 잡히므로 부모까지 거슬러 올라간다.
+        let n: THREE.Object3D | null = onSeat.object
+        while (n && !n.userData.seatId) n = n.parent
+        if (n?.userData.seatId) { handlers.onTake(n.userData.seatId as string); return }
+      }
       const onMarker = ray.intersectObjects(markerRoot.children, false)[0]
       if (onMarker) {
         const id = onMarker.object.userData.id as string | undefined
@@ -238,8 +369,8 @@ export async function mountExplore(
       const hit = new THREE.Vector3()
       if (ray.ray.intersectPlane(floor, hit)) {
         goal = new THREE.Vector3(
-          Math.max(-HALF, Math.min(HALF, hit.x)), 0,
-          Math.max(-HALF, Math.min(HALF, hit.z)))
+          Math.max(-HALF_X, Math.min(HALF_X, hit.x)), 0,
+          Math.max(-HALF_Z, Math.min(HALF_Z, hit.z)))
       }
     }
     renderer.domElement.addEventListener('click', onClick)
@@ -276,8 +407,8 @@ export async function mountExplore(
       moving = dir.lengthSq() > 0
       if (moving) {
         actor.position.addScaledVector(dir, SPEED * dt)
-        actor.position.x = Math.max(-HALF, Math.min(HALF, actor.position.x))
-        actor.position.z = Math.max(-HALF, Math.min(HALF, actor.position.z))
+        actor.position.x = Math.max(-HALF_X, Math.min(HALF_X, actor.position.x))
+        actor.position.z = Math.max(-HALF_Z, Math.min(HALF_Z, actor.position.z))
         // 가는 쪽을 본다. 즉시 돌리면 뚝뚝 끊기므로 각도를 보간한다.
         const want = Math.atan2(dir.x, dir.z)
         let d = want - actor.rotation.y
@@ -303,6 +434,17 @@ export async function mountExplore(
       if (nowNear !== near) {
         near = nowNear
         handlers.onNear(near)
+      }
+
+      let nowSeat: string | null = null
+      for (const st of seats) {
+        const dx = actor.position.x - st.at[0]
+        const dz = actor.position.z - st.at[1]
+        if (dx * dx + dz * dz < PICK_RADIUS * PICK_RADIUS) { nowSeat = st.id; break }
+      }
+      if (nowSeat !== nearSeat) {
+        nearSeat = nowSeat
+        handlers.onNearSeat(nearSeat)
       }
       // 닿아 있는 마커는 부풀어 오른다 — 지금 집을 수 있다는 신호
       for (const g of markerRoot.children) {
@@ -330,6 +472,7 @@ export async function mountExplore(
 
     return {
       setMarkers,
+      setSeats,
       isMoving: () => moving,
       dispose() {
         alive = false
