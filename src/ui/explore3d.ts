@@ -610,6 +610,84 @@ export async function mountExplore(
     }
 
     /**
+     * **의자를 찾는다 — 이름이 아니라 기하로.**
+     *
+     * "의자 위치를 눈대중으로 맞추지 말고 좌표를 뽑아서 배치하라" — 그대로 한다.
+     * 이 방은 재질이 합쳐져 있지만 의자·탁자 재질(`Chair___Table`)이 따로 남아 있어서
+     * 그 재질의 삼각형만 보면 된다. 좌면 높이(0.35~0.62m)의 수평면을 XZ 로 뭉치면
+     * 뭉치 하나가 의자 하나다.
+     *
+     * 선반과 의자는 **등받이**로 가른다 — 책상 밑 선반도 좌면 높이의 수평면이지만
+     * 등받이가 없다. 뭉치 근처 0.62~1.2m 의 수직면 무게중심이 등받이고, 그 반대쪽이
+     * 의자가 보는 방향이다. 등받이 없는 뭉치는 버린다.
+     *
+     * ("위가 막히면 책상 밑 선반" 필터는 시도했다가 버렸다 — 이 재질에는 **탁자도**
+     * 들어 있어서, 책상 앞에 밀어 넣은 의자가 전부 걸러졌다. 런타임 실측 의자 0개.
+     * 책상 안쪽 선반이 등받이 요건을 뚫고 들어와도, 그런 자리는 사방이 막혀 있어
+     * `pickChair` 의 "다가갈 수 있는가" 검사가 걸러 준다.)
+     */
+    interface ChairSpot { x: number; z: number; y: number; facing: number }
+    const findChairs = (): ChairSpot[] => {
+      interface Acc { x: number; z: number; y: number; w: number; bx: number; bz: number; bn: number }
+      const seatsAcc: Acc[] = []
+      const v0 = new THREE.Vector3()
+      const v1 = new THREE.Vector3()
+      const v2 = new THREE.Vector3()
+      const n_ = new THREE.Vector3()
+      const e1 = new THREE.Vector3()
+      const e2 = new THREE.Vector3()
+      room.updateMatrixWorld(true)
+      room.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (!m.isMesh) return
+        for (let q: THREE.Object3D | null = o; q; q = q.parent) if (!q.visible) return
+        const mats = Array.isArray(m.material) ? m.material : [m.material]
+        if (!mats.some((mm) => /chair/i.test((mm as THREE.Material)?.name ?? ''))) return
+        const pos = m.geometry.getAttribute('position')
+        if (!pos) return
+        const idx = m.geometry.getIndex()
+        const count = idx ? idx.count : pos.count
+        for (let i = 0; i + 2 < count; i += 3) {
+          v0.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(m.matrixWorld)
+          v1.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(m.matrixWorld)
+          v2.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2).applyMatrix4(m.matrixWorld)
+          e1.subVectors(v1, v0)
+          e2.subVectors(v2, v0)
+          n_.crossVectors(e1, e2)
+          const area = n_.length() / 2
+          if (area < 1e-6) continue
+          const ny = Math.abs(n_.y) / (area * 2)
+          const cy = (v0.y + v1.y + v2.y) / 3
+          const cx = (v0.x + v1.x + v2.x) / 3
+          const cz = (v0.z + v1.z + v2.z) / 3
+          if (ny > 0.8 && cy > 0.35 && cy < 0.62) {
+            let c = seatsAcc.find((k) => Math.hypot(k.x - cx, k.z - cz) < 0.45)
+            if (!c) { c = { x: cx, z: cz, y: 0, w: 0, bx: 0, bz: 0, bn: 0 }; seatsAcc.push(c) }
+            const w = c.w + area
+            c.x = (c.x * c.w + cx * area) / w
+            c.z = (c.z * c.w + cz * area) / w
+            c.y = (c.y * c.w + cy * area) / w
+            c.w = w
+          }
+          if (ny < 0.35 && cy > 0.62 && cy < 1.2) {
+            const c = seatsAcc.find((k) => Math.hypot(k.x - cx, k.z - cz) < 0.5)
+            if (c) { c.bx += cx; c.bz += cz; c.bn++ }
+          }
+        }
+      })
+      return seatsAcc
+        .filter((c) => c.w > 0.1 && c.w < 2.0)
+        .filter((c) => c.bn > 3)
+        .map((c) => ({ x: c.x, z: c.z, y: c.y,
+          facing: Math.atan2(c.x - c.bx / c.bn, c.z - c.bz / c.bn) }))
+    }
+    const chairs = findChairs()
+    if (import.meta.env.DEV) {
+      console.info(`[탐색] 의자 ${chairs.length}개 실측`,
+        chairs.map((c) => `(${c.x.toFixed(1)},${c.z.toFixed(1)})`).join(' '))
+    }
+
+    /**
      * **걸어서 닿는 칸을 미리 구해 둔다.**
      *
      * 보이는 것을 전부 막으면(0.3~2.6m) 책상 뒤·구석에 **고립된 칸이 18개** 생긴다.
@@ -853,7 +931,28 @@ export async function mountExplore(
       return sp
     }
 
+    /** 이번 판에서 이미 배정한 의자 — 두 사람이 같은 의자에 겹치면 안 된다 */
+    const takenChairs = new Set<ChairSpot>()
+    const pickChair = (ax: number, az: number): ChairSpot | null => {
+      let best: ChairSpot | null = null
+      let bestD = 4.5                     // 앵커에서 이보다 멀면 "근처 의자" 가 아니다
+      for (const c of chairs) {
+        if (takenChairs.has(c)) continue
+        // 플레이어가 다가갈 자리 — 의자 주변 여덟 방향 중 하나는 걸을 수 있어야 한다
+        let approachable = false
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+          if (reachable(c.x + Math.cos(a) * 0.8, c.z + Math.sin(a) * 0.8)) { approachable = true; break }
+        }
+        if (!approachable) continue
+        const d = Math.hypot(c.x - ax, c.z - az)
+        if (d < bestD) { bestD = d; best = c }
+      }
+      if (best) takenChairs.add(best)
+      return best
+    }
+
     const setSeats = async (list: Seat[]): Promise<void> => {
+      takenChairs.clear()
       seats = list
       seatRoot.clear()
       for (const st of list) {
@@ -897,10 +996,33 @@ export async function mountExplore(
           console.warn(`[탐색] ${st.slug} 착석 모델이 이상하다 — 키 ${hgt.toFixed(2)}m, 배율 ${scale.toFixed(2)}. 배율을 적용하지 않는다.`)
         }
         groundIt(o)
-        // **벽 안에 앉히지 않는다.** 못 닿는 자리에 두면 그 사람은 없는 것과 같다.
-        placeReachable(o, st.at[0], st.at[1])
-        st.at = [o.position.x, o.position.z]   // 근접 판정도 옮겨진 자리를 본다
-        o.rotation.y = Math.atan2(-st.at[0], -st.at[1])   // 방 가운데를 본다
+        /**
+         * **실측한 의자에 앉힌다.** 앵커에서 가장 가까운 미사용 의자를 고르되,
+         * 플레이어가 다가갈 수 있어야 하므로 의자 곁에 걸을 수 있는 칸이 있는 것만 쓴다.
+         * 근처에 의자가 없으면 예전처럼 바닥의 닿는 자리에 세운다 — 의자가 없다고
+         * 사람이 사라지면 안 된다.
+         */
+        const chair = pickChair(st.at[0], st.at[1])
+        if (chair) {
+          o.position.x = chair.x
+          o.position.z = chair.z
+          // 엉덩이를 좌면에 얹는다 — 발바닥 기준(0)으로는 좌면과 8cm쯤 어긋난다
+          let hips: THREE.Object3D | null = null
+          o.traverse((b) => { if (!hips && /^Hips$/.test(b.name)) hips = b })
+          if (hips) {
+            const hv = new THREE.Vector3()
+            ;(hips as THREE.Object3D).getWorldPosition(hv)
+            const lift = chair.y - hv.y
+            if (lift > -0.05 && lift < 0.25) o.position.y += lift
+          }
+          o.rotation.y = chair.facing               // 의자가 보는 쪽을 본다
+          st.at = [chair.x, chair.z]
+        } else {
+          // **벽 안에 앉히지 않는다.** 못 닿는 자리에 두면 그 사람은 없는 것과 같다.
+          placeReachable(o, st.at[0], st.at[1])
+          st.at = [o.position.x, o.position.z]
+          o.rotation.y = Math.atan2(-st.at[0], -st.at[1])   // 방 가운데를 본다
+        }
         o.userData.seatId = st.id
         seatRoot.add(o)
 

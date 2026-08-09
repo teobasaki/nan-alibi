@@ -16,6 +16,7 @@
  * 검거는 붉은 인장과 문 닫히는 소리로, 미제는 서류가 덮이는 소리로 끝난다.
  */
 
+import { buildComicPage, type ComicPanel } from './comicPage'
 import { play } from './sound'
 import { josa } from '../josa'
 import type { CaseFile, SuspectId } from '../types'
@@ -32,27 +33,31 @@ for (const [path, url] of Object.entries(FILES)) {
   if (name) PANEL_URL.set(name, (url as string).replace(/^\/public/, ''))
 }
 
-interface Panel {
-  line: string
-  key: string
-  /** 이 패널에서 낼 소리 */
-  voice?: 'stamp' | 'doorOpen' | 'filed' | 'creak'
-}
-
-function panels(c: CaseFile, culprit: SuspectId, correct: boolean): Panel[] {
+/**
+ * 페이지 배치는 결말마다 다르다 — 검거는 네 칸이 좁혀 들어가고,
+ * 미제는 세 칸이 넓게 비어 간다. 같은 페이지 문법(`comicPage.ts`) 위에서.
+ */
+function panels(c: CaseFile, culprit: SuspectId, correct: boolean): ComicPanel[] {
   const who = c.suspects[culprit]
   if (!correct) {
     return [
-      { key: '남았다', line: '조서에 서명이 없었다.', voice: 'creak' },
-      { key: '미제', line: '사건은 미제로 편철됐다. 다섯은 각자의 밤으로 돌아갔다.' },
-      { key: '그중 하나', line: '그중 하나는 오늘도 잠을 잘 잘 것이다.', voice: 'filed' },
+      { area: 'p0', img: PANEL_URL.get('0'), key: '남았다', corner: 'tl', tilt: 0.8,
+        line: '조서에 서명이 없었다.', voice: 'creak' },
+      { area: 'p1', img: PANEL_URL.get('1'), key: '미제', corner: 'bl', tilt: -0.7,
+        line: '사건은 미제로 편철됐다. 다섯은 각자의 밤으로 돌아갔다.' },
+      { area: 'p2', img: PANEL_URL.get('2'), key: '그중 하나', corner: 'br', tilt: 0.6, bam: '…',
+        line: '그중 하나는 오늘도 잠을 잘 잘 것이다.', voice: 'filed' },
     ]
   }
   return [
-    { key: '무너졌다', line: `${josa(who.name, '은/는')} 더 말하지 않았다.`, voice: 'creak' },
-    { key: '수갑', line: '손목에 금속이 닿는 소리가 방을 채웠다.', voice: 'stamp' },
-    { key: '복도', line: `${who.job} ${josa(who.name, '이/가')} 복도로 끌려 나갔다. 등 뒤에서 문이 닫혔다.`, voice: 'doorOpen' },
-    { key: '끝', line: `${c.venue.name} 1204호의 불이 꺼졌다.` },
+    { area: 'p0', img: PANEL_URL.get('0'), key: '무너졌다', corner: 'tl', tilt: -0.9,
+      line: `${josa(who.name, '은/는')} 더 말하지 않았다.`, voice: 'creak' },
+    { area: 'p1', img: PANEL_URL.get('1'), key: '수갑', corner: 'tr', tilt: 1.0, bam: '철컥',
+      line: '손목에 금속이 닿는 소리가 방을 채웠다.', voice: 'stamp' },
+    { area: 'p2', img: PANEL_URL.get('2'), key: '복도', corner: 'bl', tilt: -0.6,
+      line: `${who.job} ${josa(who.name, '이/가')} 복도로 끌려 나갔다. 등 뒤에서 문이 닫혔다.`, voice: 'doorOpen' },
+    { area: 'p3', img: PANEL_URL.get('3'), key: '끝', corner: 'br', tilt: 0.5,
+      line: `${c.venue.name} 1204호의 불이 꺼졌다.` },
   ]
 }
 
@@ -62,14 +67,15 @@ const FADE = 620
 
 export function playOutro(c: CaseFile, culprit: SuspectId, correct: boolean): Promise<void> {
   return new Promise((resolve) => {
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches
     const list = panels(c, culprit, correct)
     const ov = document.createElement('div')
-    ov.className = 'intro outro'
+    ov.className = 'intro outro comic'
 
-    const stage = document.createElement('div')
-    stage.className = 'intro-stage'
-    const cap = document.createElement('div')
-    cap.className = 'intro-cap'
+    const page = correct
+      ? buildComicPage(list, ['p0 p1', 'p2 p2', 'p3 p3'], '38% 34% 28%')
+      : buildComicPage(list, ['p0 p0', 'p1 p2'], '48% 52%')
+
     const bar = document.createElement('div')
     bar.className = 'intro-bar'
     for (let i = 0; i < list.length; i++) bar.appendChild(document.createElement('i'))
@@ -78,7 +84,7 @@ export function playOutro(c: CaseFile, culprit: SuspectId, correct: boolean): Pr
     skip.className = 'intro-skip'
     skip.textContent = '건너뛰기 (Esc)'
 
-    ov.append(stage, cap, bar, skip)
+    ov.append(page.el, bar, skip)
     document.body.appendChild(ov)
 
     let idx = -1
@@ -99,33 +105,16 @@ export function playOutro(c: CaseFile, culprit: SuspectId, correct: boolean): Pr
 
     const step = (): void => {
       idx += 1
-      if (idx >= list.length) return finish()
-      const p = list[idx]!
-
-      const frame = document.createElement('div')
-      frame.className = 'intro-frame'
-      const url = PANEL_URL.get(String(idx))
-      if (url) {
-        frame.style.backgroundImage = `url(${url})`
-      } else {
-        // 그림이 없으면 큰 활자가 그림을 대신한다 — 빈 화면보다 낫다
-        frame.classList.add('plate')
-        const big = document.createElement('span')
-        big.textContent = p.key
-        frame.appendChild(big)
+      if (idx >= list.length) {
+        // 완성된 페이지를 한 박자 — 결말을 눈에 담는 시간이다
+        timer = window.setTimeout(finish, still ? 400 : 1400)
+        return
       }
-      stage.replaceChildren(frame)
-      requestAnimationFrame(() => frame.classList.add('on'))
-
-      cap.textContent = p.line
-      cap.classList.remove('on')
-      requestAnimationFrame(() => cap.classList.add('on'))
-
-      const dots = bar.querySelectorAll('i')
-      dots.forEach((d, i) => d.classList.toggle('on', i <= idx))
-      if (p.voice) play(p.voice)
-
-      timer = window.setTimeout(step, HOLD)
+      const p = list[idx]!
+      page.reveal(idx)
+      bar.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i <= idx))
+      if (p.voice) play(p.voice as Parameters<typeof play>[0])
+      timer = window.setTimeout(step, still ? 800 : HOLD)
     }
     step()
   })

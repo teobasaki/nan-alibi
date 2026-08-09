@@ -90,7 +90,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
   try {
     const THREE = await import('three')
     // three 와 같이 늦게 불러온다 — 정적으로 잡으면 three 가 첫 번들로 딸려온다
-    const { groundIt, measureY, measuredHeight } = await import('./skinBounds')
+    const { groundIt, measureBox, measureY, measuredHeight } = await import('./skinBounds')
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
     const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js')
 
@@ -333,7 +333,15 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 가려지는 게 아니라 그냥 뒤에 서 있는 그림이었다.
      * -0.62 면 몸통 앞면(z=-0.43)이 상판과 겹쳐 **테이블이 실제로 가린다.**
      */
-    const SEAT = new THREE.Vector3(0.10, 0, -0.62)
+    /**
+     * 의자 좌면 — **눈대중이 아니라 실측이다** (`scripts/probe-chairs.mjs`).
+     * 방 지오메트리에서 좌면 높이(0.35~0.62m)의 수평면을 뭉쳐서 뽑았다:
+     * 용의자 의자는 (0.06, -0.66), 좌면 높이 **0.538m**.
+     * 예전 값 (0.10, -0.62) 는 4~6cm 어긋났고, 무엇보다 앉히는 높이가 없어서
+     * 발바닥을 바닥에 붙이면 엉덩이(0.455)가 좌면보다 8cm 아래로 꺼졌다.
+     */
+    const SEAT = new THREE.Vector3(0.06, 0, -0.66)
+    const SEAT_SURFACE_Y = 0.538
     /**
      * 용의자는 **+Z(테이블 이쪽)** 를 본다. 카메라도 거기서 들어온다.
      * 흉상의 기본 정면이 +Z 라는 실측(블렌더 렌더로 확인)에 맞춘 값이다.
@@ -366,8 +374,20 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
        */
       model.position.y += 1.36 - hi
     } else {
-      // 앉은 사람은 발(또는 엉덩이)이 바닥에 닿아야 한다
+      /**
+       * **엉덩이를 좌면에 얹는다.** 발을 바닥에 붙이는 것(groundIt)만으로는
+       * 의자에 앉은 게 아니다 — 이 모델들은 엉덩이가 0.455m 로 구워져 있는데
+       * 이 방의 좌면은 0.538m 다. 그 차이만큼 들어올린다.
+       */
       groundIt(model)
+      let hips: import('three').Object3D | null = null
+      model.traverse((o) => { if (!hips && /^Hips$/.test(o.name)) hips = o })
+      if (hips) {
+        const hv = new THREE.Vector3()
+        ;(hips as import('three').Object3D).getWorldPosition(hv)
+        const lift = SEAT_SURFACE_Y - hv.y
+        if (lift > -0.05 && lift < 0.25) model.position.y += lift
+      }
     }
     /**
      * 방향 — **상수 대신 계산한다.**
@@ -378,9 +398,10 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      */
     model.rotation.y = FACE_YAW
     model.updateMatrixWorld(true)
-    const box3 = new THREE.Box3().setFromObject(model)
-    model.position.x += SEAT.x - (box3.max.x + box3.min.x) / 2
-    model.position.z += SEAT.z - (box3.max.z + box3.min.z) / 2
+    // XZ 중심 잡기도 **뼈를 적용해** 잰다 — Box3 는 스킨드 메시에서 100배 틀린다 (skinBounds 참조)
+    const mb = measureBox(model)
+    model.position.x += SEAT.x - (mb.max.x + mb.min.x) / 2
+    model.position.z += SEAT.z - (mb.max.z + mb.min.z) / 2
 
     /** 뼈 이름은 리깅 도구마다 다르다. 패턴으로 찾고, 못 찾으면 모델 전체를 흔든다. */
     const findBone = (re: RegExp): import('three').Object3D | null => {

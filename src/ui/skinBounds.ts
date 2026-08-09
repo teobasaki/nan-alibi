@@ -17,14 +17,14 @@
 import * as THREE from 'three'
 
 /**
- * 뼈를 적용해 Y 범위를 잰다. 전수 검사는 하지 않는다 —
- * 정점이 50만 개여도 **키를 재는 데는 몇백 점이면 충분하다.**
+ * 뼈를 적용해 3축 범위를 잰다. 전수 검사는 하지 않는다 —
+ * 정점이 50만 개여도 **크기를 재는 데는 몇백 점이면 충분하다.**
  */
-export function measureY(root: THREE.Object3D): { lo: number; hi: number } {
+export function measureBox(root: THREE.Object3D): { min: THREE.Vector3; max: THREE.Vector3 } {
   root.updateMatrixWorld(true)
   const v = new THREE.Vector3()
-  let lo = Infinity
-  let hi = -Infinity
+  const min = new THREE.Vector3(Infinity, Infinity, Infinity)
+  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
   root.traverse((o) => {
     const m = o as THREE.Mesh
     if (!m.isMesh) return
@@ -36,11 +36,16 @@ export function measureY(root: THREE.Object3D): { lo: number; hi: number } {
       v.fromBufferAttribute(pos, i)
       if (sk.isSkinnedMesh) sk.applyBoneTransform(i, v)   // 뼈가 실제 크기를 정한다
       v.applyMatrix4(m.matrixWorld)
-      if (v.y < lo) lo = v.y
-      if (v.y > hi) hi = v.y
+      min.min(v)
+      max.max(v)
     }
   })
-  return { lo, hi }
+  return { min, max }
+}
+
+export function measureY(root: THREE.Object3D): { lo: number; hi: number } {
+  const { min, max } = measureBox(root)
+  return { lo: min.y, hi: max.y }
 }
 
 /** 화면에 나오는 키(m). 못 재면 0. */
