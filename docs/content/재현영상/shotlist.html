@@ -1,0 +1,285 @@
+<meta charset="utf-8">
+<title>FIVE ALIBIS — 범행 재현 샷리스트</title>
+<style>
+  :root{
+    --bg:#16110f; --panel:#201519; --panel2:#2a1c20; --line:#3d2b2c;
+    --ink:#e9e1d3; --muted:#9a8b80; --amber:#c8912f; --red:#b3372c; --green:#4f9b6e;
+    --serif:AppleMyungjo,Batang,'Nanum Myeongjo','Apple SD Gothic Neo',serif;
+    --mono:'SF Mono','D2Coding',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:'Apple SD Gothic Neo',system-ui,sans-serif;line-height:1.65}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 90px}
+  h1{font-family:var(--serif);font-size:26px;margin:0 0 4px;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:6px}
+  .howto{border-left:2px solid var(--amber);background:rgba(200,145,47,.07);
+         padding:10px 14px;margin:18px 0 26px;font-size:13px;border-radius:0 4px 4px 0}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+          padding:14px 16px;margin-bottom:26px}
+  summary{cursor:pointer;font-family:var(--serif);font-size:15px;color:var(--amber)}
+  h2{font-family:var(--serif);font-size:14px;color:var(--muted);margin:26px 0 10px;
+     border-bottom:1px solid var(--line);padding-bottom:6px;font-weight:500}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-family:var(--mono);font-size:11px}
+  code{font-family:var(--mono);font-size:12px;color:var(--amber)}
+  .scene{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+         padding:16px 18px;margin-bottom:22px}
+  .scene.done{opacity:.5}
+  .shead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+  .snum{font-family:var(--mono);font-size:11px;color:var(--amber)}
+  .stitle{font-family:var(--serif);font-size:17px}
+  .sdesc{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .pwrap{margin-top:14px}
+  .pbar{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .pname{font-family:var(--mono);font-size:11px;color:var(--green)}
+  button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);
+         border-radius:4px;padding:4px 11px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--amber)}
+  button.copied{border-color:var(--green);color:var(--green)}
+  pre{background:#120d0c;border:1px solid var(--line);border-radius:6px;padding:14px;
+      overflow-x:auto;font-family:var(--mono);font-size:11.5px;line-height:1.55;
+      white-space:pre-wrap;word-break:break-word;color:#cfc5b6;margin:0}
+  label.chk{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);
+            cursor:pointer;margin-left:auto}
+  .warn{border-left:2px solid var(--red);background:rgba(179,55,44,.08);
+        padding:10px 14px;margin:16px 0;font-size:13px;border-radius:0 4px 4px 0}
+  .warn b{color:var(--red)}
+</style>
+
+<div class="wrap">
+<h1>FIVE ALIBIS — 범행 재현 샷리스트</h1>
+<div class="sub">엔딩 시네마틱 · 6컷 12초 · Seedance 2.0 / Higgsfield · 21:9 · 4K · audio ON · bit rate HIGH</div>
+
+<div class="howto">
+<b>쓰는 법</b> — 프롬프트마다 <b>Copy</b> 를 눌러 Higgsfield 에 그대로 붙여넣는다. 각 프롬프트는 <b>완결된 단독 문서</b>다(앞 장면을 참조하지 않는다).
+생성은 <b>15초 2편</b>이고, 받은 뒤 아래 §분할 지시대로 잘라 <code>public/outro/scene/0.mp4</code> … <code>5.mp4</code> 로 넣는다.
+</div>
+
+<div class="warn">
+<b>왜 6편이 아니라 2편인가.</b> Seedance 는 15초 고정 길이로 렌더한다. 우리 컷은 1.5~2.5초라 6편을 따로 뽑으면 <b>90초를 만들어 12초를 쓰는</b> 셈이다.
+그래서 15초 안에 컷 3개를 넣어 2편만 뽑고, 편집에서 6조각으로 나눈다. 크레딧이 <b>1/3</b> 로 준다.
+</div>
+
+<details open>
+<summary>Project Bible — 참고용 (프롬프트에 복사하지 않는다)</summary>
+
+<h2>하드 제약 — 어기면 게임이 망가진다</h2>
+<table>
+<tr><th>제약</th><th>이유</th></tr>
+<tr><td><b>얼굴이 한 프레임도 나오면 안 된다</b></td><td>시드마다 범인이 다르다(용의자 5명, 성별·나이·직업 전부 달라짐). 얼굴이 보이면 그 판과 안 맞는다.</td></tr>
+<tr><td>성별이 읽히는 실루엣도 금지</td><td>머리 길이·체형으로 읽힌다. 중절모 + 롱코트 + 역광으로 지운다.</td></tr>
+<tr><td>폭력 묘사 금지</td><td>문이 닫힌 뒤는 비운다. 게임이 이미 "오답이면 진범을 밝히지 않는다"는 규율을 갖고 있고 같은 결이다.</td></tr>
+<tr><td>화면 안에 글자 금지</td><td>게임이 한국어 자막을 얹는다. 호수(1204)조차 새기지 않는다 — 시드마다 바뀔 수 있다.</td></tr>
+<tr><td>전자기기 금지</td><td>1960년대풍. 효과음 명세도 같은 규칙을 쓴다(금속·종이·나무·형광등, 전자음 없음).</td></tr>
+</table>
+
+<h2>팔레트 (게임 <code>style.css</code> 와 동일)</h2>
+<table>
+<tr><th>요소</th><th>값</th><th>쓰임</th></tr>
+<tr><td>복도 어둠</td><td><code>#16110f</code> 갈색기 검정</td><td>배경 전체</td></tr>
+<tr><td>카펫</td><td><code>#201519</code> 버건디</td><td>바닥 — 유일한 채도</td></tr>
+<tr><td>놋쇠</td><td><code>#c8912f</code></td><td>문패·손잡이·카드리더 테두리</td></tr>
+<tr><td>인장</td><td><code>#b3372c</code></td><td>카드리더 붉은 LED</td></tr>
+</table>
+
+<h2>에셋 — 시트가 필요한 것</h2>
+<table>
+<tr><th>@tag</th><th>무엇</th><th>왜 필요한가</th></tr>
+<tr><td><code>@corridor</code></td><td>호텔 12층 복도 로케이션 시트 (3/4 각도)</td><td>2편이 <b>같은 복도</b>여야 한다. 이게 없으면 배경이 튄다.</td></tr>
+<tr><td><code>@door</code></td><td>객실 문 + 카드리더 3면 (정면·측면·후면)</td><td>클로즈업에 잡히는 소품은 테이크마다 흔들린다. 시트로 못박는다.</td></tr>
+</table>
+<p style="font-size:12.5px;color:var(--muted)">인물 시트는 <b>만들지 않는다</b> — 얼굴이 안 나오므로 고정할 것이 없고, 시트를 붙이면 오히려 모델이 얼굴을 프레임에 끌어들인다.</p>
+
+<h2>연속성 상태표</h2>
+<table>
+<tr><th>편</th><th>컷</th><th>복도 조명</th><th>문</th><th>인물</th></tr>
+<tr><td>1A</td><td>0·1·2</td><td>형광등 하나 깜빡임</td><td>닫힘 → 리더 붉음 → 초록</td><td>없음 → 장갑 낀 손만</td></tr>
+<tr><td>1B</td><td>3·4·5</td><td>동일 (문틈 빛 추가)</td><td>열림 → 닫힘 → 열림</td><td>실루엣 뒷모습 (얼굴 없음)</td></tr>
+</table>
+
+<h2>분할 지시 (받은 뒤)</h2>
+<pre>ffmpeg -i take1A.mp4 -ss 0    -t 2.0 -c copy public/outro/scene/0.mp4
+ffmpeg -i take1A.mp4 -ss 2.0  -t 2.0 -c copy public/outro/scene/1.mp4
+ffmpeg -i take1A.mp4 -ss 4.0  -t 1.5 -c copy public/outro/scene/2.mp4
+ffmpeg -i take1B.mp4 -ss 0    -t 2.5 -c copy public/outro/scene/3.mp4
+ffmpeg -i take1B.mp4 -ss 2.5  -t 2.0 -c copy public/outro/scene/4.mp4
+ffmpeg -i take1B.mp4 -ss 4.5  -t 2.0 -c copy public/outro/scene/5.mp4</pre>
+<p style="font-size:12.5px;color:var(--muted)">컷 경계는 받은 영상을 보고 프레임 단위로 맞춘다. 위 숫자는 프롬프트가 지시한 상대 비중이지 보장값이 아니다.</p>
+</details>
+
+<!-- ══════════ 에셋 시트 ══════════ -->
+<div class="scene" data-scene="0">
+  <div class="shead"><span class="snum">SHEET</span><span class="stitle">로케이션·소품 시트</span>
+    <label class="chk"><input type="checkbox" data-k="0"> 완료</label></div>
+  <div class="sdesc">영상 생성 <b>전에</b> 먼저 뽑는다. 2편이 같은 복도·같은 문이어야 한다 — 시트 없이 가면 배경이 튄다.</div>
+
+  <div class="pwrap"><div class="pbar"><span class="pname">S1 · @corridor</span><button onclick="cp(this)">Copy</button></div>
+<pre>A location reference sheet, 16:9, of a 1960s classic hotel corridor on an upper floor, shown at a three-quarter angle so depth reads.
+
+Dark brown-black walls, deep burgundy patterned carpet running the length of the corridor, brass room-number plates and brass door handles on heavy dark wood doors along the right wall. Recessed fluorescent ceiling fixtures, one of them dim and unstable. No people. No text or numbers legible on any plate.
+
+Even, slightly underexposed lighting so the shadow structure of the corridor is readable. Photoreal, 4K, fine grain, consistent materials and scale across the frame.</pre></div>
+
+  <div class="pwrap"><div class="pbar"><span class="pname">S2 · @door</span><button onclick="cp(this)">Copy</button></div>
+<pre>A prop reference sheet, 16:9, flat neutral medium-grey seamless background, three panels: front view, strict side profile, back view of the same object.
+
+A 1960s hotel room door in dark wood with a brass handle and a slim brass-framed electronic card reader mounted at handle height, its indicator lamp a small deep red dot. The card reader is plain brass and dark plastic with no writing on it. The door has an empty brass plate where a number would go, left blank.
+
+Consistent design and scale across all panels, even soft studio lighting, photorealistic, 4K.</pre></div>
+</div>
+
+<!-- ══════════ 1A ══════════ -->
+<div class="scene" data-scene="1">
+  <div class="shead"><span class="snum">TAKE 1A</span><span class="stitle">복도 · 카드 · 초록불</span>
+    <label class="chk"><input type="checkbox" data-k="1"> 완료</label></div>
+  <div class="sdesc">컷 0·1·2 를 담는다. 사람은 <b>손만</b> 나온다. 마지막 컷에서 붉은 불이 초록으로 바뀌는 것이 이 편의 전부다.</div>
+
+  <div class="pwrap"><div class="pbar"><span class="pname">1A</span><button onclick="cp(this)">Copy</button></div>
+<pre>SCENE CONTEXT
+Late night on an upper floor of a 1960s hotel. An empty corridor. A gloved hand brings a plain hotel keycard to a door reader, and the reader's lamp turns from red to green. Nobody's face is ever in frame.
+
+ACTIVE REFERENCES
+@corridor — Controls environment, materials and mood only; reference framing not inherited.
+@door — Controls the door and card reader design only; studio sheet background and layout NOT inherited.
+
+LOCATION MAP
+Foreground: deep burgundy patterned carpet, its weave catching the low light. Midground: the right-hand wall with heavy dark wood doors and brass handles, the nearest door 3 m from camera. Background: the corridor recedes 18 m into near darkness, one fluorescent fixture at 12 m flickering unstably. Light comes only from the ceiling fixtures overhead and slightly behind camera. The gloved hand enters frame from the right edge in the later cuts and stays within 40 cm of the door.
+
+FIRST FRAME / BLOCKING
+The first frame is an empty corridor: camera at 1.6 m height on the corridor centreline, doors receding along the right side, carpet filling the lower third. No people, no hands. Composition is a one-point perspective with the vanishing point slightly right of centre. The nearest door's brass handle sits at the right third line and is the landmark everything later is pinned to.
+
+FORMAT MODE
+Sequence of cuts, no timecodes — cuts only at the specified points, the camera does not cut on its own. CUT 1 holds longest and is completely still; CUT 2 is closer and calmer; CUT 3 is the shortest and snaps.
+
+CUT 1 — wide, 63° FOV, camera 1.6 m high on the corridor centreline, static
+The empty corridor holds. The distant fluorescent fixture stutters twice, dropping the far end of the corridor into darkness and bringing it back. Dust drifts slowly through the nearer light. Nothing else moves.
+
+CUT 2 — HARD CUT to extreme close-up, 18° FOV, camera 1.5 m high, static, focused 30 cm from the subject
+A hand in a thin dark leather glove holds a plain pale keycard between thumb and forefinger, lifted into the light. The glove leather creases across the knuckles as the grip settles. The card face is blank, catching a single soft highlight along its edge. Behind the hand the corridor falls away into unfocused darkness.
+
+CUT 3 — HARD CUT to close-up, 29° FOV, camera 1.4 m high, static
+The gloved hand brings the card to the brass-framed reader beside the door handle. The card touches the plate. The reader's small lamp shifts from deep red to green, and the green throws a faint cast onto the brass frame and the glove's fingertips. The hand holds still one moment longer, then begins to lower.
+
+OPTICS
+CUT 1 at 63° rectilinear, deep focus so the far corridor stays legible. CUT 2 at 18°, shallow focus with the corridor collapsed to soft darkness behind. CUT 3 at 29°, focus on the reader plate. Prime-lens character, gentle falloff at the edges, natural motion blur on the flicker. No drift mid-segment.
+
+CAMERA
+Locked on a tripod for all three cuts, no handheld movement. Camera height drops from 1.6 m to 1.4 m across the cuts. Distance: 6 m, then 0.3 m, then 0.8 m. Focus is set before each cut and does not hunt.
+
+ACTION
+The flicker in CUT 1 runs on its own rhythm and is not synchronised to anything. In CUT 3 the card contact and the lamp change happen as one continuous motion — the hand does not pause and then wait for the light; the light changes while the hand is still settling. No frozen poses; the glove keeps micro-adjusting through the whole cut.
+
+PHYSICS
+The card has the stiffness and slight flex of thin plastic. The glove compresses where fingers press. Contact shadow appears under the card where it meets the reader plate. Dust motes fall at real gravity, slowly, and drift sideways where air moves.
+
+LIGHTING
+Overhead fluorescent, 4000K, cool and slightly green in the fixtures, falling off fast to the walls. The corridor sits about two stops under a normal exposure. The failing fixture at 12 m drops and returns unevenly. In CUT 3 the reader's red lamp reads as a small deep crimson point, then becomes green at roughly the same brightness. Haze visible at 12 m depth, about 15%.
+
+AUDIO
+The low hum of a ventilation system throughout. The failing fluorescent adds a faint electrical buzz that cuts out and returns with the flicker. In CUT 2 the small dry sound of a card sliding free of a pocket. In CUT 3 a single soft electronic contact click and the mechanical thunk of a bolt withdrawing inside the door. No music. No voices.
+
+STYLE
+Photoreal, 4K, anamorphic, fine grain, real-time throughout. Warm amber and deep burgundy grade against near-black shadows, low saturation everywhere except the carpet and the brass. Blacks stay dense and never lift.
+
+POSITIVE LOCKS
+No face, no head, no shoulders, no body appears in any frame — only a gloved hand from the wrist forward. Every surface stays free of writing, numbers and symbols; the brass plate beside the door stays blank. The keycard stays plain and unmarked. Exactly one hand in the entire generation. The door stays closed for the whole clip. Objects hold stable identity frame to frame, moving only when the hand moves them. The card reader stays the exact size and position established by @door. This clip is one fragment of a longer film — end mid-motion, unresolved, no settling shots.</pre></div>
+</div>
+
+<!-- ══════════ 1B ══════════ -->
+<div class="scene" data-scene="2">
+  <div class="shead"><span class="snum">TAKE 1B</span><span class="stitle">문 · 정적 · 빈 복도</span>
+    <label class="chk"><input type="checkbox" data-k="2"> 완료</label></div>
+  <div class="sdesc">컷 3·4·5. <b>중간 컷이 이 영상의 중심이다</b> — 닫힌 문만 보여주고 안에서 벌어진 일은 비운다. 보여주지 않음으로써 말한다.</div>
+
+  <div class="pwrap"><div class="pbar"><span class="pname">1B</span><button onclick="cp(this)">Copy</button></div>
+<pre>SCENE CONTEXT
+Late night on an upper floor of a 1960s hotel. A door opens and a figure steps into the room; the door closes and the corridor holds on it; then the door opens again and the figure walks away down the corridor. The figure is never identifiable — always backlit, always from behind, face never in frame.
+
+ACTIVE REFERENCES
+@corridor — Controls environment, materials and mood only; reference framing not inherited.
+@door — Controls the door and card reader design only; studio sheet background and layout NOT inherited.
+
+LOCATION MAP
+Foreground: deep burgundy patterned carpet. Midground: the door on the right wall, 3 m from camera, with warm light behind it once it opens. Background: the corridor recedes 18 m into darkness, one fluorescent fixture at 12 m unstable. Two light sources oppose each other — cool ceiling fluorescent above and slightly behind camera, and warm room light spilling from the open doorway across the carpet. The figure's path runs from the doorway to the corridor's vanishing point.
+
+FIRST FRAME / BLOCKING
+The first frame is a wide of the corridor with the door already swinging inward: camera 1.6 m high on the corridor centreline, the door at the right third line 3 m away, a widening wedge of warm light falling across the burgundy carpet toward camera. A figure in a long dark coat and a brimmed hat stands in the doorway, seen from behind, silhouetted against the warm interior, shoulders squared to the room. Distance from camera to figure 3.2 m. The figure's back fills roughly a fifth of frame height.
+
+FORMAT MODE
+Sequence of cuts, no timecodes — cuts only at the specified points, the camera does not cut on its own. CUT 2 holds longest and is the still centre of the clip; CUT 1 and CUT 3 carry the movement.
+
+CUT 1 — wide, 63° FOV, camera 1.6 m high, slow dolly-in at 0.3 m/s
+The door swings inward and warm light spreads across the carpet. The silhouetted figure steps through the doorway, one hand still on the frame, and moves out of the doorway into the room. The wedge of light narrows as the door begins to swing back.
+
+CUT 2 — HARD CUT to medium, 47° FOV, camera 1.35 m high looking slightly up at the door, static
+The door is closed. A thin line of warm light runs along the bottom edge of the door and does not change. The brass handle holds a single highlight. Nothing moves except dust drifting slowly through the cool overhead light and one stutter of the distant fluorescent. The corridor is completely still.
+
+CUT 3 — HARD CUT to wide, 63° FOV, camera 1.6 m high, static
+The door opens again and the same silhouetted figure steps out, pulls the door closed behind, and walks away from camera down the corridor. The wedge of warm light narrows to a line and disappears as the door seats. The figure recedes to below 8% of frame height and the corridor is left empty and still.
+
+OPTICS
+63° rectilinear on the wides, 47° on the door. Deep focus throughout so the corridor's far end stays legible. Prime-lens character, gentle edge falloff, natural motion blur on the door swing and the walk. No drift mid-segment.
+
+CAMERA
+Tripod for CUT 2 and CUT 3, entirely still. CUT 1 dollies forward at 0.3 m/s along the corridor centreline and stops before the cut. Camera height 1.6 m, 1.35 m, 1.6 m. Focus is set before each cut and does not hunt.
+
+ACTION
+In CUT 1 the door swing, the light spreading, and the figure's step all overlap — the figure is already moving while the door is still opening, and the door starts closing while the figure is still crossing the threshold. In CUT 3 the figure pulls the door shut and turns away in one continuous motion, then walks at an unhurried 1.1 m/s without looking back. No frozen poses; movement is continuous through every cut.
+
+PERFORMANCE
+The figure carries itself with unhurried control — shoulders level, no rush, no hesitation at the threshold. In CUT 3 the walk is slightly heavier than in CUT 1: the stride is a fraction shorter and the shoulders sit lower. One hand stays in a coat pocket. The head never turns toward camera.
+
+PHYSICS
+The door has real mass — it accelerates slowly and decelerates into the frame, and the latch seats with a small settle. The coat swings behind the figure's legs with a half-step delay. Contact shadow sits under both shoes at every footfall on the carpet. Dust falls at real gravity.
+
+LIGHTING
+Two opposed sources. Cool overhead fluorescent at 4000K from above and slightly behind camera, the corridor about two stops under normal exposure. Warm interior light at 2800K spilling from the open doorway, roughly one stop brighter than the corridor, throwing a hard-edged wedge across the burgundy carpet. In CUT 2 only a thin warm line under the door survives. The failing fixture at 12 m drops and returns unevenly. Haze visible at 12 m depth, about 15%.
+
+AUDIO
+Ventilation hum throughout and the faint electrical buzz of the failing fluorescent. In CUT 1 a heavy door swinging on its hinges and a single footfall on carpet. In CUT 2 the room tone alone, close and dry, with the hum sitting lower than before — the silence is the event. In CUT 3 the door pulling closed, the latch seating, and unhurried footsteps receding until they are gone. No music. No voices.
+
+STYLE
+Photoreal, 4K, anamorphic, fine grain, real-time throughout. Warm amber and deep burgundy grade against near-black shadows. The only saturated colours in frame are the carpet and the brass. Blacks stay dense and never lift.
+
+POSITIVE LOCKS
+The figure stays a silhouette at all times: seen from behind or in profile against light, brimmed hat on, face and neck fully in shadow, no facial feature ever visible. Build and gait stay neutral and unremarkable. The interior of the room stays dark and featureless beyond the doorway — nothing inside the room is legible at any point. Every surface stays free of writing, numbers and symbols; the brass plate beside the door stays blank. Exactly one person in the entire generation. Objects hold stable identity frame to frame. The door stays the exact size and position established by @door. The clip carries no injury, no struggle, and no aftermath — everything is conveyed by the closed door and the sound. This clip is one fragment of a longer film — end mid-motion, unresolved, no settling shots.</pre></div>
+</div>
+
+<!-- ══════════ 선택 ══════════ -->
+<div class="scene" data-scene="3">
+  <div class="shead"><span class="snum">OPTIONAL</span><span class="stitle">컷 2 수단별 변형 (5벌)</span>
+    <label class="chk"><input type="checkbox" data-k="3"> 완료</label></div>
+  <div class="sdesc">카드 종류가 화면에 드러나는 건 컷 1·2 뿐이다. 여유가 있을 때만 만든다 — <b>안 만들어도 자막이 수단을 말하므로 성립한다.</b></div>
+  <div class="pwrap"><div class="pbar"><span class="pname">3A · 변형 지시</span><button onclick="cp(this)">Copy</button></div>
+<pre>Take prompt 1A and change only the CUT 2 card description. Everything else stays identical.
+
+복제 의심(미등록 사본)  → the card is slightly off-white with a faintly uneven edge, as if cut from a blank
+마스터(전 객실)         → the card is plain but carries a single narrow brass-coloured band along one edge
+여벌(투숙객 발급)       → the card is identical to a standard guest card, clean and unremarkable
+분실 신고분             → the card is worn at the corners with a faint scuff across its face
+임시(청소용)            → the card is a duller grey plastic with a small punched hole at one corner
+
+The card face carries no writing, no logo and no numbers in any variant.</pre></div>
+</div>
+
+<script>
+  document.querySelectorAll('input[type=checkbox]').forEach(function(c){
+    var k='shotlist-scene-'+c.dataset.k+'-done';
+    c.checked = localStorage.getItem(k)==='1';
+    c.closest('.scene').classList.toggle('done', c.checked);
+    c.addEventListener('change', function(){
+      localStorage.setItem(k, c.checked?'1':'0');
+      c.closest('.scene').classList.toggle('done', c.checked);
+    });
+  });
+  function cp(btn){
+    var pre = btn.closest('.pwrap').querySelector('pre');
+    navigator.clipboard.writeText(pre.textContent).then(function(){
+      btn.textContent='Copied'; btn.classList.add('copied');
+      setTimeout(function(){ btn.textContent='Copy'; btn.classList.remove('copied'); }, 1400);
+    });
+  }
+</script>
+</div>
