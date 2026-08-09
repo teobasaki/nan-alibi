@@ -171,6 +171,8 @@ export async function mountExplore(
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.15
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
@@ -211,11 +213,36 @@ export async function mountExplore(
     })
     scene.add(room)
 
+    /**
+     * **노멀맵을 살리는 재질.**
+     * 걷기 모델을 처음에 1024·PBR 복원 없이 뽑았더니 텍스처가 baseColor 한 장만
+     * 남아 "로우폴리처럼" 보였다 — 폴리곤은 296,547개로 충분했고,
+     * 사라진 것은 **표면 요철(노멀맵)** 이었다. 이 프로젝트가 이미 한 번 겪은 원인이다.
+     * 이제 3장이 다 있으므로 roughness/metalness 를 상수로 덮어쓰면 안 된다.
+     */
+    const dressUp = (root: THREE.Object3D): void => {
+      root.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (!m.isMesh) return
+        m.castShadow = true
+        for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
+          if (!mm) continue
+          mm.emissive?.setScalar(0)
+          mm.emissiveMap = null
+          // 맵이 있으면 계수는 1로 둔다 — 상수로 덮으면 맵이 죽는다(glTF 는 곱셈이다)
+          if (mm.roughnessMap) { mm.roughness = 1; mm.metalness = mm.metalnessMap ? 1 : 0 }
+          else { mm.roughness = 0.62; mm.metalness = 0 }
+          if (mm.normalMap) mm.normalScale?.set(1.15, 1.15)   // 탑다운이라 살짝 강조
+        }
+      })
+    }
+
     const actor = charGltf.scene
     // 걷기 리그는 A포즈 rest 라 원래 크기다. 방 배율에 맞춘다.
     const box = new THREE.Box3().setFromObject(actor)
     const height = box.max.y - box.min.y
     actor.scale.setScalar(height > 0 ? ACTOR_HEIGHT / height : 1)
+    dressUp(actor)
     actor.position.set(0, 0, 5)
     scene.add(actor)
 
@@ -228,8 +255,14 @@ export async function mountExplore(
     // 조명 — 심문실보다 밝게. 어두우면 어디로 갈지 안 보인다.
     // 넓은 실내라 점광 하나로는 구석이 안 보인다. 환경광을 올리고 위에서 넓게 비춘다.
     scene.add(new THREE.AmbientLight(0xffd9b0, 0.85))
-    const key = new THREE.DirectionalLight(0xfff0d8, 1.5)
+    const key = new THREE.DirectionalLight(0xfff0d8, 1.6)
     key.position.set(8, 18, 6)
+    // 그림자가 있어야 인물이 바닥에 '서 있는' 것으로 보인다. 정사영이라 카메라 절두체에 맞춘다.
+    key.castShadow = true
+    key.shadow.mapSize.set(2048, 2048)
+    const sc = key.shadow.camera as THREE.OrthographicCamera
+    sc.left = -18; sc.right = 18; sc.top = 18; sc.bottom = -18; sc.near = 1; sc.far = 60
+    key.shadow.bias = -0.0009
     scene.add(key)
     scene.add(new THREE.HemisphereLight(0x8899bb, 0x2a1c20, 0.5))
 
@@ -338,15 +371,7 @@ export async function mountExplore(
         if (!proto) {
           const g = await loader.loadAsync(url)
           proto = g.scene
-          proto.traverse((o) => {
-            const m = o as THREE.Mesh
-            if (!m.isMesh) return
-            for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
-              if (!mm) continue
-              mm.emissive?.setScalar(0)      // Meshy·Sketchfab 은 기본적으로 자가발광한다
-              mm.emissiveMap = null
-            }
-          })
+          dressUp(proto)
           seatCache.set(st.slug, proto)
         }
         const o = proto.clone(true)
