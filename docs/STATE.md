@@ -91,3 +91,9 @@
 ## 열린 질문
 
 - [QUESTIONS.md](QUESTIONS.md) 참조
+
+## 2026-08-10 새벽 갱신
+- 로컬 dev 에서도 심문·TTS API 가 돈다 (vite ssrLoadModule 브리지)
+- 착석 8종: 팔꿈치 43~53°·관통 0·재굽기 완료. 두 씬 모두 **실측 의자 좌표**에 앉는다
+- 인트로·아웃트로 = 만화 페이지 (comicPage.ts). `?introhold=1` 촬영용 수동 진행
+- **막힌 것**: 로컬 TTS 는 SUPERTONE_API_KEY 가 .dev.vars 에 없어 브라우저 합성 폴백
