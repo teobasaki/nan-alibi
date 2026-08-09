@@ -25,17 +25,19 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = resolve(ROOT, 'public/sfx')
 /**
- * **탐지로 확인한 실제 규약** (`scripts/probe-varco.mjs`).
- * `api.varco.ai` 는 문서 사이트다 — 모든 경로에 HTML 200 을 준다.
- * 진짜 호스트는 `gateway.varco.ai` 이고 스펙이 `/sound/openapi.json` 에 있다.
+ * **실제 규약** — 문서의 curl 예제에서 확인.
+ *
+ * 호스트가 `openapi.ai.nc.com` 이다. `varco.ai` 계열이 아니라 NC 도메인이라
+ * 후보를 아무리 늘어놔도 못 맞혔다(`probe-varco.mjs` 로 28조합 + 게이트웨이 7호스트를
+ * 찍어봤지만 전부 빗나갔다). **문서에 있는 값을 지어낼 수는 없다** —
+ * 세 번째로 배운 같은 교훈이다.
+ *
+ * 헤더 이름도 대문자 `OPENAPI_KEY` 다.
  */
-const ENDPOINT = process.env.VARCO_SFX_URL ?? 'https://gateway.varco.ai/sound/api/v1/generate'
+const ENDPOINT = process.env.VARCO_SFX_URL
+  ?? 'https://openapi.ai.nc.com/sound/varco/v1/api/text2sound'
 
-/**
- * `.dev.vars` 에서 자격 정보를 읽는다. **값을 출력하지 않는다.**
- * 키 하나로는 안 된다 — 상류가 `x-user-id` 와 `x-user-email` 도 요구한다.
- * (스펙에는 required:false 로 적혀 있지만 서버는 거부한다. 스펙이 서버보다 느슨하다.)
- */
+/** `.dev.vars` 에서 키를 읽는다. **값을 출력하지 않는다.** */
 function readCreds() {
   const f = resolve(ROOT, '.dev.vars')
   if (!existsSync(f)) return null
@@ -84,27 +86,24 @@ function lint(specs) {
 async function generate(spec, cred) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
-    headers: {
-      openapi_key: cred.key,
-      'x-user-id': cred.id ?? '',
-      'x-user-email': cred.email ?? '',
-      'Content-Type': 'application/json',
-    },
-    // 스펙이 받는 것은 prompt 와 num_sample 뿐이다. duration·format 은 없다 —
-    // 지어내서 보내면 422 가 온다.
+    headers: { OPENAPI_KEY: cred.key, 'Content-Type': 'application/json' },
+    // 받는 것은 prompt 와 num_sample 뿐이다. duration·format 은 없다.
     body: JSON.stringify({ prompt: spec.prompt, num_sample: 1 }),
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`HTTP ${res.status} — ${body.slice(0, 220)}`)
   }
-  const ct = res.headers.get('content-type') ?? ''
-  // 오디오가 바로 오는지 작업 id 가 오는지 아직 모른다 — 받은 것을 보고 판단한다
-  if (ct.includes('json')) {
-    const j = await res.json()
-    throw new Error(`오디오가 아니라 JSON 이 왔다: ${JSON.stringify(j).slice(0, 220)}`)
+  /**
+   * 응답은 **base64 를 담은 JSON 배열**이다 — 오디오 바이트가 바로 오지 않는다.
+   * `[{ "audio": "UklGRg..." }, ...]` · num_sample 개수만큼.
+   */
+  const j = await res.json()
+  const b64 = Array.isArray(j) ? j[0]?.audio : j?.audio
+  if (typeof b64 !== 'string' || !b64) {
+    throw new Error(`audio 필드가 없다: ${JSON.stringify(j).slice(0, 180)}`)
   }
-  const buf = Buffer.from(await res.arrayBuffer())
+  const buf = Buffer.from(b64, 'base64')
 
   // **받은 것을 확인하고 넘긴다.** 이 검사가 없어서 예전에 빈 파일이 파이프라인을 탔다.
   if (buf.length < 1024) throw new Error(`받은 데이터가 ${buf.length}바이트 — 오디오가 아니다`)
@@ -140,10 +139,6 @@ if (!only && !all) {
 const cred = readCreds()
 if (!cred) {
   console.error('\n✗ .dev.vars 에 VARCO_API_KEY 가 없다. 값은 직접 넣어라 — 이 스크립트는 키를 출력하지 않는다.')
-  process.exit(1)
-}
-if (!cred.id || !cred.email) {
-  console.error('\n✗ VARCO_USER_ID · VARCO_USER_EMAIL 도 필요하다 (상류가 요구한다).')
   process.exit(1)
 }
 

@@ -98,7 +98,7 @@ function noise(at: number, dur: number, gain: number, cutoff: number): void {
  * 이 맵도 비고 코드 경로가 통째로 사라진다. 에셋이 없어도 화면·소리가 안 깨진다는
  * 이 프로젝트의 규칙(인물 사진·3D·인트로와 같은 원칙)을 소리에도 그대로 적용한 것이다.
  */
-const FILES = import.meta.glob('/public/sfx/*.{wav,mp3,ogg}', {
+const FILES = import.meta.glob('/public/sfx/*.{opus,webm,m4a,wav,mp3,ogg}', {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 

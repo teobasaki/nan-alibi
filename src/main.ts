@@ -21,6 +21,7 @@ import { FALLBACK_LABEL, onStage, setStage, stage as pipeStage, STAGE_LABEL } fr
 import { dashboard, probeProviders } from './ui/dashboard'
 import { playIntro } from './ui/intro'
 import { playOutro } from './ui/outro'
+import { hasReenactment, playReenactment } from './ui/reenact'
 import type { Statement } from './engine/prompt'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
@@ -1420,7 +1421,15 @@ function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: stri
   ui.scene?.handle?.dispose()
   ui.scene = null
   roomEl.remove()
-  void playOutro(CASE, culprit, r.correct.culprit).then(() => renderResultSheet(r, culprit))
+  /**
+   * **검거일 때만 재현이 나온다.**
+   * 틀렸으면 진범을 밝히지 않는 것이 이 게임의 규율이고(QA 5.7), 재현은 곧 정답 공개다.
+   * 영상이 없으면 `playReenactment` 가 즉시 resolve 하므로 지금과 똑같이 돈다.
+   */
+  const reenact = r.correct.culprit ? playReenactment(CASE, culprit) : Promise.resolve()
+  void reenact
+    .then(() => playOutro(CASE, culprit, r.correct.culprit))
+    .then(() => renderResultSheet(r, culprit))
 }
 
 /**
