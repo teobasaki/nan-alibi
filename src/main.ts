@@ -88,6 +88,8 @@ interface UI {
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
   /** AI 파이프라인 판을 펼쳤는가 */
   dash: boolean
+  /** 수첩이 펼쳐지는 연출 중인가 — 첫 진입에 한 번만 */
+  opening: boolean
   /** 플레이 여정 — 개인화의 재료. 규칙에는 영향을 주지 않는다 */
   journey: ReturnType<typeof newTrace>
   scene: { slug: string; handle: Stage3D | null } | null
@@ -122,6 +124,7 @@ const ui: UI = {
   note: null,
   stamped: new Set(),
   dash: false,
+  opening: false,
   journey: newTrace(seed, Date.now()),
   scene: null,
   sceneCanvas: null,
@@ -1519,7 +1522,18 @@ function openBriefing(): void {
     // 어떤 공급자가 실제로 살아 있는지 — 없는 걸 있는 것처럼 그리지 않기 위해
     void probeProviders().then(() => { if (ui.dash) render() })
     ov.remove()
+    /**
+     * **수첩이 펼쳐지며 수사가 시작된다.**
+     *
+     * 닫힌 상태를 기본으로 두고 눌러야 열게 하지는 않았다 — 이 게임의 상황판은
+     * 항상 보여야 하는 물건이라(QA §5.4 가 지적한 바로 그것), 한 번 누르는 만큼
+     * 정보가 멀어진다. 그래서 **첫 진입에 한 번만** 펼쳐지고 그 뒤로는 펼쳐진 채다.
+     * 연출은 벌지 않고 은유만 완성한다.
+     */
+    ui.opening = true
     render()
+    play('paper')
+    setTimeout(() => { ui.opening = false; render() }, 900)
   }
   sheet.appendChild(go)
 
@@ -1614,7 +1628,7 @@ function render(): void {
    * 내려가지 않아 격자와 조회 목록이 오늘처럼 계속 동시에 보인다.
    * 사라지는 것은 용의자 열 하나뿐이고 그 폭은 격자로 간다 — 45% → 62%.
    */
-  const nb = h('div', 'nb')
+  const nb = h('div', `nb${ui.opening ? ' opening' : ''}`)
   nb.appendChild(deskOrRoom())
   nb.appendChild(h('div', 'nb-spine'))
   nb.appendChild(rightPage())
