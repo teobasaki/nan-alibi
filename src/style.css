@@ -57,6 +57,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .budget .pip.spent { background: var(--line); }
 .budget .label { color: var(--muted); font-size: 12px; margin-right: 4px; }
 
+/* 3단 껍데기는 ADR 018 에서 펼침면 2단으로 교체됐다. .col 규칙은 남는다 —
+   .nb-page 가 그 스크롤·여백 규약을 그대로 쓴다. */
 .cols { flex: 1; display: grid; grid-template-columns: 25% 45% 30%; min-height: 0; }
 .col { overflow-y: auto; padding: 12px; }
 .col + .col { border-left: 1px solid var(--line); }
@@ -798,4 +800,72 @@ body::after {
   font-size: 11.5px; color: var(--amber); line-height: 1.6;
   border-left: 2px solid var(--amber); padding: 6px 0 6px 9px; margin-top: 10px;
   background: rgba(200,145,47,.07);
+}
+
+/* ══ 펼친 수첩 (ADR 018) ═══════════════════════════════════════
+ * 우면은 모드 무관 고정, 좌면만 책상 ↔ 취조실.
+ * 밝은 종이를 쓰지 않는다 — 여긴 불 꺼진 호텔이고, 밝게 가면 격자의
+ * amber/red/green 대비를 전부 다시 잡아야 한다. 가죽 표지 + 중간 명도 갱지로
+ * 가면 격자 색을 **한 줄도 안 고쳐도** 종이 위에 그대로 앉는다.
+ */
+.nb {
+  flex: 1; display: grid;
+  /* fr 로 둔다 — 62% + 10px + 38% 는 100% + 10px 라 제본선만큼 정확히 넘친다(실측).
+     fr 은 고정폭(제본선)을 뺀 나머지를 62:38 로 나눈다. */
+  grid-template-columns: 62fr 10px 38fr;
+  min-height: 0; background: var(--bg);
+}
+.nb-page { overflow-y: auto; padding: 14px 16px; min-width: 0; }
+.nb-left { padding-left: 0; display: flex; gap: 0; }
+.nb-body { flex: 1; min-width: 0; padding: 2px 4px 0 12px; }
+
+/* 제본선 — 두 면이 한 권임을 말하는 유일한 장치 */
+.nb-spine {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,.12) 42%, rgba(255,255,255,.05) 50%,
+                           rgba(0,0,0,.12) 58%, rgba(0,0,0,.55));
+  border-left: 1px solid #120d0c; border-right: 1px solid #120d0c;
+}
+
+/* ── 세로 인덱스 탭 — 수첩 가장자리의 색인 ── */
+.nb-tabs { display: flex; flex-direction: column; gap: 4px; padding-top: 26px; flex: 0 0 auto; }
+.nb-tab {
+  writing-mode: vertical-rl; text-orientation: mixed;
+  background: linear-gradient(90deg, #2a1c20, #241719);
+  border: 1px solid var(--line); border-right: 0;
+  border-radius: 5px 0 0 5px; padding: 12px 5px; cursor: pointer;
+  color: var(--muted); font-family: var(--serif); font-size: 12px;
+  transition: color .15s, background .15s;
+}
+.nb-tab:hover:not(:disabled) { color: var(--ink); border-color: var(--line); }
+.nb-tab.on {
+  background: linear-gradient(90deg, #3a2a16, #2e2214);
+  border-color: var(--amber); color: var(--amber);
+}
+.nb-tab:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+/* 접힌 귀 — 미대조가 남아 있다는 뜻. 공짜 다음 수가 있다는 신호다. */
+.nb-tab.dog { position: relative; }
+.nb-tab.dog::after {
+  content: ''; position: absolute; right: 0; top: 0;
+  border: 6px solid transparent; border-top-color: var(--amber); border-right-color: var(--amber);
+  opacity: .75;
+}
+
+/* ── 우면 ── */
+.nb-right { background: var(--panel); border-left: 1px solid #120d0c; }
+.nb-cap {
+  font-family: var(--serif); font-size: 12px; color: var(--muted);
+  border-bottom: 1px solid var(--line); padding-bottom: 5px; margin-bottom: 8px;
+}
+.nb-journal { margin-bottom: 14px; }
+.nb-journal .findings { margin-top: 10px; border-top: 0; padding-top: 0; }
+.nb-rule { height: 1px; background: var(--line); margin: 4px 0 12px; }
+
+/* 좌면이 취조실일 때는 3D 가 폭을 다 쓴다 */
+.nb-left > .stage { flex: 1; min-width: 0; }
+
+@media (max-width: 1100px) {
+  .nb { grid-template-columns: 58fr 8px 42fr; }
+  .nb-tab { font-size: 11px; padding: 10px 4px; }
+  .nb-page { padding: 10px 12px; }
 }

@@ -226,52 +226,6 @@ function topbar(): HTMLElement {
 }
 
 /* ─────────── 왼쪽: 용의자 ─────────── */
-function suspectColumn(): HTMLElement {
-  const col = h('div', 'col')
-  col.appendChild(h('h2', undefined, '용의자'))
-
-  for (const s of SUSPECTS) {
-    const sus = CASE.suspects[s]
-    // div+onclick 이 아니라 버튼 시맨틱을 준다 — 키보드만으로도 게임의 첫 행동이 가능해야 한다
-    const card = h('div', `suspect${ui.active === s ? ' active' : ''}`)
-    card.setAttribute('role', 'button')
-    card.tabIndex = 0
-    card.setAttribute('aria-pressed', String(ui.active === s))
-    card.setAttribute('aria-label', `${sus.name} ${sus.job} 심문하기`)
-    focusKey(card, `suspect:${s}`)
-    const choose = (): void => { hush(); stopVoice(); ui.active = s; render() }
-    card.onclick = choose
-    card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
-
-    const row = h('div', 'row')
-    // 이모지 얼굴(👤/🙂/😰)은 어느 게임에나 붙는 기본값이었고, 다섯 명이 전부 같은 얼굴이라
-    // 인물의 정체성을 오히려 지웠다. 놋쇠 문패에 새긴 성(姓) 으로 바꾼다 — 호텔의 물건이다.
-    // 사진이 있으면 사진, 없으면 놋쇠 명패. 에셋 0장에서도 화면이 깨지지 않는다.
-    const shot = portraitFor(sus.job)
-    const face = h('div', shot ? 'face photo' : 'face plate', shot ? '' : sus.name[0]!)
-    if (shot) face.style.backgroundImage = `url(${shot})`
-    row.appendChild(face)
-    const info = h('div')
-    info.appendChild(h('div', 'name', sus.name))
-    info.appendChild(h('div', 'job', sus.job))
-    row.appendChild(info)
-    card.appendChild(row)
-    card.appendChild(h('div', 'relation', sus.relation))
-    // 22:20 주장은 가운데 격자가 보여준다 — 여기 또 적으면 같은 문장이 화면에 세 번 나온다.
-
-    const pr = ui.game.pressure[s]
-    if (pr > 0) {
-      const gauge = h('div', 'gauge')
-      const fill = h('i')
-      fill.style.width = `${pr}%`
-      gauge.appendChild(fill)
-      card.appendChild(gauge)
-      card.appendChild(h('div', 'prlabel', pr >= 60 ? '몹시 흔들린다' : pr >= 30 ? '흔들린다' : '평정'))
-    }
-    col.appendChild(card)
-  }
-  return col
-}
 
 /* ─────────── 중앙: 인터뷰 ─────────── */
 /**
@@ -325,17 +279,85 @@ function tellLabel(t: string): string {
   return m[t] ?? ''
 }
 
+/**
+ * 좌면 — **책상이거나 취조실이다.** 우면은 이 전환에 관여하지 않는다.
+ *
+ * 두 모드의 폭이 같기 때문에(둘 다 62%) 3D 렌더러가 mount 시점에 잡은 크기가
+ * 모드를 오가도 유효하다. 예전 3단에서는 45% 였고, 만약 모드마다 폭이 달랐으면
+ * `stage3d.ts` 의 크기 계산(mount 시 `host.clientWidth`)을 건드려야 했을 것이다.
+ */
+function deskOrRoom(): HTMLElement {
+  if (ui.active) return stage()
+
+  const page = h('div', 'nb-page nb-left')
+  page.appendChild(indexTabs())
+  const body = h('div', 'nb-body')
+  body.appendChild(
+    ui.view === 'time' ? alibiGrid() : ui.view === 'place' ? placeGrid() : personSheets(),
+  )
+  page.appendChild(body)
+  return page
+}
+
+/**
+ * 우면 — **모드와 무관하게 항상 같은 것이 있다.**
+ *
+ * 위는 수사 일지(내가 지출한 내역), 아래는 기록철(다음에 쓸 수 있는 것).
+ * 일지를 상단으로 **한정한** 이유가 있다: 정보 구조가 문제라고 진단해 놓고
+ * 화면 절반을 회고에 주면 앞뒤가 안 맞는다. 일지는 새 정보를 주는 면이 아니다.
+ *
+ * 기록철을 탭 뒤로 내리지 않는 것도 의도다 — 격자 마지막 행 `확보 기록` 은
+ * 조회 목록으로 손을 넘기려고 존재하는데, 목록이 탭 뒤에 있으면 그 인계가 끊긴다.
+ */
+function rightPage(): HTMLElement {
+  const page = h('div', 'nb-page nb-right')
+
+  const journal = h('div', 'nb-journal')
+  journal.appendChild(h('div', 'nb-cap', '수사 일지'))
+  journal.appendChild(pendingBlock())
+  journal.appendChild(findingsBlock())
+  page.appendChild(journal)
+
+  page.appendChild(h('div', 'nb-rule'))
+  page.appendChild(board())
+  return page
+}
+
+/**
+ * 세로 인덱스 탭 — 수첩 가장자리에 붙은 색인이다.
+ * 가로 탭(`.viewtabs`)이 격자 위 세로 공간을 먹고 있었는데, 세로로 세우면
+ * 그 공간이 격자로 돌아간다. 수첩이라는 그릇에도 이쪽이 맞는다.
+ */
+function indexTabs(): HTMLElement {
+  const tabs = h('div', 'nb-tabs')
+  const TABS: [View, string, string][] = [
+    ['time', '시각별', '누가 · 언제 · 어디라고 했나'],
+    ['place', '장소별', '그 시각 그 자리에 누가 있었나'],
+    ['person', '인물별', '이 사람이 무엇을 말했나'],
+  ]
+  // 미대조가 남아 있으면 대조표 탭의 귀퉁이를 접는다 — 연결은 조사를 소모하지
+  // 않으므로 접힌 귀는 항상 **공짜 다음 수**를 가리킨다.
+  const pending = pendingPairs(ui.game).length
+
+  for (const [v, label, why] of TABS) {
+    const on = ui.view === v
+    const dog = v === 'time' && pending > 0
+    const b = h('button', `nb-tab${on ? ' on' : ''}${dog ? ' dog' : ''}`) as HTMLButtonElement
+    b.appendChild(h('span', 'nbt-l', label))
+    b.setAttribute('aria-pressed', String(on))
+    b.title = why
+    focusKey(b, `view:${v}`)
+    b.onclick = () => { play('paper'); mark({ k: 'view', to: v }); ui.view = v; render() }
+    tabs.appendChild(b)
+  }
+  return tabs
+}
+
 function stage(): HTMLElement {
-  const col = h('div', 'col')
+  const col = h('div', 'nb-page nb-left')
   const box = h('div', 'stage')
 
-  if (!ui.active) {
-    box.appendChild(situationBoard())
-    col.appendChild(box)
-    return col
-  }
-
-  const s = ui.active
+  const s = ui.active!
   const sus = CASE.suspects[s]
   const persona = personaById(sus.personaId)
   const tense = ui.game.pressure[s] >= 60
@@ -532,42 +554,6 @@ function alibiGrid(): HTMLElement {
 function evLabel(evId: string): string {
   const e = CASE.evidence.find((x) => x.id === evId)
   return e ? `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}` : evId
-}
-
-/**
- * 상황판 — **같은 사실을 세 각도로 놓는다** (QA 5.4).
- *
- * 초회 플레이 지적의 핵심은 "기억하기 어렵다" 였고, 그 진단은 기억력이 아니라
- * **정보 구조**였다. 다섯 사람 × 다섯 시각이 대화 로그와 카드 더미에 흩어져 있으니
- * 플레이어가 머릿속에서 표를 다시 그리느라 추리할 시간을 다 썼다.
- *
- * 여기서 새 정보를 주지는 **않는다** — 이미 확보한 것을 다르게 놓을 뿐이다.
- * 그래서 탭을 옮겨도 조사 횟수는 소모되지 않고, 아직 모르는 칸은 세 각도 모두에서 비어 있다.
- */
-function situationBoard(): HTMLElement {
-  const wrap = h('div', 'boardview')
-
-  const tabs = h('div', 'viewtabs')
-  const TABS: [View, string, string][] = [
-    ['time', '시각별', '누가 · 언제 · 어디라고 했나'],
-    ['place', '장소별', '그 시각 그 자리에 누가 있었나'],
-    ['person', '인물별', '이 사람이 무엇을 말했나'],
-  ]
-  for (const [v, label, why] of TABS) {
-    const b = h('button', `viewtab${ui.view === v ? ' on' : ''}`) as HTMLButtonElement
-    b.appendChild(h('span', 'vt-l', label))
-    b.appendChild(h('span', 'vt-w', why))
-    b.setAttribute('aria-pressed', String(ui.view === v))
-    focusKey(b, `view:${v}`)
-    b.onclick = () => { play('paper'); mark({ k: 'view', to: v }); ui.view = v; render() }
-    tabs.appendChild(b)
-  }
-  wrap.appendChild(tabs)
-
-  wrap.appendChild(ui.view === 'time' ? alibiGrid() : ui.view === 'place' ? placeGrid() : personSheets())
-  wrap.appendChild(pendingBlock())
-  wrap.appendChild(findingsBlock())
-  return wrap
 }
 
 /**
@@ -1591,11 +1577,20 @@ function render(): void {
   app.appendChild(topbar())
   app.appendChild(h('div', 'coach', coachLine()))
   if (ui.dash) app.appendChild(dashboard(() => render()))
-  const cols = h('div', 'cols')
-  cols.appendChild(suspectColumn())
-  cols.appendChild(stage())
-  cols.appendChild(board())
-  app.appendChild(cols)
+
+  /**
+   * **펼친 수첩 2단** (ADR 018). 3단 껍데기(25/45/30)를 교체한 것이지 추가한 게 아니다.
+   *
+   * 우면은 모드와 무관하게 고정이고, 좌면만 책상(격자)과 취조실(3D) 사이를 오간다.
+   * 그래서 3D 호스트 폭이 두 모드에서 같아지고(둘 다 62%), 기록철이 탭 뒤로
+   * 내려가지 않아 격자와 조회 목록이 오늘처럼 계속 동시에 보인다.
+   * 사라지는 것은 용의자 열 하나뿐이고 그 폭은 격자로 간다 — 45% → 62%.
+   */
+  const nb = h('div', 'nb')
+  nb.appendChild(deskOrRoom())
+  nb.appendChild(h('div', 'nb-spine'))
+  nb.appendChild(rightPage())
+  app.appendChild(nb)
 
   const cols2 = app.querySelectorAll('.col')
   scrolls.forEach((top, i) => { if (top) cols2[i]?.scrollTo({ top }) })
