@@ -1,0 +1,181 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>precinct probe (temp)</title>
+<style>
+  body { background:#111; color:#ddd; font:12px system-ui; margin:0; padding:8px }
+  .row { display:flex; flex-wrap:wrap; gap:8px }
+  figure { margin:0 } figcaption { padding:4px 0; white-space:pre }
+  pre { background:#000; padding:8px; max-height:340px; overflow:auto }
+</style>
+<pre id="log"></pre>
+<div class="row" id="row"></div>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+
+const L = (s) => { document.getElementById('log').textContent += s + '\n'; console.log(s) }
+const W = 640, H = 400
+const draco = new DRACOLoader().setDecoderPath('/draco/')
+const loader = new GLTFLoader().setDRACOLoader(draco)
+const roomSrc = await loader.loadAsync('/room/room.opt.glb')
+
+const SCALE = 1.9
+const matName = (o) => { const m = Array.isArray(o.material) ? o.material[0] : o.material; return m && m.name }
+
+// ── 1. 재질별 실측 (스케일 적용 후 월드 미터) ──
+{
+  const probe = roomSrc.scene.clone(true)
+  probe.scale.setScalar(SCALE)
+  probe.position.y = 0.53 * SCALE
+  probe.updateMatrixWorld(true)
+  L('=== 재질별 bbox (월드 미터, room.position.y=0.53*1.9 적용) ===')
+  probe.traverse((o) => {
+    if (!o.isMesh) return
+    const b = new THREE.Box3().setFromObject(o)
+    const g = o.geometry
+    // 법선 방향 히스토그램 — 위/아래/수직 면적
+    const pos = g.attributes.position, nor = g.attributes.normal, idx = g.index
+    let up = 0, down = 0, side = 0
+    const a = new THREE.Vector3(), bb = new THREE.Vector3(), c = new THREE.Vector3()
+    const n = new THREE.Vector3()
+    const count = idx ? idx.count : pos.count
+    for (let i = 0; i < count; i += 3) {
+      const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i+1) : i+1, i2 = idx ? idx.getX(i+2) : i+2
+      a.fromBufferAttribute(pos, i0); bb.fromBufferAttribute(pos, i1); c.fromBufferAttribute(pos, i2)
+      const ar = bb.clone().sub(a).cross(c.clone().sub(a)).length() / 2 * SCALE * SCALE
+      n.fromBufferAttribute(nor, i0)
+      if (n.y > 0.7) up += ar; else if (n.y < -0.7) down += ar; else side += ar
+    }
+    L(`${matName(o)}  tri=${count/3}  y[${b.min.y.toFixed(2)}, ${b.max.y.toFixed(2)}]  x[${b.min.x.toFixed(2)}, ${b.max.x.toFixed(2)}]  z[${b.min.z.toFixed(2)}, ${b.max.z.toFixed(2)}]  면적 위=${up.toFixed(2)} 아래=${down.toFixed(2)} 옆=${side.toFixed(2)}`)
+  })
+  const all = new THREE.Box3().setFromObject(probe)
+  L(`전체 x폭=${(all.max.x-all.min.x).toFixed(3)}  z폭=${(all.max.z-all.min.z).toFixed(3)}  높이=${(all.max.y-all.min.y).toFixed(3)}`)
+}
+
+// ── 2. 방 만들기 (재질 이름으로 파트 토글) ──
+function makeRoom({ ceiling = false, furniture = true, walls = true, door = true, props = true, tint = 1 } = {}) {
+  const room = roomSrc.scene.clone(true)
+  room.scale.setScalar(SCALE)
+  room.position.y = 0.53 * SCALE
+  room.traverse((o) => {
+    if (!o.isMesh) return
+    const src = Array.isArray(o.material) ? o.material[0] : o.material
+    const m = src.clone()
+    m.emissive?.setScalar(0); m.emissiveMap = null
+    m.color.multiplyScalar(0.68 * tint)
+    m.roughness = Math.min(Math.max(m.roughness, 0.68), 0.9)
+    m.metalness = Math.min(m.metalness, 0.35)
+    o.material = m
+    const n = src.name
+    if (n === 'lambert4SG' && !ceiling) o.visible = false
+    if (n === 'lambert3SG' && !furniture) o.visible = false
+    if (n === 'lambert6SG' && !walls) o.visible = false
+    if (n === 'lambert2SG' && !door) o.visible = false
+    if (n === 'lambert5SG' && !props) o.visible = false
+  })
+  return room
+}
+
+function panel(label, build) {
+  const fig = document.createElement('figure')
+  const cap = document.createElement('figcaption'); cap.textContent = label
+  fig.appendChild(cap)
+  const r = new THREE.WebGLRenderer({ antialias: true })
+  r.setPixelRatio(1); r.setSize(W, H)
+  r.outputColorSpace = THREE.SRGBColorSpace
+  r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.15
+  fig.appendChild(r.domElement)
+  document.getElementById('row').appendChild(fig)
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0d0908)
+  const cam = build(scene)
+  r.render(scene, cam)
+}
+const cap = (x, z, color, hs = 1.2) => {
+  const g = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, hs, 6, 12),
+    new THREE.MeshStandardMaterial({ color }))
+  g.position.set(x, hs / 2 + 0.2, z)
+  return g
+}
+function lights(scene, xs) {
+  scene.add(new THREE.AmbientLight(0xffd9b0, 0.6))
+  for (const x of xs) {
+    const p = new THREE.PointLight(0xffcf9a, 12, 7, 2)
+    p.position.set(x + 0.05, 1.75, 0.02); scene.add(p)
+  }
+}
+// 정사영 탑다운 — explore3d 와 같은 각도, 폭만 넓힘
+function ortho(view, cx) {
+  const c = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 60)
+  c.position.set(cx + 2.6*(view/3.4), 3.4*(view/3.4), 2.6*(view/3.4))
+  c.lookAt(cx, 0.55, 0)
+  return c
+}
+
+const PITCH = 3.46   // 방 x 폭
+
+// A: 지금 상태 (버그 재현) — y 보정 없음, 천장 있음
+panel('A 현재 explore3d (y보정 없음 · 천장 있음)', (scene) => {
+  const room = roomSrc.scene.clone(true); room.scale.setScalar(SCALE)
+  scene.add(room)
+  scene.add(cap(0, 0.9, 0x88ccff))
+  lights(scene, [0])
+  return ortho(3.4, 0)
+})
+
+// B: y 보정만
+panel('B y보정만 (천장이 막는다)', (scene) => {
+  scene.add(makeRoom({ ceiling: true }))
+  scene.add(cap(0, 0.9, 0x88ccff))
+  lights(scene, [0]); return ortho(3.4, 0)
+})
+
+// C: y 보정 + 천장 제거
+panel('C y보정 + lambert4SG off = 단면', (scene) => {
+  scene.add(makeRoom({ ceiling: false }))
+  scene.add(cap(0, 0.9, 0x88ccff))
+  lights(scene, [0]); return ortho(3.4, 0)
+})
+
+// D: 3칸 — 대기실(가구off) | 복도(가구off·소품off) | 취조실(원본)
+panel('D 3칸 단면: 대기실 | 복도 | 취조실', (scene) => {
+  const wait = makeRoom({ ceiling: false, furniture: false }); wait.position.x = -PITCH
+  const hall = makeRoom({ ceiling: false, furniture: false, props: false, tint: 0.85 })
+  const intr = makeRoom({ ceiling: false }); intr.position.x = PITCH
+  scene.add(wait, hall, intr)
+  for (let i = 0; i < 5; i++) scene.add(cap(-PITCH - 1.2 + i*0.6, -1.2, 0xd8b46a, 1.0))
+  scene.add(cap(0, 0.6, 0x88ccff))
+  lights(scene, [-PITCH, 0, PITCH])
+  return ortho(11.5, 0)
+})
+
+// E: 3칸 + 벽 제거해 복도가 뚫린 느낌
+panel('E 3칸 + 중앙 복도 벽off', (scene) => {
+  const wait = makeRoom({ ceiling: false, furniture: false }); wait.position.x = -PITCH
+  const hall = makeRoom({ ceiling: false, furniture: false, props: false, walls: false, door: false })
+  const intr = makeRoom({ ceiling: false }); intr.position.x = PITCH
+  scene.add(wait, hall, intr)
+  scene.add(cap(0, 0.6, 0x88ccff))
+  lights(scene, [-PITCH, 0, PITCH]); return ortho(11.5, 0)
+})
+
+// F: 2칸만 (대기실 | 취조실) — 더 큰 배율로
+panel('F 2칸: 대기실 | 취조실', (scene) => {
+  const wait = makeRoom({ ceiling: false, furniture: false }); wait.position.x = -PITCH/2 - 0.0
+  const intr = makeRoom({ ceiling: false }); intr.position.x = PITCH/2
+  wait.position.x = -PITCH/2
+  scene.add(wait, intr)
+  for (let i = 0; i < 5; i++) scene.add(cap(-PITCH/2 - 1.2 + i*0.6, -1.2, 0xd8b46a, 1.0))
+  lights(scene, [-PITCH/2, PITCH/2]); return ortho(8.2, 0)
+})
+
+// G: z 축으로도 붙여보기 (L 자)
+panel('G z축 타일 (복도 세로)', (scene) => {
+  const a = makeRoom({ ceiling: false, furniture: false })
+  const b = makeRoom({ ceiling: false }); b.position.x = PITCH
+  const c = makeRoom({ ceiling: false, furniture: false, props: false }); c.position.z = 3.80
+  scene.add(a, b, c)
+  lights(scene, [0, PITCH]); return ortho(11.5, PITCH/2)
+})
+L('done')
+</script>

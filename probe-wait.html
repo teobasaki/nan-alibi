@@ -1,0 +1,130 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>probe — 대기실</title>
+<style>body{margin:0;background:#0d0908;color:#c8912f;font:12px monospace}
+#log{position:fixed;left:8px;top:8px;z-index:9;white-space:pre;background:#000a;padding:6px}</style>
+<div id="log">loading…</div>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+
+const log = (s) => { document.getElementById('log').textContent += '\n' + s }
+document.getElementById('log').textContent = 'start'
+
+const W = 900, H = 700
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(1); renderer.setSize(W, H)
+renderer.outputColorSpace = THREE.SRGBColorSpace
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.15
+document.body.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0d0908)
+const view = 3.9
+const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 40)
+cam.position.set(2.6, 3.4, 2.6); cam.lookAt(0, 0.55, 0)
+
+const draco = new DRACOLoader().setDecoderPath('/draco/')
+const loader = new GLTFLoader().setDRACOLoader(draco)
+
+const ROOM_SCALE = 1.9
+// pose-seated.py 의 SEATED 표를 그대로 옮긴다 (도 단위, 블렌더 포즈본 로컬 XYZ)
+const R = (d) => d * Math.PI / 180
+const SEATED = {
+  LeftUpLeg: [-88, 0, 4], RightUpLeg: [-88, 0, -4],
+  LeftLeg: [84, 0, 0], RightLeg: [84, 0, 0],
+  LeftFoot: [8, 0, 0], RightFoot: [8, 0, 0],
+  Spine: [6, 0, 0], Spine01: [3, 0, 0], Spine02: [2, 0, 0],
+  neck: [-4, 0, 0], Head: [2, 0, 0],
+  LeftShoulder: [0, 0, 4], RightShoulder: [0, 0, -4],
+  // 팔은 pose-seated.py 가 모델마다 탐색한다. 여기서는 고정값으로 근사.
+  LeftArm: [-58, 0, 12], RightArm: [-58, 0, -12],
+  LeftForeArm: [-38, 0, 10], RightForeArm: [-38, 0, -10],
+  LeftHand: [-12, 0, 0], RightHand: [-12, 0, 0],
+}
+
+const SLUGS = ['security', 'appraiser', 'investor', 'expartner', 'secretary']
+
+const [roomGltf, ...chars] = await Promise.all([
+  loader.loadAsync('/room/room.opt.glb'),
+  ...SLUGS.map((s) => loader.loadAsync(`/characters/${s}.walk.opt.glb`)),
+])
+
+const room = roomGltf.scene
+room.scale.setScalar(ROOM_SCALE)
+room.position.y = 0.53 * ROOM_SCALE            // ← 지금 explore3d 에 빠진 한 줄
+const hidden = []
+room.traverse((o) => {
+  const m = o; if (!m.isMesh) return
+  for (const mm of (Array.isArray(m.material) ? m.material : [m.material])) {
+    if (!mm) continue
+    mm.emissive?.setScalar(0); mm.emissiveMap = null
+    mm.side = THREE.FrontSide                   // ← 천장·앞벽 자동 컬링
+    // 책상+의자 덩어리를 지운다 (대기실 드레싱)
+    if (mm.name === 'lambert3SG') { m.visible = false; hidden.push(mm.name) }
+  }
+})
+scene.add(room)
+log('room materials hidden: ' + hidden.join(','))
+
+// ── 벤치 (BoxGeometry — 에셋이 아니다)
+const benchMat = new THREE.MeshStandardMaterial({ color: 0x4a3a2e, roughness: 0.85, metalness: 0.05 })
+const seatTop = 0.45
+const bench = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.09, 0.42), benchMat)
+bench.position.set(0, seatTop, -1.45); scene.add(bench)
+const backRest = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.42, 0.07), benchMat)
+backRest.position.set(0, 0.70, -1.63); scene.add(backRest)
+for (const x of [-1.35, 0, 1.35]) {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, seatTop, 0.36), benchMat)
+  leg.position.set(x, seatTop / 2, -1.45); scene.add(leg)
+}
+
+// ── 다섯 명을 앉힌다
+const SEAT_X = [-1.20, -0.60, 0.00, 0.60, 1.20]
+const q = new THREE.Quaternion(), e = new THREE.Euler()
+const report = []
+chars.forEach((g, i) => {
+  const m = g.scene
+  const bones = new Map()
+  m.traverse((o) => { if (o.isBone) bones.set(o.name, o) })
+  for (const [name, deg] of Object.entries(SEATED)) {
+    const b = bones.get(name); if (!b) continue
+    e.set(R(deg[0]), R(deg[1]), R(deg[2]), 'XYZ')
+    b.quaternion.multiply(q.setFromEuler(e))    // rest × delta — 블렌더 포즈본과 같은 합성
+  }
+  m.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(m)
+  const hgt = box.max.y - box.min.y
+  const s = hgt > 0 ? 1.25 / hgt : 1            // 앉은 사람 높이 1.25m 로 정규화
+  m.scale.setScalar(s)
+  m.rotation.y = 0                              // +Z 를 본다
+  m.updateMatrixWorld(true)
+  const b2 = new THREE.Box3().setFromObject(m)
+  // 엉덩이가 좌면에 닿게: 모델 바닥(=발) 을 바닥 0 에 두고 좌면 높이만큼은 다리가 처리
+  m.position.y -= b2.min.y
+  m.position.x += SEAT_X[i] - (b2.max.x + b2.min.x) / 2
+  m.position.z += -1.42 - (b2.max.z + b2.min.z) / 2
+  scene.add(m)
+  report.push(`${SLUGS[i]} h=${hgt.toFixed(3)} s=${s.toFixed(2)} y=[${b2.min.y.toFixed(2)},${b2.max.y.toFixed(2)}]`)
+})
+log(report.join('\n'))
+
+scene.add(new THREE.AmbientLight(0xffd9b0, 0.55))
+const lamp = new THREE.PointLight(0xffcf9a, 14, 7, 2); lamp.position.set(0.05, 1.75, 0.02)
+scene.add(lamp)
+
+// 마커 몇 개
+for (const [x, z] of [[-1.15, 1.30], [1.15, 1.30], [0, 0.55], [-1.15, 0.20], [1.15, 0.20]]) {
+  const halo = new THREE.Mesh(new THREE.RingGeometry(0.39, 0.42, 28),
+    new THREE.MeshBasicMaterial({ color: 0xc8912f, transparent: true, opacity: 0.3, side: THREE.DoubleSide }))
+  halo.rotation.x = -Math.PI / 2; halo.position.set(x, 0.012, z); scene.add(halo)
+  const g = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.015, 0.09),
+    new THREE.MeshStandardMaterial({ color: 0xc8912f, emissive: 0x4a3410 }))
+  g.position.set(x, 0.12, z); scene.add(g)
+}
+
+renderer.render(scene, cam)
+log('DONE')
+window.__done = true
+</script>
