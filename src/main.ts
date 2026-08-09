@@ -323,6 +323,21 @@ function exploreRoom(): HTMLElement {
   const host = exploreEl          // 새로 만들지 않는다 — 옮겨 붙일 뿐이다
   page.appendChild(host)
 
+  /**
+   * **조사 잔량을 화면 안에 박는다.**
+   *
+   * 60 Seconds! 는 들 수 있는 개수를 손 아이콘 네 개로 화면 아래에 붙여 둔다 —
+   * 뛰어다니는 동안 무엇을 포기할지가 계속 보인다. 우리의 "손 개수" 는 조사 9회인데,
+   * 그 잔량이 오른쪽 수첩에만 있어서 **걸어다니는 동안 눈을 떼야** 보였다.
+   * 자원이 보이지 않으면 자원 게임이 아니다.
+   */
+  const pips = h('div', 'expips')
+  for (let i = 0; i < INVESTIGATION_BUDGET; i++) {
+    pips.appendChild(h('i', `expip${i < ui.game.investigationsLeft ? '' : ' spent'}`))
+  }
+  pips.appendChild(h('span', 'expip-l', `남은 조사 ${ui.game.investigationsLeft}`))
+  page.appendChild(pips)
+
   const bar = h('div', 'exbar')
   const back = focusKey(h('button', 'backbtn', '← 책상으로'), 'exback') as HTMLButtonElement
   back.onclick = () => {
@@ -379,6 +394,8 @@ function exploreMarkers(): Marker[] {
     id: e.id,
     at: PLACE_AT[e.place] ?? [0, 0],
     label: `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`,
+    kind: e.kind,
+    crime: e.slot === CRIME_SLOT,
   }))
 }
 

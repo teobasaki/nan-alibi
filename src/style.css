@@ -1022,3 +1022,18 @@ body::after {
 .exhint { font-size: 11.5px; color: var(--muted); line-height: 1.4; word-break: keep-all; }
 .nb-tab.exgo { border-color: var(--amber); }
 .nb-tab.exgo .nbt-l { color: var(--amber); }
+
+/* ── 조사 잔량을 3D 화면 안에 (60 Seconds! 의 "손 4개") ────────
+ * 자원이 보이지 않으면 자원 게임이 아니다. 걸어다니는 동안 눈을 떼면 안 된다.
+ */
+.expips {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 5px; z-index: 2;
+  padding: 6px 12px; border-radius: 20px;
+  background: rgba(13,9,8,.72); border: 1px solid var(--line);
+  backdrop-filter: blur(3px); pointer-events: none;
+}
+.expip { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); }
+.expip.spent { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.expip-l { margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.nb-left.explore { position: relative; }

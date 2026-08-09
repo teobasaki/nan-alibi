@@ -25,6 +25,14 @@ export interface Marker {
   /** 방 안 위치 (미터) */
   at: [number, number]
   label: string
+  /**
+   * 기록 종류. **생긴 게 달라야 가기 전에 고를 수 있다.**
+   * 60 Seconds! 에서 방독면과 수프 캔이 다르게 생긴 것과 같은 이유다 —
+   * 전부 같은 링이면 걸어가 보기 전까지 무엇인지 모르고, 그러면 선택이 아니라 순회가 된다.
+   */
+  kind: 'keycard' | 'cctv' | 'call' | 'receipt'
+  /** 범행 시각 기록인가 — 사람을 지우는 유일한 것이라 눈에 띄어야 한다 */
+  crime: boolean
 }
 
 export interface Explore3D {
@@ -149,18 +157,50 @@ export async function mountExplore(
     scene.add(markerRoot)
     let markers: Marker[] = []
 
+    /** 기록 종류마다 다른 실루엣 — 멀리서도 무엇인지 읽힌다 */
+    const shapeOf = (k: Marker['kind']): THREE.BufferGeometry => {
+      switch (k) {
+        case 'cctv':    return new THREE.ConeGeometry(0.09, 0.16, 4)          // 렌즈가 향하는 원뿔
+        case 'keycard': return new THREE.BoxGeometry(0.14, 0.015, 0.09)       // 납작한 카드
+        case 'call':    return new THREE.TorusGeometry(0.07, 0.022, 8, 20)    // 수화기 코드
+        default:        return new THREE.CylinderGeometry(0.02, 0.02, 0.17, 6) // 말린 영수증
+      }
+    }
+
     const setMarkers = (list: Marker[]): void => {
       markers = list
+      for (const c of markerRoot.children) {
+        const mesh = c as THREE.Mesh
+        mesh.geometry.dispose()
+        ;(mesh.material as THREE.Material).dispose()
+      }
       markerRoot.clear()
       for (const m of list) {
         const g = new THREE.Mesh(
-          new THREE.RingGeometry(0.13, 0.18, 24),
-          new THREE.MeshBasicMaterial({ color: 0xc8912f, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+          shapeOf(m.kind),
+          new THREE.MeshStandardMaterial({
+            // 범행 시각 기록은 붉게 — 사람을 지우는 유일한 물건이다
+            color: m.crime ? 0xb3372c : 0xc8912f,
+            emissive: m.crime ? 0x5a1a14 : 0x4a3410,
+            roughness: 0.45, metalness: 0.3,
+          }),
         )
-        g.rotation.x = -Math.PI / 2
-        g.position.set(m.at[0], 0.02, m.at[1])
+        g.position.set(m.at[0], 0.12, m.at[1])
         g.userData.id = m.id
         markerRoot.add(g)
+
+        // 바닥에 옅은 원 — 어디까지 가야 닿는지 보인다
+        const halo = new THREE.Mesh(
+          new THREE.RingGeometry(PICK_RADIUS - 0.03, PICK_RADIUS, 28),
+          new THREE.MeshBasicMaterial({
+            color: m.crime ? 0xb3372c : 0xc8912f,
+            transparent: true, opacity: 0.16, side: THREE.DoubleSide,
+          }),
+        )
+        halo.rotation.x = -Math.PI / 2
+        halo.position.set(m.at[0], 0.012, m.at[1])
+        halo.userData.id = m.id
+        markerRoot.add(halo)
       }
     }
 
@@ -248,6 +288,11 @@ export async function mountExplore(
       if (walk) walk.paused = !moving
       mixer.update(dt)
 
+      // 표식이 천천히 돈다 — 멈춰 있는 물건은 주울 수 있어 보이지 않는다
+      for (const g of markerRoot.children) {
+        if ((g as THREE.Mesh).geometry.type !== 'RingGeometry') g.rotation.y += dt * 1.1
+      }
+
       // **닿았다고 줍지 않는다.** 어느 것에 닿았는지만 알리고, 집는 건 사람이 정한다.
       let nowNear: string | null = null
       for (const m of markers) {
@@ -262,9 +307,10 @@ export async function mountExplore(
       // 닿아 있는 마커는 부풀어 오른다 — 지금 집을 수 있다는 신호
       for (const g of markerRoot.children) {
         const on = g.userData.id === near
-        g.scale.setScalar(on ? 1.35 : 1)
-        const mat = (g as THREE.Mesh).material as THREE.MeshBasicMaterial
-        mat.opacity = on ? 1 : 0.55
+        const isHalo = (g as THREE.Mesh).geometry.type === 'RingGeometry'
+        g.scale.setScalar(on ? (isHalo ? 1.12 : 1.35) : 1)
+        const mat = (g as THREE.Mesh).material as THREE.Material
+        if (isHalo) mat.opacity = on ? 0.42 : 0.16
       }
 
       renderer.render(scene, camera)
