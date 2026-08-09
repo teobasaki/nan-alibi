@@ -16,6 +16,7 @@ import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
+import { loadVoiceStyles } from './ui/tts/supertone'
 import { FALLBACK_LABEL, onStage, setStage, stage as pipeStage, STAGE_LABEL } from './ui/pipeline'
 import { dashboard, probeProviders } from './ui/dashboard'
 import { playIntro } from './ui/intro'
@@ -1669,6 +1670,8 @@ function openBriefing(): void {
     void initVoice()
     // 어떤 공급자가 실제로 살아 있는지 — 없는 걸 있는 것처럼 그리지 않기 위해
     void probeProviders().then(() => { if (ui.dash) render() })
+    // 어떤 감정을 쓸 수 있는지 먼저 묻는다 — 이름을 지어내면 상류가 403 을 준다
+    void loadVoiceStyles()
     ov.remove()
     /**
      * **수첩이 펼쳐지며 수사가 시작된다.**

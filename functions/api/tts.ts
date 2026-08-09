@@ -32,6 +32,37 @@ const UPSTREAM_TIMEOUT_MS = 3000
 const fallback = (reason: string, status = 200): Response =>
   Response.json({ fallback: true, reason }, { status })
 
+/**
+ * 이 계정이 **실제로 쓸 수 있는** 한국어 목소리 목록.
+ *
+ * 왜 필요했나: `voice_id` 를 'default' 로 박아두고 403 을 받았다. 상류 메시지가
+ * *"Insufficient permissions to use this voice"* 였다 — 키는 멀쩡했고 목소리가 없는
+ * 이름이었다. **쓸 수 있는 것을 물어보지 않고 이름을 지어낸 것**이 원인이다.
+ * 목록을 받아 고르게 하면 그 실수가 구조적으로 불가능해진다.
+ */
+export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+  if (!env.SUPERTONE_API_KEY) return Response.json({ voices: [], reason: 'no_key' })
+  try {
+    const r = await fetch('https://supertoneapi.com/v1/voices/search?language=ko&page_size=20', {
+      headers: { 'x-sup-api-key': env.SUPERTONE_API_KEY },
+    })
+    const body = await r.text()
+    if (!r.ok) return Response.json({ voices: [], reason: `upstream_${r.status}`, detail: body.slice(0, 300) })
+    const j = JSON.parse(body)
+    const items = (j.items ?? j.voices ?? j.data ?? []) as Record<string, unknown>[]
+    return Response.json({
+      voices: items.map((v) => ({
+        id: v.voice_id ?? v.id,
+        name: v.name,
+        // 감정 스타일은 목소리마다 다르다 — 없는 스타일을 보내면 또 400 이 온다
+        styles: v.styles ?? v.available_styles ?? [],
+      })),
+    })
+  } catch (e) {
+    return Response.json({ voices: [], reason: 'network', detail: String(e).slice(0, 200) })
+  }
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.SUPERTONE_API_KEY) return fallback('no_key')
 
@@ -73,7 +104,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       signal: ctl.signal,
     })
 
-    if (!up.ok) return fallback(`upstream_${up.status}`)
+    if (!up.ok) {
+      /**
+       * **상류가 왜 거절했는지를 버리지 않는다.**
+       * 처음엔 상태 코드만 돌려줬는데, 그러면 403 이 "키가 틀렸다" 인지
+       * "요청 형식이 틀렸다" 인지 알 수 없어 고칠 수가 없었다.
+       * 본문 앞부분만 싣는다 — 키는 요청에만 있고 응답에는 없다.
+       */
+      const detail = (await up.text().catch(() => '')).slice(0, 300)
+      return Response.json({ fallback: true, reason: `upstream_${up.status}`, detail })
+    }
 
     const audio = await up.arrayBuffer()
     if (audio.byteLength === 0) return fallback('empty_audio')

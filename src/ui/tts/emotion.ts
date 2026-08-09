@@ -26,6 +26,8 @@ export interface Prosody {
 export interface Emotion {
   /** Supertone 이 받는 스타일 이름 */
   style: string
+  /** 그 목소리가 주 스타일을 못 쓸 때 내려갈 곳 */
+  fallback: string
   /** 0~1. 클수록 과장된다 */
   intensity: number
   /** 문장 사이 쉼(ms). 말이 끊기는 연기는 값보다 침묵이 만든다 */
@@ -43,13 +45,31 @@ const PROSODY: Record<Tell, Prosody> = {
 /**
  * `pause` 의 침묵이 가장 길다 — 이 tell 은 "말을 멈췄다" 가 본체라서
  * 속도를 늦추는 것만으로는 안 들린다. 실제로 쉬어야 들린다.
+ *
+ * ## 스타일 이름을 지어내지 않는다
+ * 처음에 `stammer` 를 `fear` 로 보냈다가 403 을 받았다 — **Supertone 에 `fear`
+ * 라는 스타일은 없다.** 계정이 쓸 수 있는 20개 목소리를 전부 조회해 실제 어휘를
+ * 세어보니 neutral(20) · happy(14) · angry(13) · sad(13) 이 주축이고,
+ * `anxious` 는 Alphonse 한 목소리에만 있다.
+ *
+ * 그래서 **주 스타일과 대체 스타일을 함께 적는다.** 고른 목소리가 주 스타일을
+ * 못 쓰면 대체로 내려가고, 그것도 없으면 `neutral` 이다 — 목소리를 바꿔도 안 깨진다.
  */
 const EMOTION: Record<Tell, Emotion> = {
-  none: { style: 'neutral', intensity: 0.2, pauseMs: 90 },
-  gaze: { style: 'sad', intensity: 0.35, pauseMs: 160 },
-  pause: { style: 'neutral', intensity: 0.25, pauseMs: 420 },
-  stammer: { style: 'fear', intensity: 0.6, pauseMs: 120 },
-  anger: { style: 'angry', intensity: 0.7, pauseMs: 70 },
+  none: { style: 'neutral', fallback: 'neutral', intensity: 0.2, pauseMs: 90 },
+  gaze: { style: 'sad', fallback: 'neutral', intensity: 0.35, pauseMs: 160 },
+  pause: { style: 'neutral', fallback: 'neutral', intensity: 0.25, pauseMs: 420 },
+  // 더듬음 = 불안. `anxious` 가 있는 목소리면 그것, 없으면 슬픔으로 내려간다.
+  stammer: { style: 'anxious', fallback: 'sad', intensity: 0.6, pauseMs: 120 },
+  anger: { style: 'angry', fallback: 'neutral', intensity: 0.7, pauseMs: 70 },
+}
+
+/** 목소리가 실제로 지원하는 스타일로 낮춘다. 없는 이름을 보내면 상류가 거절한다. */
+export function resolveStyle(e: Emotion, supported: readonly string[]): string {
+  if (supported.length === 0) return e.style           // 목록을 못 받았으면 그대로 시도
+  if (supported.includes(e.style)) return e.style
+  if (supported.includes(e.fallback)) return e.fallback
+  return supported.includes('neutral') ? 'neutral' : supported[0]!
 }
 
 export const prosodyOf = (tell: Tell): Prosody => PROSODY[tell] ?? PROSODY.none

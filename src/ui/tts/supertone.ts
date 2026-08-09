@@ -16,7 +16,7 @@
  * 심문마다 실패 요청을 보내면 매번 예산만큼 늦어질 뿐 얻는 게 없다.
  */
 
-import { emotionOf, scaleByPressure, type Tell } from './emotion'
+import { emotionOf, resolveStyle, scaleByPressure, type Tell } from './emotion'
 import { settings } from '../settings'
 
 /** 이 시간 안에 오디오가 오지 않으면 내장 합성으로 넘어간다 */
@@ -24,6 +24,26 @@ const BUDGET_MS = 1500
 
 /** 이 세션에서 서버 TTS 를 아예 쓸 수 없다고 판명됐는가 */
 let disabled = false
+
+/**
+ * 고른 목소리가 실제로 쓸 수 있는 스타일. **비어 있으면 아직 안 물어본 것이다.**
+ * 이름을 지어내고 403 을 받은 뒤에 생긴 규율이다 — 쓸 수 있는 것을 먼저 묻는다.
+ */
+let styles: string[] = []
+
+export async function loadVoiceStyles(): Promise<void> {
+  try {
+    const r = await fetch('/api/tts')
+    const j = await r.json()
+    const list = (j?.voices ?? []) as { id: string; name: string; styles: string[] }[]
+    if (!list.length) { if (j?.reason === 'no_key') disable(); return }
+    // 서버가 고른 목소리(SUPERTONE_VOICE_ID)와 같은 것을 찾는다. 못 찾으면 첫 번째.
+    const picked = list.find((v) => v.styles?.includes('anxious')) ?? list[0]!
+    styles = picked.styles ?? []
+  } catch {
+    // 목록을 못 받아도 합성은 시도한다 — 없는 스타일이면 그때 폴백한다
+  }
+}
 
 export const isDisabled = (): boolean => disabled
 
@@ -65,6 +85,8 @@ export async function synthesize(
   if (disabled || !text.trim()) return null
 
   const e = scaleByPressure(emotionOf(tell), pressure, settings().intensity)
+  // **없는 스타일을 보내지 않는다.** 목소리마다 쓸 수 있는 감정이 다르다.
+  const style = resolveStyle(e, styles)
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), BUDGET_MS)
 
@@ -72,7 +94,7 @@ export async function synthesize(
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, style: e.style, intensity: e.intensity }),
+      body: JSON.stringify({ text, style, intensity: e.intensity }),
       signal: ctl.signal,
     })
 

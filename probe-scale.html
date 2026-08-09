@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>probe</title>
+<body style="background:#111;color:#eee;font:13px monospace">
+<pre id="out">loading…</pre>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+
+const out = document.getElementById('out')
+const log = (s) => { out.textContent += '\n' + s }
+out.textContent = ''
+
+const draco = new DRACOLoader().setDecoderPath('/draco/')
+const loader = new GLTFLoader().setDRACOLoader(draco)
+
+// scene needed so updateMatrixWorld / skeleton binding behaves like the real app
+const scene = new THREE.Scene()
+
+async function probe(url, label) {
+  const g = await loader.loadAsync(url)
+  const root = g.scene
+  scene.add(root)
+  root.updateMatrixWorld(true)
+
+  const box = new THREE.Box3().setFromObject(root)
+  const size = box.getSize(new THREE.Vector3())
+
+  // precise = true walks actual vertices, and for SkinnedMesh three uses
+  // getVertexPosition() which APPLIES skinning — this is the真 rendered size
+  const boxP = new THREE.Box3()
+  root.traverse((o) => { if (o.isMesh) boxP.expandByObject(o, true) })
+  const sizeP = boxP.getSize(new THREE.Vector3())
+
+  let hips = null
+  root.traverse((o) => { if (!hips && o.isBone && /hips/i.test(o.name)) hips = o })
+  const hp = hips ? hips.getWorldPosition(new THREE.Vector3()) : null
+
+  log(`--- ${label} (${url})`)
+  log(`  Box3.setFromObject (cheap)  size = ${size.toArray().map(v=>v.toFixed(4)).join(', ')}  minY=${box.min.y.toFixed(4)}`)
+  log(`  Box3 precise (skinned)      size = ${sizeP.toArray().map(v=>v.toFixed(4)).join(', ')}  minY=${boxP.min.y.toFixed(4)}`)
+  log(`  hips world y                = ${hp ? hp.y.toFixed(4) : 'n/a'}`)
+  log(`  animations                  = ${g.animations.map(a=>a.name).join(',') || '(none)'}`)
+  log(`  explore3d would scale by      1.7 / ${size.y.toFixed(4)} = ${(1.7/size.y).toFixed(3)}`)
+  log(`  stage3d  would scale by      ${size.y > 1.55 ? (1.72/size.y).toFixed(3) : '1 (size.y<=1.55)'}`)
+  scene.remove(root)
+}
+
+try {
+  await probe('/characters/security.walk.opt.glb', 'WALK security')
+  await probe('/characters/security.opt.glb', 'SEATED security')
+  await probe('/characters/housekeeping.opt.glb', 'SEATED housekeeping')
+  await probe('/characters/secretary.opt.glb', 'SEATED secretary')
+  await probe('/characters/nephew.opt.glb', 'SEATED nephew')
+  log('\nDONE')
+} catch (e) {
+  log('ERROR ' + e)
+}
+</script>
+</body>
