@@ -1,0 +1,199 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>room probe (temp)</title>
+<style>
+  body { background:#111; color:#ddd; font:12px system-ui; margin:0; padding:8px }
+  .row { display:flex; flex-wrap:wrap; gap:8px }
+  figure { margin:0 }
+  figcaption { padding:4px 0 }
+</style>
+<div class="row" id="row"></div>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+
+const W = 520, H = 360
+const draco = new DRACOLoader().setDecoderPath('/draco/')
+const loader = new GLTFLoader().setDRACOLoader(draco)
+const roomSrc = await loader.loadAsync('/room/room.opt.glb')
+const sit = await Promise.all(['secretary','appraiser','nephew'].map(s => loader.loadAsync(`/characters/${s}.opt.glb`)))
+
+function panel(label, build) {
+  const fig = document.createElement('figure')
+  const cap = document.createElement('figcaption'); cap.textContent = label
+  fig.appendChild(cap)
+  const r = new THREE.WebGLRenderer({ antialias:true })
+  r.setPixelRatio(1); r.setSize(W,H)
+  r.outputColorSpace = THREE.SRGBColorSpace
+  r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.15
+  fig.appendChild(r.domElement)
+  document.getElementById('row').appendChild(fig)
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0d0908)
+  const cam = build(scene)
+  r.render(scene, cam)
+}
+
+function cloneRoom() {
+  const room = roomSrc.scene.clone(true)
+  room.traverse(o => {
+    if (!o.isMesh) return
+    const one = Array.isArray(o.material) ? o.material[0] : o.material
+    const c = one.clone(); c.emissive?.setScalar(0); c.emissiveMap = null
+    o.material = c
+  })
+  return room
+}
+const matName = o => {
+  const m = Array.isArray(o.material) ? o.material[0] : o.material
+  return m && m.name
+}
+function person(x, z, ry, color) {
+  const g = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 1.2, 6, 12),
+    new THREE.MeshStandardMaterial({ color }))
+  g.position.set(x, 0.85, z); g.rotation.y = ry
+  return g
+}
+function lights(scene, mul = 1) {
+  scene.add(new THREE.AmbientLight(0xffd9b0, 0.55 * mul))
+  const lamp = new THREE.PointLight(0xffcf9a, 14 * mul, 7 * mul, 2)
+  lamp.position.set(0.05, 1.75, 0.02); scene.add(lamp)
+}
+
+// A — exactly what src/ui/explore3d.ts does today
+panel('A: 현재 explore3d 그대로 (position.y 없음, DoubleSide)', (scene) => {
+  const room = cloneRoom(); room.scale.setScalar(1.9); scene.add(room)
+  scene.add(person(0, 0.9, 0, 0xcc8844))
+  lights(scene)
+  const view = 3.4
+  const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 40)
+  cam.position.set(2.6,3.4,2.6); cam.lookAt(0,0.55,0)
+  return cam
+})
+
+// B — floor at y=0 + ceiling mesh hidden
+panel('B: room.position.y=0.53*1.9 + 천장(lambert4SG) 숨김', (scene) => {
+  const room = cloneRoom(); room.scale.setScalar(1.9); room.position.y = 0.53*1.9
+  room.traverse(o => { if (o.isMesh && matName(o) === 'lambert4SG') o.visible = false })
+  scene.add(room)
+  scene.add(person(0, 0.9, 0, 0xcc8844))
+  lights(scene)
+  const view = 3.4
+  const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 40)
+  cam.position.set(2.6,3.4,2.6); cam.lookAt(0,0.55,0)
+  return cam
+})
+
+// C — same but walls single-sided instead of hiding anything
+panel('C: position.y 보정 + 모든 재질 FrontSide (천장/앞벽 자동 컬링)', (scene) => {
+  const room = cloneRoom(); room.scale.setScalar(1.9); room.position.y = 0.53*1.9
+  room.traverse(o => { if (o.isMesh) { const ms = Array.isArray(o.material)?o.material:[o.material]; ms.forEach(m => m.side = THREE.FrontSide) } })
+  scene.add(room)
+  scene.add(person(0, 0.9, 0, 0xcc8844))
+  lights(scene)
+  const view = 3.4
+  const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 40)
+  cam.position.set(2.6,3.4,2.6); cam.lookAt(0,0.55,0)
+  return cam
+})
+
+// D — "경찰서 대기실" : 같은 방을 크게 키우고 천장만 숨긴 뒤 착석 모델 3인 배치
+panel('D: 같은 방 scale 3.2 + 천장 숨김 + 착석 3인 (경찰서 대기실 후보)', (scene) => {
+  const S = 3.2
+  const room = cloneRoom(); room.scale.setScalar(S); room.position.y = 0.53*S
+  room.traverse(o => { if (o.isMesh && matName(o) === 'lambert4SG') o.visible = false })
+  scene.add(room)
+  const spots = [[-2.0, -1.2, 0.6],[-2.0, 0.2, 0.6],[-2.0, 1.6, 0.6]]
+  sit.forEach((g, i) => {
+    const m = g.scene.clone(true)
+    const b = new THREE.Box3().setFromObject(m); const hgt = b.max.y - b.min.y
+    m.scale.setScalar(hgt > 0 ? 1.35/hgt : 1)          // 앉은 사람 높이 ~1.35m
+    const b2 = new THREE.Box3().setFromObject(m)
+    m.position.set(spots[i][0], -b2.min.y, spots[i][1])
+    m.rotation.y = Math.PI/2
+    scene.add(m)
+    // 벤치
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 1.1),
+      new THREE.MeshStandardMaterial({ color: 0x3b2a1d, roughness: 0.8 }))
+    bench.position.set(spots[i][0], 0.21, spots[i][1]); scene.add(bench)
+  })
+  scene.add(person(1.6, 1.2, 0, 0xcc8844))
+  lights(scene, 2.2)
+  const view = 6.4
+  const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 60)
+  cam.position.set(5,6.5,5); cam.lookAt(0,0.6,0)
+  return cam
+})
+// E — 가구(lambert3SG)만 숨기면 빈 방이 되는가
+panel('E: 천장+가구(lambert3SG) 숨김 = 빈 유치실', (scene) => {
+  const room = cloneRoom(); room.scale.setScalar(1.9); room.position.y = 0.53*1.9
+  room.traverse(o => { if (o.isMesh && (matName(o) === 'lambert4SG' || matName(o) === 'lambert3SG')) o.visible = false })
+  scene.add(room)
+  scene.add(person(0, 0.9, 0, 0xcc8844))
+  lights(scene)
+  const view = 3.4
+  const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 40)
+  cam.position.set(2.6,3.4,2.6); cam.lookAt(0,0.55,0)
+  return cam
+})
+
+// F — 같은 방 2벌: 왼쪽 = 대기실(가구 숨김 + 벤치 + 착석 3인), 오른쪽 = 취조실(그대로)
+panel('F: 같은 방 2벌 — 왼쪽 대기실(가구 숨김·벤치·착석 3인) + 오른쪽 취조실', (scene) => {
+  const S = 1.9, PITCH = 0.91*2*S      // 방 가로폭 = 3.46m
+  const mk = (dx, empty) => {
+    const r = cloneRoom(); r.scale.setScalar(S); r.position.set(dx, 0.53*S, 0)
+    r.traverse(o => {
+      if (!o.isMesh) return
+      if (matName(o) === 'lambert4SG') o.visible = false                 // 천장
+      if (empty && matName(o) === 'lambert3SG') o.visible = false        // 책상+의자
+    })
+    scene.add(r)
+  }
+  mk(0, false); mk(-PITCH, true)
+  const seats = [[-PITCH-1.2, -1.1],[-PITCH-1.2, 0.1],[-PITCH-1.2, 1.3]]
+  sit.forEach((g,i) => {
+    const m = g.scene.clone(true)
+    const b = new THREE.Box3().setFromObject(m); const hgt = b.max.y - b.min.y
+    m.scale.setScalar(hgt > 0 ? 1.30/hgt : 1)
+    const b2 = new THREE.Box3().setFromObject(m)
+    m.position.set(seats[i][0], -b2.min.y, seats[i][1]); m.rotation.y = Math.PI/2
+    scene.add(m)
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.44, 1.0),
+      new THREE.MeshStandardMaterial({ color: 0x4a3527, roughness: 0.85 }))
+    bench.position.set(seats[i][0]-0.06, 0.22, seats[i][1]); scene.add(bench)
+  })
+  scene.add(person(-PITCH+0.9, 0.4, 0, 0xcc8844))
+  scene.add(new THREE.AmbientLight(0xffd9b0, 0.75))
+  for (const dx of [0, -PITCH]) {
+    const lamp = new THREE.PointLight(0xffcf9a, 16, 8, 2); lamp.position.set(dx+0.05, 1.75, 0.02); scene.add(lamp)
+  }
+  const view = 8.2
+  const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 60)
+  cam.position.set(-PITCH/2+4.5, 6.0, 4.5); cam.lookAt(-PITCH/2, 0.5, 0)
+  return cam
+})
+// G — 착석 모델의 "진짜" 크기: Box3 정규화(왼쪽) vs stage3d 처럼 scale=1 (오른쪽)
+panel('G: 착석 모델 Box3정규화 vs scale=1 (기준: 주황 캡슐 1.7m)', (scene) => {
+  const room = cloneRoom(); room.scale.setScalar(1.9); room.position.y = 0.53*1.9
+  room.traverse(o => { if (o.isMesh && (matName(o)==='lambert4SG'||matName(o)==='lambert3SG')) o.visible = false })
+  scene.add(room)
+  const g0 = sit[0].scene.clone(true)
+  const b0 = new THREE.Box3().setFromObject(g0)
+  console.log('[B] seated Box3 size =', b0.getSize(new THREE.Vector3()).toArray().map(v=>v.toFixed(3)).join(','))
+  const a = sit[0].scene.clone(true)
+  const ba = new THREE.Box3().setFromObject(a); const ha = ba.max.y - ba.min.y
+  a.scale.setScalar(1.30/ha); const ba2 = new THREE.Box3().setFromObject(a)
+  a.position.set(-0.8, -ba2.min.y, 0.6); scene.add(a)
+  const c = sit[1].scene.clone(true)
+  const bc = new THREE.Box3().setFromObject(c)
+  c.position.set(0.6, -bc.min.y, 0.6); scene.add(c)
+  console.log('[B] scale=1 seated world height =', (bc.max.y-bc.min.y).toFixed(3))
+  scene.add(person(-0.1, -0.8, 0, 0xcc8844))
+  lights(scene, 1.6)
+  const view = 3.4
+  const cam = new THREE.OrthographicCamera(-view*(W/H)/2, view*(W/H)/2, view/2, -view/2, 0.1, 40)
+  cam.position.set(2.6,3.4,2.6); cam.lookAt(0,0.55,0)
+  return cam
+})
+window.__done = true
+</script>

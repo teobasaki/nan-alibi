@@ -26,8 +26,12 @@ interface Body {
 
 const UPSTREAM = 'https://supertoneapi.com/v1/text-to-speech'
 
-/** 상류가 느리면 게임이 그만큼 멈춘다. 여기서 끊고 클라이언트가 내장 합성으로 넘어가게 한다. */
-const UPSTREAM_TIMEOUT_MS = 3000
+/**
+ * 상류 상한. **실측 2.3~2.6초** (배포본 3회: 2.62 / 2.32 / 2.30).
+ * 3초로 두면 여유가 0.4초뿐이라 조금만 느려도 잘린다 — 클라이언트 예산(4초)보다
+ * 안쪽에 두되 실측 위로 넉넉히 잡는다. 자막은 이미 떠 있으므로 이 대기는 화면을 안 멈춘다.
+ */
+const UPSTREAM_TIMEOUT_MS = 3800
 
 const fallback = (reason: string, status = 200): Response =>
   Response.json({ fallback: true, reason }, { status })

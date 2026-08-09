@@ -30,6 +30,8 @@ const PREFERRED = ['Yuna', 'Microsoft Heami', 'Google 한국의']
 
 let voice: SpeechSynthesisVoice | null = null
 let ready = false
+/** 발화 세대 — 늦게 도착한 오디오가 다음 인물 위에 겹치는 걸 막는다 */
+let speakGen = 0
 
 export const canSpeak = (): boolean => ready && voice !== null
 
@@ -105,20 +107,31 @@ export function speak(
   const mode = settings().voice
   if (mode === 'off') return
 
-  // **좋을 때는 좋은 목소리, 나쁠 때는 상한이 고정된 목소리.**
-  // Supertone 을 예산 안에서 기다리되, 늦거나 없으면 내장 합성이 즉시 받는다.
-  // 기다리는 동안 내장 합성을 미리 시작하지는 않는다 — 두 목소리가 겹치면 그게 더 나쁘다.
+  /**
+   * **자막이 소리를 기다리지 않는다.**
+   *
+   * 실측 합성이 2.3~2.6초라 소리를 기다리면 대사가 그만큼 늦게 뜬다.
+   * 그래서 타이핑 연출(`onBoundary`)은 **즉시** 시작하고, 서버 음성은
+   * 준비되는 대로 얹는다. 늦거나 실패하면 내장 합성이 받는다.
+   *
+   * 처음엔 예산을 1.5초로 잡아 매번 잘렸는데, 내장 합성이 대신 소리를 내서
+   * **겉보기에는 동작하는 것처럼 보였다.** 조용한 실패가 제일 위험하다.
+   */
   if (mode === 'auto' && !supertone.isDisabled()) {
     setStage('synthesizing')
+    approximateBoundary(reply.speech, onBoundary)   // 자막은 지금 간다
+
+    // 이 발화의 세대 번호. 도중에 다른 인물로 넘어가면(`stop()`) 늦게 온 오디오를 버린다 —
+    // 안 버리면 이미 떠난 사람의 목소리가 뒤늦게 들린다.
+    const gen = ++speakGen
     void supertone.synthesize(reply.speech, reply.tell, pressureOf(reply)).then((r) => {
-      if (isMuted()) return
+      if (isMuted() || gen !== speakGen) return
       if (r) {
         setStage('speaking')
-        // 서버 음성에는 글자 경계 이벤트가 없다. 타이핑 연출은 길이로 근사한다.
-        approximateBoundary(reply.speech, onBoundary)
         supertone.play(r.audio, () => setStage('idle'))
       } else {
-        speakLocal(reply, personaId, onBoundary)
+        // 서버가 못 냈으면 내장이 받는다. 타이핑은 이미 돌고 있으므로 다시 물리지 않는다.
+        speakLocal(reply, personaId)
       }
     })
     return
@@ -173,6 +186,7 @@ const pressureOf = (r: PersonaReply): number =>
   typeof r.pressureDelta === 'number' ? Math.abs(r.pressureDelta) : 0
 
 export function stop(): void {
+  speakGen++                    // 진행 중인 합성 결과를 무효화한다
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel()
   supertone.stop()
   setStage('idle')
