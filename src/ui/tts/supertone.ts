@@ -16,7 +16,7 @@
  * 심문마다 실패 요청을 보내면 매번 예산만큼 늦어질 뿐 얻는 게 없다.
  */
 
-import { emotionOf, resolveStyle, scaleByPressure, type Tell } from './emotion'
+import { castOf, emotionOf, scaleByPressure, styleFor, type Tell } from './emotion'
 import { settings } from '../settings'
 
 /**
@@ -36,22 +36,17 @@ const BUDGET_MS = 4000
 let disabled = false
 
 /**
- * 고른 목소리가 실제로 쓸 수 있는 스타일. **비어 있으면 아직 안 물어본 것이다.**
- * 이름을 지어내고 403 을 받은 뒤에 생긴 규율이다 — 쓸 수 있는 것을 먼저 묻는다.
+ * 배포에 키가 있는지만 확인한다. **스타일은 이제 배역표(`emotion.ts`)가 안다** —
+ * 목소리마다 쓸 수 있는 감정을 코드에 박아뒀으므로 매번 물어볼 이유가 없다.
+ * 여기서 확인하는 것은 "쓸 수 있는가" 하나뿐이다.
  */
-let styles: string[] = []
-
-export async function loadVoiceStyles(): Promise<void> {
+export async function probeKey(): Promise<void> {
   try {
     const r = await fetch('/api/tts')
     const j = await r.json()
-    const list = (j?.voices ?? []) as { id: string; name: string; styles: string[] }[]
-    if (!list.length) { if (j?.reason === 'no_key') disable(); return }
-    // 서버가 고른 목소리(SUPERTONE_VOICE_ID)와 같은 것을 찾는다. 못 찾으면 첫 번째.
-    const picked = list.find((v) => v.styles?.includes('anxious')) ?? list[0]!
-    styles = picked.styles ?? []
+    if (j?.reason === 'no_key' || (Array.isArray(j?.voices) && j.voices.length === 0)) disable()
   } catch {
-    // 목록을 못 받아도 합성은 시도한다 — 없는 스타일이면 그때 폴백한다
+    // 못 물어봐도 합성은 시도한다 — 실패하면 그때 폴백한다
   }
 }
 
@@ -91,12 +86,15 @@ export async function synthesize(
   text: string,
   tell: Tell,
   pressure: number,
+  personaId: string,
 ): Promise<SynthResult | null> {
   if (disabled || !text.trim()) return null
 
   const e = scaleByPressure(emotionOf(tell), pressure, settings().intensity)
-  // **없는 스타일을 보내지 않는다.** 목소리마다 쓸 수 있는 감정이 다르다.
-  const style = resolveStyle(e, styles)
+  // **인물마다 다른 목소리, 그 목소리가 실제로 가진 감정.**
+  // 배역표가 각 목소리의 스타일을 들고 있으므로 없는 이름이 나갈 수 없다.
+  const cast = castOf(personaId)
+  const style = styleFor(personaId, tell)
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), BUDGET_MS)
 
@@ -104,7 +102,7 @@ export async function synthesize(
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, style, intensity: e.intensity }),
+      body: JSON.stringify({ text, style, intensity: e.intensity, voice: cast.voice }),
       signal: ctl.signal,
     })
 

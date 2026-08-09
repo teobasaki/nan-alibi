@@ -124,7 +124,7 @@ export function speak(
     // 이 발화의 세대 번호. 도중에 다른 인물로 넘어가면(`stop()`) 늦게 온 오디오를 버린다 —
     // 안 버리면 이미 떠난 사람의 목소리가 뒤늦게 들린다.
     const gen = ++speakGen
-    void supertone.synthesize(reply.speech, reply.tell, pressureOf(reply)).then((r) => {
+    void supertone.synthesize(reply.speech, reply.tell, pressureOf(reply), personaId).then((r) => {
       if (isMuted() || gen !== speakGen) return
       if (r) {
         setStage('speaking')

@@ -38,10 +38,18 @@ const SEATED = {
   Spine: [6, 0, 0], Spine01: [3, 0, 0], Spine02: [2, 0, 0],
   neck: [-4, 0, 0], Head: [2, 0, 0],
   LeftShoulder: [0, 0, 4], RightShoulder: [0, 0, -4],
-  // 팔은 pose-seated.py 가 모델마다 탐색한다. 여기서는 고정값으로 근사.
-  LeftArm: [-58, 0, 12], RightArm: [-58, 0, -12],
-  LeftForeArm: [-38, 0, 10], RightForeArm: [-38, 0, -10],
-  LeftHand: [-12, 0, 0], RightHand: [-12, 0, 0],
+}
+// 팔은 별도 — 축을 모르므로 URL 로 훑는다 (#ax=z&d=-55 …)
+const P = new URLSearchParams(location.hash.slice(1))
+const AX = P.get('ax') ?? 'z'
+const D = Number(P.get('d') ?? -55)
+const FD = Number(P.get('fd') ?? -35)
+const ORD = P.get('ord') ?? 'ZYX'
+const arm = (sign) => {
+  const v = { x: 0, y: 0, z: 0 }; v[AX] = R(D) * (AX === 'x' ? 1 : sign); return v
+}
+const fore = (sign) => {
+  const v = { x: 0, y: 0, z: 0 }; v[AX] = R(FD) * (AX === 'x' ? 1 : sign); return v
 }
 
 const SLUGS = ['security', 'appraiser', 'investor', 'expartner', 'secretary']
@@ -62,11 +70,19 @@ room.traverse((o) => {
     mm.emissive?.setScalar(0); mm.emissiveMap = null
     mm.side = THREE.FrontSide                   // ← 천장·앞벽 자동 컬링
     // 책상+의자 덩어리를 지운다 (대기실 드레싱)
-    if (mm.name === 'lambert3SG') { m.visible = false; hidden.push(mm.name) }
+    const kill = (P.get('hide') ?? 'lambert3SG').split(',')
+    if (kill.includes(mm.name)) { m.visible = false; hidden.push(mm.name) }
   }
 })
 scene.add(room)
 log('room materials hidden: ' + hidden.join(','))
+room.updateMatrixWorld(true)
+room.traverse((o) => {
+  if (!o.isMesh) return
+  const b = new THREE.Box3().setFromObject(o)
+  const mm = Array.isArray(o.material) ? o.material[0] : o.material
+  log(`  ${mm.name} tri=${o.geometry.index.count/3} x[${b.min.x.toFixed(2)},${b.max.x.toFixed(2)}] y[${b.min.y.toFixed(2)},${b.max.y.toFixed(2)}] z[${b.min.z.toFixed(2)},${b.max.z.toFixed(2)}]`)
+})
 
 // ── 벤치 (BoxGeometry — 에셋이 아니다)
 const benchMat = new THREE.MeshStandardMaterial({ color: 0x4a3a2e, roughness: 0.85, metalness: 0.05 })
@@ -84,14 +100,24 @@ for (const x of [-1.35, 0, 1.35]) {
 const SEAT_X = [-1.20, -0.60, 0.00, 0.60, 1.20]
 const q = new THREE.Quaternion(), e = new THREE.Euler()
 const report = []
+window.__actors = []
 chars.forEach((g, i) => {
   const m = g.scene
   const bones = new Map()
   m.traverse((o) => { if (o.isBone) bones.set(o.name, o) })
+  const rest = new Map()
+  for (const [n, b] of bones) rest.set(n, b.quaternion.clone())
+  window.__actors.push({ bones, rest, root: m })
   for (const [name, deg] of Object.entries(SEATED)) {
     const b = bones.get(name); if (!b) continue
-    e.set(R(deg[0]), R(deg[1]), R(deg[2]), 'XYZ')
+    e.set(R(deg[0]), R(deg[1]), R(deg[2]), ORD)
     b.quaternion.multiply(q.setFromEuler(e))    // rest × delta — 블렌더 포즈본과 같은 합성
+  }
+  for (const [nm, v] of [['LeftArm', arm(1)], ['RightArm', arm(-1)],
+                         ['LeftForeArm', fore(1)], ['RightForeArm', fore(-1)]]) {
+    const b = bones.get(nm); if (!b) continue
+    e.set(v.x, v.y, v.z, ORD)
+    b.quaternion.multiply(q.setFromEuler(e))
   }
   m.updateMatrixWorld(true)
   const box = new THREE.Box3().setFromObject(m)
@@ -127,4 +153,29 @@ for (const [x, z] of [[-1.15, 1.30], [1.15, 1.30], [0, 0.55], [-1.15, 0.20], [1.
 renderer.render(scene, cam)
 log('DONE')
 window.__done = true
+window.__scene = scene; window.__cam = cam; window.__room = room; window.__r = renderer
+window.__toggle = (names) => {
+  const kill = names.split(',')
+  room.traverse((o) => {
+    if (!o.isMesh) return
+    const mm = Array.isArray(o.material) ? o.material[0] : o.material
+    o.visible = !kill.includes(mm.name)
+  })
+  renderer.render(scene, cam)
+  return 'hidden: ' + names
+}
+window.__arms = (ax, d, fd, ord) => {
+  // 팔만 다시 잡는다 — rest 를 캐시해 뒀다가 매번 새로 합성
+  for (const rec of window.__actors) {
+    for (const [nm, sign] of [['LeftArm', 1], ['RightArm', -1], ['LeftForeArm', 1], ['RightForeArm', -1]]) {
+      const b = rec.bones.get(nm); if (!b) continue
+      b.quaternion.copy(rec.rest.get(nm))
+      const v = { x: 0, y: 0, z: 0 }
+      v[ax] = R(nm.includes('Fore') ? fd : d) * (ax === 'x' ? 1 : sign)
+      b.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(v.x, v.y, v.z, ord || 'ZYX')))
+    }
+  }
+  renderer.render(scene, cam)
+  return `ax=${ax} d=${d} fd=${fd}`
+}
 </script>

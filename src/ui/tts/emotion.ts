@@ -84,3 +84,88 @@ export function scaleByPressure(e: Emotion, pressure: number, gain = 1): Emotion
   const g = Number.isFinite(gain) ? Math.min(1.5, Math.max(0, gain)) : 1
   return { ...e, intensity: Math.min(1, (e.intensity + p * 0.3) * g) }
 }
+
+
+/* ── 페르소나별 배역 ─────────────────────────────────────────────
+ * **용의자가 아니라 페르소나에 목소리를 붙인다.**
+ *
+ * 용의자는 시드마다 새로 생기지만 페르소나 8종은 고정이다. 페르소나에 붙이면
+ * 어느 시드에서든 "겁 많은 사람은 이렇게 들린다" 가 일정해지고, 내장 합성의
+ * `TIMBRE`(voice.ts)와 같은 구조가 된다 — 두 공급자가 같은 축을 쓴다.
+ *
+ * 고른 근거: 계정의 game 용도 목소리 36개를 성별·나이·감정으로 훑어
+ * **그 페르소나가 실제로 낼 감정을 가진 것**으로 배정했다.
+ * 예) 겁많음 → `scared` 를 가진 유일한 축(Dohyun), 죄책감 → `anxious` 를 가진 노년(Alphonse).
+ */
+
+export interface Cast {
+  /** Supertone voice_id */
+  voice: string
+  /** 이 목소리가 실제로 쓸 수 있는 스타일 — 없는 걸 보내면 상류가 거절한다 */
+  styles: readonly string[]
+  /** 사람이 읽을 배역 설명 (대시보드용) */
+  note: string
+}
+
+const CAST: Record<string, Cast> = {
+  authoritative: {
+    voice: '58662d5bd86d1b7837f197', note: 'Diego · 중년 남성 · 지휘하는 목소리',
+    styles: ['angry', 'command', 'courageous', 'happy', 'neutral', 'sad'],
+  },
+  timid: {
+    // 20개 중 `scared` 를 가진 유일한 축이다. 겁많음에 이보다 맞는 게 없다.
+    voice: 'ab7cd18e645b54d7536e0f', note: 'Dohyun · 청년 남성 · 겁먹은 소리를 낼 수 있다',
+    styles: ['angry', 'annoyed', 'embarrassed', 'excited', 'firm', 'happy', 'neutral', 'sad', 'scared', 'surprised'],
+  },
+  calculating: {
+    voice: '18139042935bc2849cb6ca', note: 'Desphara · 중년 여성 · 의심하고 내려다본다',
+    styles: ['angry', 'disgusted', 'dominating', 'happy', 'neutral', 'sad', 'suspicious'],
+  },
+  emotional: {
+    voice: '87f8e92bda3f7997715795', note: 'Elsie · 노년 여성 · 불안이 크게 흔들린다',
+    styles: ['angry', 'angry +', 'anxious', 'anxious +', 'happy', 'happy +', 'neutral', 'neutral +', 'sad', 'teasing', 'teasing +'],
+  },
+  loyal: {
+    voice: 'fa1880d5d3846077811a76', note: 'Gloria · 중년 여성 · 다정하지만 의심한다',
+    styles: ['angry', 'happy', 'kind', 'neutral', 'sad', 'suspicious'],
+  },
+  egocentric: {
+    voice: '816bc977b4111a3034146a', note: 'Bert · 노년 남성 · 질투가 드러난다',
+    styles: ['angry', 'angry +', 'happy', 'happy +', 'jealous', 'jealous +', 'neutral', 'neutral +', 'sad', 'sad +'],
+  },
+  guilty: {
+    voice: 'c3c0898fd41489a8e8919c', note: 'Alphonse · 노년 남성 · 불안이 깊게 깔린다',
+    styles: ['admiring', 'admiring +', 'angry', 'angry +', 'anxious', 'anxious +', 'happy', 'happy +', 'neutral', 'sad', 'sad +'],
+  },
+  cynical: {
+    voice: 'a77c5cbc7a34c484060f02', note: 'Isamu · 청년 남성 · 불친절하다',
+    styles: ['angry', 'courageous', 'happy', 'neutral', 'sad', 'unfriendly'],
+  },
+}
+
+/** 모르는 페르소나가 와도 소리는 나야 한다 — 죄책감 축으로 떨어진다 */
+export const castOf = (personaId: string): Cast => CAST[personaId] ?? CAST.guilty!
+
+/**
+ * 페르소나의 성격을 감정에 반영한다.
+ * 같은 `tell` 이라도 냉소적인 사람의 분노와 겁 많은 사람의 분노는 다른 소리다 —
+ * 그 목소리가 가진 고유 스타일이 있으면 그쪽을 쓴다.
+ */
+const FLAVOR: Record<string, Partial<Record<Tell, string>>> = {
+  timid: { stammer: 'scared', gaze: 'embarrassed' },
+  calculating: { gaze: 'suspicious', none: 'dominating' },
+  egocentric: { anger: 'jealous' },
+  cynical: { anger: 'unfriendly' },
+  loyal: { gaze: 'kind' },
+}
+
+/** 이 인물·이 tell 에 실제로 쓸 스타일. 없는 이름은 절대 내보내지 않는다. */
+export function styleFor(personaId: string, tell: Tell): string {
+  const cast = castOf(personaId)
+  const flavored = FLAVOR[personaId]?.[tell]
+  const e = emotionOf(tell)
+  for (const cand of [flavored, e.style, e.fallback, 'neutral']) {
+    if (cand && cast.styles.includes(cand)) return cand
+  }
+  return cast.styles[0]!
+}

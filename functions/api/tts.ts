@@ -22,6 +22,12 @@ interface Body {
   /** emotion.ts 가 만든 값 */
   style?: string
   intensity?: number
+  /**
+   * 이 대사를 읽을 목소리. **인물마다 달라야 다섯 명이 다섯 사람으로 들린다.**
+   * 서버 환경변수로 고정하면 전원이 같은 성대를 쓴다 — 내장 합성이 겪던 바로 그 문제다.
+   * 값이 없으면 환경변수 기본값으로 떨어진다.
+   */
+  voice?: string
 }
 
 const UPSTREAM = 'https://supertoneapi.com/v1/text-to-speech'
@@ -47,7 +53,7 @@ const fallback = (reason: string, status = 200): Response =>
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   if (!env.SUPERTONE_API_KEY) return Response.json({ voices: [], reason: 'no_key' })
   try {
-    const r = await fetch('https://supertoneapi.com/v1/voices/search?language=ko&page_size=20', {
+    const r = await fetch('https://supertoneapi.com/v1/voices/search?language=ko&page_size=100', {
       headers: { 'x-sup-api-key': env.SUPERTONE_API_KEY },
     })
     const body = await r.text()
@@ -60,6 +66,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
         name: v.name,
         // 감정 스타일은 목소리마다 다르다 — 없는 스타일을 보내면 또 400 이 온다
         styles: v.styles ?? v.available_styles ?? [],
+        // 인물별로 목소리를 갈라 배정하려면 성별·나이·성격이 필요하다
+        gender: v.gender ?? null,
+        age: v.age ?? null,
+        use_case: v.use_case ?? v.usecase ?? null,
+        description: v.description ?? null,
       })),
     })
   } catch (e) {
@@ -86,7 +97,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS)
 
   try {
-    const voice = env.SUPERTONE_VOICE_ID ?? 'default'
+    // 클라이언트가 고른 목소리를 쓰되, 형식이 이상하면 기본값으로 떨어진다.
+    // id 는 22자 16진수라 그 모양만 통과시킨다 — 임의 문자열이 경로에 들어가면 안 된다.
+    const asked = typeof body.voice === 'string' && /^[a-f0-9]{16,40}$/.test(body.voice)
+      ? body.voice : null
+    const voice = asked ?? env.SUPERTONE_VOICE_ID ?? 'default'
     const up = await fetch(`${UPSTREAM}/${encodeURIComponent(voice)}`, {
       method: 'POST',
       headers: {

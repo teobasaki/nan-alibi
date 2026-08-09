@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { prosodyOf, emotionOf, scaleByPressure, type Tell } from '../src/ui/tts/emotion'
+import { prosodyOf, emotionOf, scaleByPressure, castOf, styleFor, type Tell } from '../src/ui/tts/emotion'
 import { isPermanent } from '../src/ui/tts/supertone'
 import { setStage, stage, onStage, resetStage, STAGE_LABEL, type Stage } from '../src/ui/pipeline'
 
@@ -131,5 +131,53 @@ describe('서버 TTS 재시도 판단 — 헛돈 쓰지 않기', () => {
     for (const r of [undefined, null, 42, {}, [], '', 'upstream_abc']) {
       expect(isPermanent(r)).toBe(false)
     }
+  })
+})
+
+describe('페르소나별 배역 — 다섯 명이 다섯 사람으로 들려야 한다', () => {
+  const PERSONAS = ['authoritative', 'timid', 'calculating', 'emotional', 'loyal', 'egocentric', 'guilty', 'cynical']
+
+  it('페르소나 8종 전부에 목소리가 배정돼 있다', () => {
+    for (const p of PERSONAS) expect(castOf(p).voice).toMatch(/^[a-f0-9]{16,40}$/)
+  })
+
+  /** 전원이 같은 성대를 쓰면 내장 합성이 겪던 문제를 서버에서 반복하는 것이다 */
+  it('여덟 페르소나가 서로 다른 목소리를 쓴다', () => {
+    const ids = PERSONAS.map((p) => castOf(p).voice)
+    expect(new Set(ids).size).toBe(PERSONAS.length)
+  })
+
+  it('모르는 페르소나가 와도 목소리가 나온다', () => {
+    expect(castOf('없는페르소나').voice).toBe(castOf('guilty').voice)
+  })
+
+  /**
+   * **이게 이 표의 존재 이유다.** 없는 스타일을 보내면 상류가 거절한다 —
+   * 실제로 `fear` 를 보내다 403 을 받았고, 그때는 아무 소리도 안 났다.
+   */
+  it('내보내는 스타일은 그 목소리가 실제로 가진 것뿐이다', () => {
+    for (const p of PERSONAS) {
+      const cast = castOf(p)
+      for (const t of TELLS) {
+        expect(cast.styles).toContain(styleFor(p, t))
+      }
+    }
+  })
+
+  it('성격이 감정에 반영된다 — 겁많음의 더듬음은 scared 다', () => {
+    expect(styleFor('timid', 'stammer')).toBe('scared')
+    expect(styleFor('egocentric', 'anger')).toBe('jealous')
+    expect(styleFor('cynical', 'anger')).toBe('unfriendly')
+  })
+
+  it('그 목소리에 없는 성격 색이면 조용히 내려간다', () => {
+    // authoritative 목소리(Diego)에는 scared 도 jealous 도 없다
+    const s = styleFor('authoritative', 'stammer')
+    expect(castOf('authoritative').styles).toContain(s)
+    expect(s).not.toBe('scared')
+  })
+
+  it('배역마다 사람이 읽을 설명이 있다 — 대시보드가 보여줄 것이다', () => {
+    for (const p of PERSONAS) expect(castOf(p).note.length).toBeGreaterThan(5)
   })
 })
