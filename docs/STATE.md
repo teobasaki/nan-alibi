@@ -27,7 +27,7 @@
 - 2026-08-05 GitHub 레포 생성·푸시 (private): https://github.com/teobasaki/nan-alibi
 - 2026-08-05 **배포 경로 확정 → Cloudflare Pages 단일 오리진** (ADR 002). `workers/` 제거,
   `functions/api/` 로 전환. CORS 코드 소멸. 테스트 4/4, functions 타입체크·빌드 통과
-- 2026-08-05 **LLM 공급자 OpenAI 확정** (ADR 004). 모델 `gpt-5.6-terra`, 판당 ~$0.04.
+- 2026-08-05 **LLM 공급자 OpenAI 확정** (ADR 004). 2026-08-09 모델을 **`gpt-4o`** 로 내렸다 (ADR 020) — 검증 통과율 같고 더 싸고 더 빨랐다.
   `OPENAI_API_KEY` Pages Secret 등록 완료. 캐시 수동 제어는 유지(`prompt_cache_breakpoint`), 프리워밍만 손실
 - 2026-08-05 **Task 2~5 완료 ★ 최대 마일스톤 통과.** 테스트 43/43
   - 시드 고정 RNG(mulberry32) + 코어 타입 + 결정론 사건 생성기 + 검증기 V1~V7 + BFS 해결탐색기

@@ -21,6 +21,8 @@ import type { SuspectId } from '../../src/types'
 
 interface Env {
   OPENAI_API_KEY?: string
+  /** 모델을 코드 배포 없이 갈아끼우기 위한 스위치. 없으면 아래 기본값. */
+  OPENAI_MODEL?: string
 }
 
 interface Body {
@@ -33,29 +35,43 @@ interface Body {
   history?: { q: string; a: string }[]
 }
 
-const MODEL = 'gpt-5.6-terra'
+/**
+ * **모델은 한 곳에서만 정한다.** 환경변수로 덮을 수 있어 배포 없이 갈아끼운다.
+ *
+ * `gpt-5.6-terra` → `gpt-4o` 로 내렸다. 이유는 비용이다 —
+ * 이 게임은 판당 40~50회를 호출하는데, 대사 생성에 추론이 필요 없다는 것은
+ * ADR 005 가 이미 확인했다(effort=none 이 기본보다 **빠르고** 품질이 같았다).
+ * 추론을 안 쓰는 작업이면 추론 모델을 쓸 이유도 없다.
+ */
+const MODEL = 'gpt-4o'
 const MAX_OUTPUT = 250
 /**
- * 실측 (2026-08-05): effort=none 1.74s · low 2.12s · 기본 2.95s.
- * 페르소나 연기는 지식 시트가 이미 구조를 주므로 추론이 필요 없다 (ADR 005).
+ * **`reasoning` 은 추론 모델에만 보낸다.**
+ * 4o 계열에 이 필드를 보내면 400 이 난다 — 모델만 바꾸고 이 줄을 안 지우면
+ * 전 판이 폴백 대사로 떨어진다. 모델명과 파라미터가 **함께** 움직여야 한다.
+ *
+ * 실측 (2026-08-05, terra): effort=none 1.74s · low 2.12s · 기본 2.95s (ADR 005).
  */
 const REASONING_EFFORT = 'none'
+const supportsReasoning = (model: string): boolean => /^(gpt-5|o[134])/.test(model)
 
 const bad = (msg: string, status = 400) => Response.json({ error: msg }, { status })
 
 type CallOk = { parsed: unknown; usage: unknown }
 type CallFail = { failure: string }
 
-async function callOpenAI(key: string, prefix: string, turn: string, cacheKey: string): Promise<CallOk | CallFail> {
+async function callOpenAI(
+  key: string, prefix: string, turn: string, cacheKey: string, model: string,
+): Promise<CallOk | CallFail> {
   let res: Response
   try {
     res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         max_output_tokens: MAX_OUTPUT,
-        reasoning: { effort: REASONING_EFFORT },
+        ...(supportsReasoning(model) ? { reasoning: { effort: REASONING_EFFORT } } : {}),
         // 같은 인물의 프리픽스를 같은 캐시 그룹으로 묶는다.
         // 프리픽스는 판 내내 바이트 단위 고정이라 2회차부터 cached_tokens 가 붙는다.
         prompt_cache_key: cacheKey,
@@ -113,9 +129,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const cacheKey = `alibi-${body.seed}-${body.suspectId}`
 
   // 1층: 검증 실패 시 1회 재요청
+  const model = env.OPENAI_MODEL || MODEL
   const failures: string[] = []
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await callOpenAI(env.OPENAI_API_KEY, prefix, turn, cacheKey)
+    const r = await callOpenAI(env.OPENAI_API_KEY, prefix, turn, cacheKey, model)
     if ('failure' in r) {
       failures.push(r.failure)
       continue
