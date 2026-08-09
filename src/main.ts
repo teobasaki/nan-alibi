@@ -97,7 +97,17 @@ interface UI {
   /** 마지막으로 그린 일지 줄 수 — 새 줄만 써지는 연출을 주기 위해 */
   journalSeen: number
   /** 탐색 모드 — 방을 걸어 다니며 기록을 줍는다 */
-  explore: { handle: Explore3D | null; near: string | null; nearSeat: string | null } | null
+  /**
+   * `mounting` 이 따로 있는 이유: 씬을 만드는 데 수 초가 걸리는데 그 사이 `handle` 은
+   * 아직 null 이다. `!handle` 만 보고 막으면 로딩 중 재렌더 한 번에 **씬이 둘이 되고**,
+   * 먼저 뜬 쪽은 dispose 대상에서 빠져 window 키 리스너와 rAF 루프가 영구히 남는다.
+   */
+  explore: {
+    handle: Explore3D | null
+    mounting: boolean
+    near: string | null
+    nearSeat: string | null
+  } | null
   /** 플레이 여정 — 개인화의 재료. 규칙에는 영향을 주지 않는다 */
   journey: ReturnType<typeof newTrace>
   scene: { slug: string; handle: Stage3D | null } | null
@@ -387,7 +397,9 @@ function exploreRoom(): HTMLElement {
   page.appendChild(bar)
 
   // 씬은 한 번만 만든다. 재렌더마다 새로 만들면 WebGL 컨텍스트가 쌓인다.
-  if (ui.explore && !ui.explore.handle) {
+  // **로딩 중에도 한 번뿐이다** — `handle` 은 로드가 끝나야 채워지므로 그것만 보면 못 막는다.
+  if (ui.explore && !ui.explore.handle && !ui.explore.mounting) {
+    ui.explore.mounting = true
     // 내가 조종하는 형사의 몸. 걷기 모델이 있는 것 중 아무거나 — 없는 걸 고르면 씬이 안 뜬다.
     const slug = SUSPECTS.map((s) => SLUG_BY_JOB[CASE.suspects[s].job] ?? '')
       .find((x) => hasWalkModel(x)) ?? 'security'
@@ -426,7 +438,9 @@ function exploreRoom(): HTMLElement {
         ui.explore?.handle?.setMarkers(exploreMarkers())
       },
     }).then((hd) => {
+      // **떠났으면 정리한다.** 로딩 중에 탐색 모드를 나갔으면 씬만 남는다.
       if (!ui.explore) return hd?.dispose()
+      ui.explore.mounting = false
       if (!hd) {
         // 3D 가 안 되면 조용히 책상으로 되돌린다 — 빈 화면을 남기지 않는다
         ui.explore = null
@@ -600,7 +614,7 @@ function indexTabs(): HTMLElement {
     go.appendChild(h('span', 'nbt-l', '경찰서'))
     go.title = '경찰서를 걸어 다니며 사람을 만나고 기록을 줍는다'
     focusKey(go, 'view:explore')
-    go.onclick = () => { play('doorOpen'); ui.explore = { handle: null, near: null, nearSeat: null }; render() }
+    go.onclick = () => { play('doorOpen'); ui.explore = { handle: null, mounting: false, near: null, nearSeat: null }; render() }
     tabs.appendChild(go)
   }
   return tabs

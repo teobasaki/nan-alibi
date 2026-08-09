@@ -123,8 +123,15 @@ export const hasStation = (): boolean => Boolean(STATION_URL)
  * 경찰서 실측 31.8 × 21.1 × 4.1m. 배율 1 로 그대로 쓴다 —
  * 취조실(1.8×2.0m)은 원본이 작아 1.9배를 곱했지만 이건 이미 실척이다.
  */
-const HALF_X = 13.0        // 걸어 다닐 수 있는 범위. 벽 안쪽으로 여유를 뒀다
-const HALF_Z = 8.0
+/**
+ * 걸어 다닐 수 있는 범위는 **상수가 아니라 방에서 유도한다.**
+ * 예전엔 `HALF_X=13 / HALF_Z=8` 을 원점 중심으로 박아 뒀는데, 이 경찰서의 실제
+ * 월드 bbox 는 x[-16.9, 14.9] · z[-12.9, 8.2] 라 **중심이 (-1.0, -2.4)** 다.
+ * 그래서 +X·+Z 쪽에서는 **아무것도 없는 바닥 위에서 보이지 않는 벽에 멈추고**,
+ * 방이 실제로 뻗어 있는 x<-13 · z<-8 구역에는 영영 못 갔다.
+ * 상수를 방에 맞추는 게 아니라 방에서 상수를 뽑는다.
+ */
+const EDGE_MARGIN = 0.45   // 바깥벽 안쪽으로 이만큼 물러선다
 const SPEED = 2.6          // m/s. 공간이 넓어져 취조실(1.25)보다 빨라야 답답하지 않다
 const PICK_RADIUS = 1.1    // 공간에 비례해 넓힌다 — 좁으면 계속 빗나간다
 /** 이 높이 위는 천장이다. 탑다운이므로 숨긴다. */
@@ -280,57 +287,163 @@ export async function mountExplore(
      * 정확도는 칸 크기만큼 거칠지만, 필요한 것은 "벽을 못 지나간다" 하나뿐이다.
      */
     const CELL = 0.5
-    const GW = Math.ceil((HALF_X * 2) / CELL) + 1
-    const GH = Math.ceil((HALF_Z * 2) / CELL) + 1
-    const solid = new Uint8Array(GW * GH)
-    const gi = (x: number, z: number): number =>
-      Math.round((z + HALF_Z) / CELL) * GW + Math.round((x + HALF_X) / CELL)
 
     /**
-     * **레이캐스트를 쓰지 않는다.** 처음엔 격자마다 아래로 레이를 쐈는데,
-     * 이 방이 268,199 삼각형이고 BVH 가 없어서 1,160발이 전수 검사가 됐다 —
-     * 브라우저가 실제로 멎었다.
-     *
-     * 대신 **정점 위치를 한 번 훑는다.** 정한 높이 띠에 정점이 있는 칸은 막힌 칸이다.
-     * 선형 1패스라 즉시 끝난다.
-     *
-     * ## 높이 띠를 2.0~3.0m 로 고른 이유 — 재서 골랐다
-     * 처음엔 사람 허리(0.8~1.7m)를 훑었다. 그랬더니 **23% 가 막혔다** — 책상·카운터·의자가
-     * 전부 벽이 되어 대기 구역이 미로가 됐고, 용의자 자리 다섯 중 둘이 가구 안에 박혔다.
-     * `scripts/probe-walkgrid.mjs` 로 띠를 바꿔 가며 재보니:
-     *
-     * | 높이 | 막힌 칸 | 고립된 칸 | 가구에 박힌 좌석 |
-     * |---|---|---|---|
-     * | 0.8~1.7m | 23% | 11 | 2 |
-     * | 1.6~2.6m | 11% | 0 | 1 |
-     * | **2.0~3.0m** | **9%** | **0** | **0** |
-     *
-     * 2.0~3.0m 는 가구 위·천장 아래라 **벽과 칸막이만** 걸린다. 고립된 칸이 0 이라는 건
-     * 문틀이 통로를 막지 않았다는 뜻이다(높은 띠를 쓸 때 가장 흔한 실패다 — 재서 배제했다).
-     * 인물을 3.0m 로 키워 놨으니 그 키에서 부딪히는 것이 물리적으로도 맞다.
+     * **걸을 수 있는 사각형을 방에서 뽑는다.** (위 `EDGE_MARGIN` 주석 참고)
+     * 상수로 박으면 방이 바뀔 때마다 허공에 보이지 않는 벽이 생긴다.
      */
-    const WALL_LO = 2.0
-    const WALL_HI = 3.0
+    const roomBox = new THREE.Box3().setFromObject(room)
+    const MIN_X = roomBox.min.x + EDGE_MARGIN
+    const MAX_X = roomBox.max.x - EDGE_MARGIN
+    const MIN_Z = roomBox.min.z + EDGE_MARGIN
+    const MAX_Z = roomBox.max.z - EDGE_MARGIN
+    const GW = Math.ceil((MAX_X - MIN_X) / CELL) + 1
+    const GH = Math.ceil((MAX_Z - MIN_Z) / CELL) + 1
+    const solid = new Uint8Array(GW * GH)
+    /**
+     * **바닥이 있는 칸.** 이게 없으면 걷는 범위가 사각형이 되고, 이 건물은 L 자라
+     * 그 사각형에는 **건물 밖 허공**이 들어간다 — 실측 1262칸 중 447칸이 바닥이 없었다.
+     * 걸을 수 있는 곳은 "사각형 안" 이 아니라 **바닥이 있고 막히지 않은 곳**이다.
+     */
+    const floorAt = new Uint8Array(GW * GH)
+    const inBox = (x: number, z: number): boolean =>
+      x >= MIN_X && x <= MAX_X && z >= MIN_Z && z <= MAX_Z
+    const gi = (x: number, z: number): number =>
+      Math.round((z - MIN_Z) / CELL) * GW + Math.round((x - MIN_X) / CELL)
+
+    /**
+     * ## 높이 띠 — **보이는 것을 막는다** (재서 골랐다)
+     * 처음엔 사람 허리(0.8~1.7m)를 훑었더니 가구가 전부 벽이 되어 미로가 됐고,
+     * 그래서 가구 위(2.0~3.0m)로 올렸다. 그랬더니 이번엔 **거의 아무것도 안 막혔다** —
+     * `scripts/probe-walkgrid.mjs` 로 재보니 화면에 장애물로 보이는 532칸 중
+     * **149칸만 막고 384칸(72%)을 그대로 통과**했다. 책상·카운터·칸막이를 뚫고 다녔다.
+     *
+     * 그리고 **위쪽 끝을 문 상인방 아래로 내려야 한다.** 모서리 래스터화로 바꾸고 나서
+     * 0.3~2.6m 로 구웠더니 문 위 상인방이 출입구를 통째로 막아 **걸어서 닿는 칸이
+     * 1262 → 332 로 무너졌다.** 방 하나에 갇혔다는 뜻이다.
+     *
+     * | 띠 | 막음 | 보이는데 통과 | **걸어서 닿는 칸** |
+     * |---|---|---|---|
+     * | 0.3~2.6m | 1091 | 0 | **332** ← 문이 막힌다 |
+     * | **0.3~1.9m** | **1047** | **44** | **1262** |
+     * | 0.3~1.1m | 1000 | 91 | 1296 |
+     *
+     * 0.3~1.9m 를 쓴다. 남는 44칸은 **머리 위로 지나가는 것들**(상인방·간판)이라
+     * 통과하는 게 맞다. 벽·책상·칸막이는 전부 이 띠에 있다.
+     */
+    const WALL_LO = 0.3
+    const WALL_HI = 1.9
+    /** 이 높이의 수평면을 **바닥**으로 본다 */
+    const FLOOR_LO = -0.6
+    const FLOOR_HI = 0.25
+
+    /**
+     * **정점만 찍으면 큰 벽이 뚫린다.**
+     * 처음엔 정점 하나가 떨어진 칸만 막았다. 그런데 이 방은 최적화되어 합쳐진
+     * 건축 메시라 벽 한 장이 **모서리가 4.76m 짜리 큰 삼각형**이다. 칸이 0.5m 이므로
+     * 5m 벽이 양 끝 두 칸만 막고 **가운데 열 칸이 비었다** — 그 사이로 걸어 나갔다.
+     *
+     * 그래서 **삼각형의 모서리를 따라 찍는다.** 면 내부를 채우지 않는 이유는
+     * 벽이 수직면이라 XZ 로 투영하면 **넓이가 0인 선**이 되기 때문이다 —
+     * 면적 래스터화로는 벽이 아예 안 잡힌다. 발자국은 모서리에 있다.
+     *
+     * 레이캐스트는 여전히 안 쓴다. 26만 삼각형에 BVH 가 없어 브라우저가 멎었다.
+     */
     const bakeWalls = (): void => {
-      const v = new THREE.Vector3()
+      const a = new THREE.Vector3()
+      const b = new THREE.Vector3()
+      const p = new THREE.Vector3()
+      // 삼각형 26만 개다 — 벡터를 매번 새로 만들면 80만 개를 할당한다. 돌려 쓴다.
+      const v0 = new THREE.Vector3()
+      const v1 = new THREE.Vector3()
+      const v2 = new THREE.Vector3()
       room.updateMatrixWorld(true)
+
+      /**
+       * **바닥은 면적을 채운다.** 바닥은 몇 안 되는 큰 삼각형이라 모서리만 찍으면
+       * 방 가장자리에 테두리만 생기고 가운데가 빈다 — 실제로 그렇게 재서
+       * "도달한 칸의 99%에 바닥이 없다" 는 말이 안 되는 값이 나왔다.
+       * 수평면은 XZ 로 투영해도 넓이가 남으므로 면적 래스터화가 맞다.
+       */
+      const fillFloor = (p0: THREE.Vector3, p1: THREE.Vector3, p2: THREE.Vector3): void => {
+        const x0 = Math.max(MIN_X, Math.min(p0.x, p1.x, p2.x))
+        const x1 = Math.min(MAX_X, Math.max(p0.x, p1.x, p2.x))
+        const z0 = Math.max(MIN_Z, Math.min(p0.z, p1.z, p2.z))
+        const z1 = Math.min(MAX_Z, Math.max(p0.z, p1.z, p2.z))
+        if (x1 < x0 || z1 < z0) return
+        const side = (ax: number, az: number, bx: number, bz: number, px: number, pz: number): number =>
+          (bx - ax) * (pz - az) - (bz - az) * (px - ax)
+        for (let z = z0; z <= z1 + 1e-9; z += CELL) {
+          for (let x = x0; x <= x1 + 1e-9; x += CELL) {
+            const s1 = side(p0.x, p0.z, p1.x, p1.z, x, z)
+            const s2 = side(p1.x, p1.z, p2.x, p2.z, x, z)
+            const s3 = side(p2.x, p2.z, p0.x, p0.z, x, z)
+            if ((s1 < 0 || s2 < 0 || s3 < 0) && (s1 > 0 || s2 > 0 || s3 > 0)) continue
+            floorAt[gi(x, z)] = 1
+          }
+        }
+      }
+
+      /** 한 모서리를 따라가며 띠 안에 들어오는 지점의 칸을 막는다 */
+      const stamp = (): void => {
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const dz = b.z - a.z
+        const len2d = Math.hypot(dx, dz)
+        // **세로 모서리도 놓치지 않는다.** 벽 기둥은 XZ 길이가 0이라
+        // 2D 길이만 보면 표본이 1개고, 그 한 점의 y 가 띠 밖이면 통째로 빠진다.
+        const steps = Math.max(1,
+          Math.ceil(len2d / (CELL * 0.5)),
+          Math.ceil(Math.abs(dy) / (CELL * 0.5)))
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps
+          p.set(a.x + dx * t, a.y + dy * t, a.z + dz * t)
+          if (p.y < WALL_LO || p.y > WALL_HI) continue
+          if (!inBox(p.x, p.z)) continue
+          solid[gi(p.x, p.z)] = 1
+        }
+      }
+
       room.traverse((o) => {
         const m = o as THREE.Mesh
-        if (!m.isMesh || !m.visible) return          // 숨긴 천장은 벽이 아니다
+        if (!m.isMesh) return
+        // **조상까지 본다.** 천장은 Group 에 visible=false 가 걸리고 자식 Mesh 는
+        // true 로 남는다 — 자기 자신만 보면 숨긴 천장을 벽으로 구워 버린다.
+        for (let q: THREE.Object3D | null = o; q; q = q.parent) if (!q.visible) return
         const pos = m.geometry.getAttribute('position')
         if (!pos) return
-        for (let i = 0; i < pos.count; i++) {
-          v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld)
-          if (v.y < WALL_LO || v.y > WALL_HI) continue
-          if (v.x < -HALF_X || v.x > HALF_X || v.z < -HALF_Z || v.z > HALF_Z) continue
-          solid[gi(v.x, v.z)] = 1
+        const idx = m.geometry.getIndex()
+        const count = idx ? idx.count : pos.count
+        for (let i = 0; i < count; i += 3) {
+          const i0 = idx ? idx.getX(i) : i
+          const i1 = idx ? idx.getX(i + 1) : i + 1
+          const i2 = idx ? idx.getX(i + 2) : i + 2
+          v0.fromBufferAttribute(pos, i0).applyMatrix4(m.matrixWorld)
+          v1.fromBufferAttribute(pos, i1).applyMatrix4(m.matrixWorld)
+          v2.fromBufferAttribute(pos, i2).applyMatrix4(m.matrixWorld)
+          const lo = Math.min(v0.y, v1.y, v2.y)
+          const hi = Math.max(v0.y, v1.y, v2.y)
+          if (hi >= FLOOR_LO && lo <= FLOOR_HI) fillFloor(v0, v1, v2)
+          // 셋 다 띠 위이거나 셋 다 띠 아래면 이 삼각형은 몸에 안 닿는다
+          if (hi < WALL_LO || lo > WALL_HI) continue
+          a.copy(v0); b.copy(v1); stamp()
+          a.copy(v1); b.copy(v2); stamp()
+          a.copy(v2); b.copy(v0); stamp()
         }
       })
     }
 
+    /**
+     * **몸 반지름은 보지 않는다.** 칸이 0.5m 라 중심 한 점만 봐도 약 0.25m 의
+     * 여유가 이미 들어 있고, 반지름을 더 주면 책상 사이 통로가 통째로 막힌다.
+     * 어깨가 벽에 반 칸 파고들어 보이는 것은 감수한다 — 탑다운에서는 잘 안 보이고,
+     * 못 지나가는 것보다 낫다.
+     */
     const blocked = (x: number, z: number): boolean => {
-      if (x < -HALF_X || x > HALF_X || z < -HALF_Z || z > HALF_Z) return true
-      return solid[gi(x, z)] === 1
+      if (!inBox(x, z)) return true
+      const i = gi(x, z)
+      // **바닥이 없으면 못 간다.** 건물이 L 자라 사각형 경계만으로는 허공이 걸린다.
+      return solid[i] === 1 || floorAt[i] === 0
     }
 
 
@@ -365,25 +478,89 @@ export async function mountExplore(
     dressUp(actor)
     scene.add(actor)
 
-    bakeWalls()
+    {
+      // 굽는 시간은 로딩에 그대로 얹힌다 — DEV 에서 눈에 보이게 남긴다
+      const t0 = performance.now()
+      bakeWalls()
+      if (import.meta.env.DEV) {
+        let n = 0
+        for (const c of solid) if (c) n++
+        console.info(`[탐색] 벽 격자 ${GW}x${GH} · 막힌 칸 ${n} · ${Math.round(performance.now() - t0)}ms`)
+      }
+    }
 
     /**
-     * **빈 칸에서 시작한다.** 좌표를 손으로 박으면 그 자리가 벽 안일 수 있고,
-     * 그러면 충돌이 붙는 순간 한 발도 못 뗀다 — 실제로 그렇게 멈췄다.
-     * 지정한 자리가 막혀 있으면 가장 가까운 빈 칸을 찾아 옮긴다.
+     * **걸어서 닿는 칸을 미리 구해 둔다.**
+     *
+     * 보이는 것을 전부 막으면(0.3~2.6m) 책상 뒤·구석에 **고립된 칸이 18개** 생긴다.
+     * "빈 칸" 만 보고 사람이나 기록을 놓으면 그 중 하나에 떨어질 수 있고,
+     * 그러면 **평생 못 닿는 자리**가 된다 — 그 사람은 없는 것과 같다.
+     * 그래서 시작점에서 한 번 BFS 를 돌려 도달 가능한 칸을 표시해 둔다.
      */
-    const placeFree = (o: THREE.Object3D, x: number, z: number): void => {
-      if (!blocked(x, z)) { o.position.set(x, 0, z); return }
-      for (let r = CELL; r < 12; r += CELL) {
-        for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+    const reach = new Uint8Array(GW * GH)
+    const floodFrom = (x: number, z: number): void => {
+      reach.fill(0)
+      const start = gi(x, z)
+      if (solid[start] === 1) return
+      reach[start] = 1
+      const q = [start]
+      for (let h = 0; h < q.length; h++) {
+        const i = q[h]!
+        const r = Math.floor(i / GW)
+        const c = i % GW
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nr = r + dr
+          const nc = c + dc
+          if (nr < 0 || nr >= GH || nc < 0 || nc >= GW) continue
+          const n = nr * GW + nc
+          if (solid[n] === 1 || reach[n] === 1) continue
+          reach[n] = 1
+          q.push(n)
+        }
+      }
+    }
+
+    /** 걸어서 닿는 칸인가. 격자 밖·벽·고립된 구석은 전부 아니다. */
+    const reachable = (x: number, z: number): boolean =>
+      inBox(x, z) && reach[gi(x, z)] === 1
+
+    /**
+     * **닿는 자리에 놓는다.** 지정한 좌표가 벽 안이거나 고립돼 있으면
+     * 가장 가까운 **도달 가능한** 칸으로 옮긴다. 예전에는 "빈 칸" 만 봤는데,
+     * 그건 벽 뒤 구석도 통과시킨다.
+     */
+    const placeReachable = (o: THREE.Object3D, x: number, z: number): void => {
+      if (reachable(x, z)) { o.position.set(x, 0, z); return }
+      for (let r = CELL; r < 14; r += CELL) {
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
           const px = x + Math.cos(a) * r
           const pz = z + Math.sin(a) * r
-          if (!blocked(px, pz)) { o.position.set(px, 0, pz); return }
+          if (reachable(px, pz)) { o.position.set(px, 0, pz); return }
         }
       }
       o.position.set(x, 0, z)
     }
-    placeFree(actor, 0, 5)
+
+    /**
+     * 시작점부터 정한다 — **여기가 막혀 있으면 한 발도 못 뗀다.**
+     * 지정한 (0, 5) 가 막혔으면 가장 가까운 빈 칸에서 시작하고,
+     * 그 자리를 기준으로 도달 가능 영역을 다시 구한다.
+     */
+    {
+      let sx = 0
+      let sz = 5
+      if (blocked(sx, sz)) {
+        outer: for (let r = CELL; r < 14; r += CELL) {
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
+            const px = sx + Math.cos(a) * r
+            const pz = sz + Math.sin(a) * r
+            if (!blocked(px, pz)) { sx = px; sz = pz; break outer }
+          }
+        }
+      }
+      floodFrom(sx, sz)
+      actor.position.set(sx, 0, sz)
+    }
 
     const mixer = new THREE.AnimationMixer(actor)
     const clip = charGltf.animations[0]
@@ -428,8 +605,22 @@ export async function mountExplore(
       }
     }
 
+    /** 표식 하나를 **닿는 자리**로 옮겨 그 좌표를 돌려준다. 화면과 근접 판정이 같은 값을 본다. */
+    const spotFor = (at: [number, number]): [number, number] => {
+      const probe = new THREE.Object3D()
+      placeReachable(probe, at[0], at[1])
+      return [probe.position.x, probe.position.z]
+    }
+
     const setMarkers = (list: Marker[]): void => {
-      markers = list
+      /**
+       * **못 닿는 자리에 놓지 않는다.** 보이는 것을 전부 막고 나면(0.3~2.6m)
+       * 손으로 찍은 장소 좌표가 책상 안이나 고립된 구석에 떨어질 수 있다.
+       * 그러면 그 기록은 걸어서는 영영 못 줍는다 — 조회 목록으로만 남는다.
+       * 옮긴 좌표를 `at` 에 되써서 근접 판정도 같은 자리를 본다.
+       */
+      markers = list.map((m) => ({ ...m, at: spotFor(m.at) }))
+      list = markers
       for (const c of markerRoot.children) {
         const mesh = c as THREE.Mesh
         mesh.geometry.dispose()
@@ -470,7 +661,27 @@ export async function mountExplore(
     // 개발 중에만 씬을 밖에서 들여다볼 수 있게 둔다 — 3D 는 콘솔 없이는 원인을 못 찾는다.
     // 실제로 "사람이 안 보인다" 를 이걸로 잡았다. 배포 번들에는 들어가지 않는다.
     if (import.meta.env.DEV) {
-      ;(window as unknown as Record<string, unknown>).__ex = { scene, seatRoot, markerRoot, camera }
+      /**
+       * **막힌 칸을 눈으로 본다.** 충돌은 숫자로는 맞는데 화면과 안 맞을 수 있고,
+       * 그 어긋남은 격자를 그려 보기 전까지는 절대 안 잡힌다. DEV 에서만 산다.
+       */
+      const debugGrid = (): void => {
+        const g = new THREE.Group()
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.45 })
+        const geo = new THREE.PlaneGeometry(CELL * 0.92, CELL * 0.92)
+        for (let r = 0; r < GH; r++) {
+          for (let c = 0; c < GW; c++) {
+            if (!solid[r * GW + c]) continue
+            const m = new THREE.Mesh(geo, mat)
+            m.rotation.x = -Math.PI / 2
+            m.position.set(c * CELL + MIN_X, 0.06, r * CELL + MIN_Z)
+            g.add(m)
+          }
+        }
+        scene.add(g)
+      }
+      ;(window as unknown as Record<string, unknown>).__ex =
+        { scene, seatRoot, markerRoot, camera, room, actor, solid, gi, blocked, GW, GH, CELL, debugGrid }
     }
     scene.add(seatRoot)
     let seats: Seat[] = []
@@ -538,7 +749,7 @@ export async function mountExplore(
          */
         if (hgt > 0) o.scale.setScalar(SEAT_HEIGHT / hgt)
         // **벽 안에 앉히지 않는다.** 못 닿는 자리에 두면 그 사람은 없는 것과 같다.
-        placeFree(o, st.at[0], st.at[1])
+        placeReachable(o, st.at[0], st.at[1])
         st.at = [o.position.x, o.position.z]   // 근접 판정도 옮겨진 자리를 본다
         o.rotation.y = Math.atan2(-st.at[0], -st.at[1])   // 방 가운데를 본다
         o.userData.seatId = st.id
@@ -587,6 +798,14 @@ export async function mountExplore(
       'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight',
     ])
     const onDown = (e: KeyboardEvent): void => {
+      /**
+       * **글을 쓰는 중이면 손대지 않는다.** 이 핸들러는 window 에 붙고 이동키에
+       * `preventDefault()` 를 건다 — 질문 입력창에 포커스가 있을 때도 걸리면
+       * 심문 질문에 ㅁㄴㅇㄹ 를 못 친다. 스페이스도 마찬가지다.
+       */
+      const t = e.target
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement
+        || (t instanceof HTMLElement && t.isContentEditable)) return
       if (e.code === 'KeyE' || e.code === 'Space') {
         // **사람이 우선한다.** 둘 다 닿아 있으면 연행이 조회보다 큰 행동이다.
         if (nearSeat) { handlers.onTake(nearSeat); e.preventDefault(); return }
@@ -596,8 +815,18 @@ export async function mountExplore(
       if (MOVE_CODES.has(e.code)) { keys.add(e.code); e.preventDefault() }
     }
     const onUp = (e: KeyboardEvent): void => { keys.delete(e.code) }
+    /**
+     * **포커스를 잃으면 keyup 이 안 온다.**
+     * W 를 누른 채 탭을 옮기거나 다른 창을 클릭하면 그 키가 **영영 눌린 상태로 남고**,
+     * 돌아왔을 때 아무도 안 눌렀는데 인물이 계속 직진한다. 신고된 증상이 이것이다.
+     * 키 입력은 클릭 목표보다 우선이라 목표 포기 가드로도 안 풀린다 — 여기서 끊어야 한다.
+     */
+    const clearKeys = (): void => keys.clear()
+    const onVis = (): void => { if (document.hidden) keys.clear() }
     addEventListener('keydown', onDown)
     addEventListener('keyup', onUp)
+    addEventListener('blur', clearKeys)
+    document.addEventListener('visibilitychange', onVis)
 
     /** 화면 좌표 → 바닥 평면. 클릭한 자리로 걸어간다. */
     const ray = new THREE.Raycaster()
@@ -625,9 +854,17 @@ export async function mountExplore(
       }
       const hit = new THREE.Vector3()
       if (ray.ray.intersectPlane(floor, hit)) {
-        goal = new THREE.Vector3(
-          Math.max(-HALF_X, Math.min(HALF_X, hit.x)), 0,
-          Math.max(-HALF_Z, Math.min(HALF_Z, hit.z)))
+        /**
+         * **닿는 자리로만 목표를 잡는다.** 벽이나 책상 위를 눌렀으면 그 자리가 아니라
+         * 그 근처의 걸어갈 수 있는 칸으로 간다. 예전에는 누른 자리를 그대로 목표로 삼아
+         * 벽에 붙은 채 계속 걷는 자세가 됐다.
+         */
+        const [gx, gz] = spotFor([
+          Math.max(MIN_X, Math.min(MAX_X, hit.x)),
+          Math.max(MIN_Z, Math.min(MAX_Z, hit.z)),
+        ])
+        goal = new THREE.Vector3(gx, 0, gz)
+        stuckT = 0
       }
     }
     renderer.domElement.addEventListener('click', onClick)
@@ -639,6 +876,12 @@ export async function mountExplore(
     let moving = false
     const clock = new THREE.Clock()
     const dir = new THREE.Vector3()
+    /**
+     * 클릭 목표를 향해 나아가지 못한 **시간(초)**.
+     * 프레임 수로 세면 120Hz 에서 0.1초, 30Hz 에서 0.4초로 제각각이 된다.
+     */
+    let stuckT = 0
+    const stuckAt = new THREE.Vector3()
 
     const tick = (): void => {
       if (!alive) return
@@ -660,6 +903,15 @@ export async function mountExplore(
         if (to.length() < 0.06) goal = null
         else dir.copy(to.normalize())
       }
+      /**
+       * **못 가는 곳을 향해 영원히 걷지 않는다.**
+       * 클릭 목표가 벽 뒤면 인물이 벽에 붙은 채 **제자리걸음**을 계속한다.
+       * (신고된 "혼자 직진" 은 이쪽이 아니다 — 여기는 이동이 0 이고 걷기 클립만 돈다.
+       *  실제로 전진시키는 것은 키 래치다. 위 `clearKeys` 주석 참고.)
+       * 그래도 고친다: 못 가는 목표를 붙들고 걷는 자세로 서 있는 것 자체가 버그다.
+       * 목표가 있는데 **실제로 나아가지 못한 프레임이 이어지면** 목표를 버린다.
+       */
+      const before = stuckAt.set(actor.position.x, 0, actor.position.z)
 
       moving = dir.lengthSq() > 0
       if (moving) {
@@ -680,6 +932,15 @@ export async function mountExplore(
         while (d < -Math.PI) d += Math.PI * 2
         actor.rotation.y += d * Math.min(1, dt * 12)
       }
+      if (goal) {
+        // 0.5프레임분 이상 못 갔으면 막힌 것이다 (SPEED*dt 의 절반)
+        const moved = Math.hypot(actor.position.x - before.x, actor.position.z - before.z)
+        stuckT = moved < SPEED * dt * 0.5 ? stuckT + dt : 0
+        if (stuckT > 0.4) { goal = null; stuckT = 0 }   // 0.4초 제자리면 포기한다
+      } else {
+        stuckT = 0
+      }
+
       if (walk) walk.paused = !moving
       mixer.update(dt)
 
@@ -759,6 +1020,8 @@ export async function mountExplore(
         cancelAnimationFrame(raf)
         removeEventListener('keydown', onDown)
         removeEventListener('keyup', onUp)
+        removeEventListener('blur', clearKeys)
+        document.removeEventListener('visibilitychange', onVis)
         removeEventListener('resize', onResize)
         renderer.domElement.removeEventListener('click', onClick)
         mixer.stopAllAction()
