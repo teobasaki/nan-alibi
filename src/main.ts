@@ -24,6 +24,7 @@ import type { Statement } from './engine/prompt'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
+import { hasWalkModel, mountExplore, type Explore3D, type Marker } from './ui/explore3d'
 import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
@@ -92,6 +93,8 @@ interface UI {
   opening: boolean
   /** 마지막으로 그린 일지 줄 수 — 새 줄만 써지는 연출을 주기 위해 */
   journalSeen: number
+  /** 탐색 모드 — 방을 걸어 다니며 기록을 줍는다 */
+  explore: { handle: Explore3D | null; near: string | null } | null
   /** 플레이 여정 — 개인화의 재료. 규칙에는 영향을 주지 않는다 */
   journey: ReturnType<typeof newTrace>
   scene: { slug: string; handle: Stage3D | null } | null
@@ -128,6 +131,7 @@ const ui: UI = {
   dash: false,
   opening: false,
   journalSeen: 0,
+  explore: null,
   journey: newTrace(seed, Date.now()),
   scene: null,
   sceneCanvas: null,
@@ -146,6 +150,15 @@ const ui: UI = {
  */
 const roomEl = document.createElement('div')
 roomEl.className = 'room3d'
+
+/**
+ * 탐색 씬 호스트 — `roomEl` 과 **같은 이유로** 모듈 스코프에 둔다.
+ * `render()` 가 트리를 통째로 갈아치우므로 여기서 만들면 재렌더마다
+ * WebGL 컨텍스트가 생겼다 사라지고 루프가 취소된 채 캔버스만 남는다.
+ * 그 실수는 이미 한 번 정지 화면을 만들었다.
+ */
+const exploreEl = document.createElement('div')
+exploreEl.className = 'exhost'
 
 /**
  * 말풍선 — 3D 인물의 **머리 옆**에 뜬다.
@@ -285,6 +298,91 @@ function tellLabel(t: string): string {
 }
 
 /**
+ * 장소 → 방 안 좌표(미터). **이 표는 규칙이 아니라 배치다** — 어느 기록이
+ * 어디에 있는지는 `evidence.place` 가 이미 정했고, 여기서는 그 다섯 자리를
+ * 방 안의 실제 위치로 옮기기만 한다.
+ */
+const PLACE_AT: readonly [number, number][] = [
+  [-1.05, 0.95],   // 로비 — 문 쪽
+  [1.05, 0.95],    // 복도
+  [0, -1.05],      // 1204호 — 안쪽
+  [-1.05, -0.7],   // 직원계단
+  [1.05, -0.7],    // 라운지
+]
+
+/**
+ * 탐색 모드 화면 — **방을 걸어 다닌다.**
+ *
+ * 이건 기록 조회의 **또 하나의 입력 방법**이지 유일한 입력이 아니다.
+ * 우면 기록철은 그대로 있고 버튼으로도 전부 조회된다 — 3D 가 실패하거나
+ * 저사양이면 그쪽으로 그냥 돌아가면 된다. 이 프로젝트가 사진 폴백에서
+ * 지켜 온 원칙과 같다.
+ */
+function exploreRoom(): HTMLElement {
+  const page = h('div', 'nb-page nb-left explore')
+  const host = exploreEl          // 새로 만들지 않는다 — 옮겨 붙일 뿐이다
+  page.appendChild(host)
+
+  const bar = h('div', 'exbar')
+  const back = focusKey(h('button', 'backbtn', '← 책상으로'), 'exback') as HTMLButtonElement
+  back.onclick = () => {
+    ui.explore?.handle?.dispose()
+    ui.explore = null
+    render()
+  }
+  bar.appendChild(back)
+  const nearId = ui.explore?.near ?? null
+  const ev = nearId ? CASE.evidence.find((e) => e.id === nearId) : null
+  bar.appendChild(h('div', 'exhint', ev
+    ? `${labelOfKind(ev.kind)} · ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]} — E 키 또는 표식을 눌러 조회 (조사 1회)`
+    : '방향키·WASD 로 걷거나 바닥을 눌러 이동. 금색 표식에 다가가면 조회할 수 있다.'))
+  page.appendChild(bar)
+
+  // 씬은 한 번만 만든다. 재렌더마다 새로 만들면 WebGL 컨텍스트가 쌓인다.
+  if (ui.explore && !ui.explore.handle) {
+    const slug = SLUG_BY_JOB[CASE.suspects[SUSPECTS[0]!].job] ?? 'security'
+    void mountExplore(host, slug, {
+      onNear: (id) => {
+        if (!ui.explore || ui.explore.near === id) return
+        ui.explore.near = id
+        render()
+      },
+      onPick: (id) => {
+        // **규칙은 engine 이 정한다.** 여기서는 조회를 시도만 한다.
+        if (ui.game.investigationsLeft <= 0 || ui.busy) return
+        if (!availableEvidence(ui.game).some((e) => e.id === id)) return
+        play('paper')
+        mark({ k: 'lookup', ev: id })
+        act(() => lookupEvidence(ui.game, id))
+        ui.explore?.handle?.setMarkers(exploreMarkers())
+      },
+    }).then((hd) => {
+      if (!ui.explore) return hd?.dispose()
+      if (!hd) {
+        // 3D 가 안 되면 조용히 책상으로 되돌린다 — 빈 화면을 남기지 않는다
+        ui.explore = null
+        return render()
+      }
+      ui.explore.handle = hd
+      hd.setMarkers(exploreMarkers())
+    })
+  } else if (ui.explore?.handle) {
+    // 재렌더로 호스트가 새로 생겼으므로 캔버스를 옮겨 붙인다
+    ui.explore.handle.setMarkers(exploreMarkers())
+  }
+  return page
+}
+
+/** 지금 걸어가서 주울 수 있는 기록 — **무엇이 가능한지는 engine 이 정한다.** */
+function exploreMarkers(): Marker[] {
+  return availableEvidence(ui.game).map((e) => ({
+    id: e.id,
+    at: PLACE_AT[e.place] ?? [0, 0],
+    label: `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`,
+  }))
+}
+
+/**
  * 좌면 — **책상이거나 취조실이다.** 우면은 이 전환에 관여하지 않는다.
  *
  * 두 모드의 폭이 같기 때문에(둘 다 62%) 3D 렌더러가 mount 시점에 잡은 크기가
@@ -293,6 +391,7 @@ function tellLabel(t: string): string {
  */
 function deskOrRoom(): HTMLElement {
   if (ui.active) return stage()
+  if (ui.explore) return exploreRoom()
 
   const page = h('div', 'nb-page nb-left')
   page.appendChild(indexTabs())
@@ -414,6 +513,18 @@ function indexTabs(): HTMLElement {
     focusKey(b, `view:${v}`)
     b.onclick = () => { play('paper'); mark({ k: 'view', to: v }); ui.view = v; render() }
     tabs.appendChild(b)
+  }
+
+  // 방으로 나간다 — 걷기 모델이 실린 배포에서만 보인다.
+  // 없는 기능의 버튼을 두면 눌렀는데 아무 일도 안 일어나는 화면이 된다.
+  const anySlug = SLUG_BY_JOB[CASE.suspects[SUSPECTS[0]!].job] ?? 'security'
+  if (hasWalkModel(anySlug)) {
+    const go = h('button', 'nb-tab exgo') as HTMLButtonElement
+    go.appendChild(h('span', 'nbt-l', '현장'))
+    go.title = '방을 걸어 다니며 기록을 줍는다'
+    focusKey(go, 'view:explore')
+    go.onclick = () => { play('doorOpen'); ui.explore = { handle: null, near: null }; render() }
+    tabs.appendChild(go)
   }
   return tabs
 }
