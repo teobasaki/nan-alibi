@@ -221,14 +221,8 @@ function groundIt(o: THREE.Object3D): void {
  * 3. 정면은 `headfront` 본으로 확정했다 (머리→headfront 가 +Z).
  *
  * ## 왜 무릎만 고치지 않았나 — 재서 갈랐다
- * | 보정 | 무릎 굽힘축 | 발목 Z 범위 |
- * |---|---|---|
- * | 안 함 | -1.00 (역꺾임) | -0.38 ~ 0.33 |
- * | 무릎 X 오일러만 뒤집기 | +0.94 (정상) | **-0.53 ~ 0.10** ← 발이 뒤로만 끌린다 |
- * | **다리 8개 전부 (-x, y, -z, w)** | **+1.00 (정상)** | **-0.42 ~ 0.32** ← 앞뒤 균형 |
- *
- * 무릎만 고치면 무릎은 펴지는데 **발이 앞으로 안 나간다** — 끌면서 걷는 것처럼 보인다.
- * 원인이 다리 전체의 축이므로 다리 전체를 되돌려야 걸음이 걸음이 된다.
+ * 무릎 두 개만 되돌리면 무릎은 펴지는데 **발이 뒤로만 끌린다**(발목 Z -0.53~0.10).
+ * 원인이 다리 체인 전체의 축이므로 8개를 다 되돌려야 걸음이 걸음이 된다(-0.42~0.32).
  *
  * ## 왜 런타임에서 고치나
  * 제대로 된 해법은 rest 축 차이를 보정해 리타게팅을 다시 하는 것이다(Blender 필요).
@@ -239,15 +233,41 @@ const LEG_BONES = new Set([
   'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
 ])
 
-function unrollLegs(clip: THREE.AnimationClip): void {
+function unrollLegs(clip: THREE.AnimationClip, root: THREE.Object3D): void {
+  /**
+   * **rest 기준 delta 에 걸어야 한다 — 원 회전값에 걸면 안 된다.**
+   * 어긋난 것은 "이 본이 rest 에서 얼마나 움직였나" 를 표현한 축이지 최종 자세가 아니다.
+   * 원 회전값을 뒤집으면 rest 자세까지 같이 뒤집혀, rest 가 우연히 180° 에 가까운
+   * 모델에서만 맞고 나머지는 망가진다. 실측이 그랬다:
+   *
+   * | 모델 | 원값 뒤집기 | rest delta 뒤집기 |
+   * |---|---|---|
+   * | security | 역꺾임 0 | 역꺾임 0 |
+   * | **investor** | **역꺾임 59프레임 그대로 · 발목이 1.3m 로 솟음** | 역꺾임 0 |
+   * | secretary | 역꺾임 0 (발목 Z -0.58~0.21, 한쪽으로 쏠림) | 역꺾임 0 (-0.45~0.31 균형) |
+   */
+  if ((clip as unknown as { __legsFixed?: boolean }).__legsFixed) return
+  ;(clip as unknown as { __legsFixed?: boolean }).__legsFixed = true
+
+  // mixer 가 돌기 전의 본 회전이 곧 rest 다
+  const rest = new Map<string, THREE.Quaternion>()
+  root.traverse((o) => { if (LEG_BONES.has(o.name)) rest.set(o.name, o.quaternion.clone()) })
+
+  const inv = new THREE.Quaternion()
+  const q = new THREE.Quaternion()
+  const d = new THREE.Quaternion()
   for (const track of clip.tracks) {
     const m = /^(.+)\.quaternion$/.exec(track.name)
-    if (!m || !LEG_BONES.has(m[1]!)) continue
+    const r = m ? rest.get(m[1]!) : undefined
+    if (!r) continue
+    inv.copy(r).invert()
     const v = track.values
-    // 180° Y 롤을 되돌린다 — X 와 Z 성분만 부호가 바뀐다
     for (let i = 0; i + 3 < v.length; i += 4) {
-      v[i] = -v[i]!
-      v[i + 2] = -v[i + 2]!
+      q.set(v[i]!, v[i + 1]!, v[i + 2]!, v[i + 3]!)
+      d.copy(inv).multiply(q)                 // rest 기준 delta
+      d.set(-d.x, d.y, -d.z, d.w)             // 본 축 180° 롤을 되돌린다
+      q.copy(r).multiply(d)
+      v[i] = q.x; v[i + 1] = q.y; v[i + 2] = q.z; v[i + 3] = q.w
     }
   }
 }
@@ -708,7 +728,7 @@ export async function mountExplore(
 
     const mixer = new THREE.AnimationMixer(actor)
     const clip = charGltf.animations[0]
-    if (clip) unrollLegs(clip)
+    if (clip) unrollLegs(clip, actor)
     const walk = clip ? mixer.clipAction(clip) : null
     walk?.play()
     if (walk) walk.paused = true      // 멈춰 있을 때는 정지 프레임
