@@ -17,9 +17,19 @@ Meshy 오토리깅은 **믹사모 이름 규약을 쓴다.** `mixamorig:` 접두
 착석 **전** 원본(`assets-src/*.mvrigged.glb`, A포즈)이어야 한다.
 
 ## 왜 constraint 를 굽는가
-fcurve 를 직접 옮기면 두 리그의 rest pose 차이(본 방향·롤)를 손으로
-보정해야 한다. Copy Rotation 제약을 걸고 구우면 블렌더가 그 차이를
-알아서 흡수한다 — 느리지만 정확하고, 한 번만 돌리면 되는 일이다.
+fcurve 를 직접 옮기는 것보다 제약을 걸고 굽는 편이 다루기 쉽다.
+
+## ⚠ 알려진 결함 — rest 축 차이를 보정하지 않는다
+아래에서 Copy Rotation 을 `LOCAL_WITH_PARENT` 로 거는데, 이 공간은 회전을
+**각 본 자신의 rest 축 성분 그대로** 복사한다. **블렌더가 두 리그의 rest 축 차이를
+알아서 흡수해 주지 않는다** (예전에 이 주석이 그렇게 적혀 있었고, 그게 틀렸다).
+
+실제로 이 프로젝트의 Meshy 오토리그는 **다리 본 8개만** Mixamo 대비 자기 축(Y)
+기준 180° 롤되어 있었다(몸통·팔·머리 15개는 정렬). 그래서 다리 회전의 X·Z 성분이
+반대로 얹혀 **무릎이 뒤로 꺾인 채** 배포됐다.
+
+지금은 런타임에서 `(-x, y, -z, w)` 로 되돌린다(`src/ui/explore3d.ts` 의 `unrollLegs`).
+**여기를 제대로 고치려면** rest 축을 비교해 다른 축은 미리 보정한 뒤 구워야 한다.
 
 사용:
   blender -b --python scripts/retarget.py -- <target.glb> <anim.fbx> <out.glb> [액션이름]

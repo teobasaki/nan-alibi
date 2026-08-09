@@ -156,7 +156,7 @@ const ACTOR_HEIGHT = 3.0
  *
  * 전수 검사는 하지 않는다. 정점이 538,235개인데 **키를 재는 데는 몇백 점이면 충분하다.**
  */
-function measuredHeight(root: THREE.Object3D): number {
+function measureY(root: THREE.Object3D): { lo: number; hi: number } {
   root.updateMatrixWorld(true)
   const v = new THREE.Vector3()
   let lo = Infinity
@@ -176,7 +176,24 @@ function measuredHeight(root: THREE.Object3D): number {
       if (v.y > hi) hi = v.y
     }
   })
+  return { lo, hi }
+}
+
+const measuredHeight = (root: THREE.Object3D): number => {
+  const { lo, hi } = measureY(root)
   return hi > lo ? hi - lo : 0
+}
+
+/**
+ * **발을 바닥에 붙인다.**
+ * 모델마다 원점이 다르다 — 어떤 것은 엉덩이, 어떤 것은 발밑, 어떤 것은 그 사이다.
+ * `position.y = 0` 으로 두면 그 차이가 그대로 나온다. 실측: 다섯 명 중 하나가
+ * **90cm 공중에 떠 있었고**(비서 모델) 나머지는 10~28cm 묻혀 있었다.
+ * 크기를 맞춘 **뒤에** 재서, 가장 낮은 점이 바닥에 오도록 내린다.
+ */
+function groundIt(o: THREE.Object3D): void {
+  const { lo } = measureY(o)
+  if (Number.isFinite(lo)) o.position.y -= lo
 }
 
 /**
@@ -184,6 +201,57 @@ function measuredHeight(root: THREE.Object3D): number {
  * 이 판정이 틀리면 조사 1회를 오발로 잃기 때문이다 — 3D 씬은 테스트가 못 닿으므로
  * 판정만이라도 게이트가 보게 한다.
  */
+/**
+ * **다리 애니메이션의 축을 되돌린다** — 무릎이 뒤로 꺾이던 원인.
+ *
+ * ## 원인
+ * 걷기 동작은 Mixamo 클립을 Meshy 오토리그에 리타게팅한 것이다
+ * (`scripts/retarget.py`). 그런데 Copy Rotation 을 `LOCAL_WITH_PARENT` 로 걸면
+ * 회전 성분이 **각 본의 rest 축 그대로** 복사되고, 블렌더는 두 리그의 rest 축 차이를
+ * 보정해 주지 않는다. 그리고 이 리그는 **다리 본 8개만** Mixamo 대비
+ * 자기 축(Y) 기준 **180° 롤**되어 있다 (몸통·팔·머리 15개는 정렬돼 있다).
+ * 180° Y 롤은 X 와 Z 축을 뒤집으므로, 회전을 `(x, y, z, w) → (-x, y, -z, w)` 로
+ * 되돌리면 원래 동작이 나온다.
+ *
+ * ## 어떻게 확인했나 — 세 가지가 같은 결론
+ * 1. 무릎 **굽힘축**을 월드에서 재니 `(-1, 0, 0)` 이었다. 정면이 +Z 인 인물에서
+ *    -X 굽힘은 정강이를 **앞으로** 접는다. 사람 무릎은 뒤로 접힌다.
+ * 2. **팔꿈치**도 같이 재니 축 부호가 무릎과 **같았다**. 사람은 둘이 반대로 굽는다 —
+ *    하나가 뒤집혔다는 뜻이고, 팔은 멀쩡했으니 다리다.
+ * 3. 정면은 `headfront` 본으로 확정했다 (머리→headfront 가 +Z).
+ *
+ * ## 왜 무릎만 고치지 않았나 — 재서 갈랐다
+ * | 보정 | 무릎 굽힘축 | 발목 Z 범위 |
+ * |---|---|---|
+ * | 안 함 | -1.00 (역꺾임) | -0.38 ~ 0.33 |
+ * | 무릎 X 오일러만 뒤집기 | +0.94 (정상) | **-0.53 ~ 0.10** ← 발이 뒤로만 끌린다 |
+ * | **다리 8개 전부 (-x, y, -z, w)** | **+1.00 (정상)** | **-0.42 ~ 0.32** ← 앞뒤 균형 |
+ *
+ * 무릎만 고치면 무릎은 펴지는데 **발이 앞으로 안 나간다** — 끌면서 걷는 것처럼 보인다.
+ * 원인이 다리 전체의 축이므로 다리 전체를 되돌려야 걸음이 걸음이 된다.
+ *
+ * ## 왜 런타임에서 고치나
+ * 제대로 된 해법은 rest 축 차이를 보정해 리타게팅을 다시 하는 것이다(Blender 필요).
+ * 이건 그때까지의 보정이고, 원본 GLB 를 건드리지 않는다.
+ */
+const LEG_BONES = new Set([
+  'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase',
+  'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
+])
+
+function unrollLegs(clip: THREE.AnimationClip): void {
+  for (const track of clip.tracks) {
+    const m = /^(.+)\.quaternion$/.exec(track.name)
+    if (!m || !LEG_BONES.has(m[1]!)) continue
+    const v = track.values
+    // 180° Y 롤을 되돌린다 — X 와 Z 성분만 부호가 바뀐다
+    for (let i = 0; i + 3 < v.length; i += 4) {
+      v[i] = -v[i]!
+      v[i + 2] = -v[i + 2]!
+    }
+  }
+}
+
 export function nearestWithin<T extends { id: string; at: [number, number] }>(
   items: readonly T[], x: number, z: number, radius: number,
 ): string | null {
@@ -595,15 +663,19 @@ export async function mountExplore(
      * 그건 벽 뒤 구석도 통과시킨다.
      */
     const placeReachable = (o: THREE.Object3D, x: number, z: number): void => {
-      if (reachable(x, z)) { o.position.set(x, 0, z); return }
+      // **y 는 건드리지 않는다.** `groundIt()` 이 맞춰 놓은 접지 높이를 여기서 0으로
+      // 덮어쓰면 다시 공중에 뜨거나 바닥에 묻힌다. 자리를 옮기는 것과 발을 붙이는 것은
+      // 다른 일이고, 서로를 지우면 안 된다.
+      const put = (px: number, pz: number): void => { o.position.x = px; o.position.z = pz }
+      if (reachable(x, z)) { put(x, z); return }
       for (let r = CELL; r < 14; r += CELL) {
         for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
           const px = x + Math.cos(a) * r
           const pz = z + Math.sin(a) * r
-          if (reachable(px, pz)) { o.position.set(px, 0, pz); return }
+          if (reachable(px, pz)) { put(px, pz); return }
         }
       }
-      o.position.set(x, 0, z)
+      put(x, z)
     }
 
     /**
@@ -626,6 +698,7 @@ export async function mountExplore(
       const doors = openDoors(sx, sz)
       floodFrom(sx, sz)
       actor.position.set(sx, 0, sz)
+      groundIt(actor)
       if (import.meta.env.DEV) {
         let n = 0
         for (const c of reach) if (c) n++
@@ -635,6 +708,7 @@ export async function mountExplore(
 
     const mixer = new THREE.AnimationMixer(actor)
     const clip = charGltf.animations[0]
+    if (clip) unrollLegs(clip)
     const walk = clip ? mixer.clipAction(clip) : null
     walk?.play()
     if (walk) walk.paused = true      // 멈춰 있을 때는 정지 프레임
@@ -819,6 +893,7 @@ export async function mountExplore(
          * 사실적 비례를 버리고 **읽히는 크기**를 택한다.
          */
         if (hgt > 0) o.scale.setScalar(SEAT_HEIGHT / hgt)
+        groundIt(o)
         // **벽 안에 앉히지 않는다.** 못 닿는 자리에 두면 그 사람은 없는 것과 같다.
         placeReachable(o, st.at[0], st.at[1])
         st.at = [o.position.x, o.position.z]   // 근접 판정도 옮겨진 자리를 본다
@@ -947,6 +1022,12 @@ export async function mountExplore(
     let moving = false
     const clock = new THREE.Clock()
     const dir = new THREE.Vector3()
+    const camFwd = new THREE.Vector3()
+    const camRight = new THREE.Vector3()
+    const UP = new THREE.Vector3(0, 1, 0)
+    /** 1인칭에서 좌우 키가 도는 속도 (라디안/초) */
+    const TURN = 2.4
+    const keyNum = (a: string, b: string): number => (keys.has(a) || keys.has(b) ? 1 : 0)
     /**
      * 클릭 목표를 향해 나아가지 못한 **시간(초)**.
      * 프레임 수로 세면 120Hz 에서 0.1초, 30Hz 에서 0.4초로 제각각이 된다.
@@ -959,11 +1040,31 @@ export async function mountExplore(
       raf = requestAnimationFrame(tick)
       const dt = Math.min(0.05, clock.getDelta())
 
+      /**
+       * **이동은 카메라 기준이다.** 예전엔 W 가 월드 -Z 였는데, 탑다운 카메라가
+       * 아이소메트릭(오프셋 9,12,9)이라 월드 -Z 는 **화면에서 56° 방향**(오른쪽 위 대각선)이다.
+       * A 는 304°, D 는 124° — 네 키가 전부 45°쯤 돌아가 있었다. 실제로 재서 나온 값이다.
+       * 사람은 "위" 를 누르면 화면 위로 가기를 기대한다. 그래서 화면 축으로 옮긴다.
+       */
+      const fwd = keyNum('KeyW', 'ArrowUp') - keyNum('KeyS', 'ArrowDown')
+      const side = keyNum('KeyD', 'ArrowRight') - keyNum('KeyA', 'ArrowLeft')
+
       dir.set(0, 0, 0)
-      if (keys.has('KeyW') || keys.has('ArrowUp')) dir.z -= 1
-      if (keys.has('KeyS') || keys.has('ArrowDown')) dir.z += 1
-      if (keys.has('KeyA') || keys.has('ArrowLeft')) dir.x -= 1
-      if (keys.has('KeyD') || keys.has('ArrowRight')) dir.x += 1
+      if (firstPerson) {
+        /**
+         * **1인칭은 몸이 기준이다.** 좌우로 게걸음을 치면 몸이 그쪽을 보고 돌아버려
+         * 시야가 같이 휘둘린다(몸의 방향이 곧 눈의 방향이라서). 그래서 좌우는 **회전**이다.
+         */
+        if (side !== 0) actor.rotation.y -= side * TURN * dt
+        if (fwd !== 0) dir.set(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y)).multiplyScalar(fwd)
+      } else if (fwd !== 0 || side !== 0) {
+        camera.getWorldDirection(camFwd)
+        camFwd.y = 0
+        if (camFwd.lengthSq() < 1e-6) camFwd.set(0, 0, -1)
+        camFwd.normalize()
+        camRight.crossVectors(camFwd, UP).normalize()
+        dir.copy(camFwd).multiplyScalar(fwd).addScaledVector(camRight, side)
+      }
 
       if (dir.lengthSq() > 0) {
         goal = null                              // 키를 누르면 클릭 목표를 버린다
@@ -997,7 +1098,8 @@ export async function mountExplore(
         if (dir.x !== 0 && !blocked(nx, actor.position.z)) actor.position.x = nx
         if (dir.z !== 0 && !blocked(actor.position.x, nz)) actor.position.z = nz
         // 가는 쪽을 본다. 즉시 돌리면 뚝뚝 끊기므로 각도를 보간한다.
-        const want = Math.atan2(dir.x, dir.z)
+        // 1인칭은 좌우 키가 이미 몸을 돌리므로 여기서 또 돌리면 서로 싸운다.
+        const want = firstPerson ? actor.rotation.y : Math.atan2(dir.x, dir.z)
         let d = want - actor.rotation.y
         while (d > Math.PI) d -= Math.PI * 2
         while (d < -Math.PI) d += Math.PI * 2

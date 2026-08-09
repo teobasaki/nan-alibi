@@ -8,7 +8,7 @@
  *
  * 그런데 이 게임은 **"수첩을 펼치며 수사가 시작된다"** 를 이미 은유로 갖고 있고
  * (`.nb.opening`, style.css), 그 은유가 시작되는 **딱 한 순간**에는 물건이
- * 실제로 있어야 설득된다. 여기가 그 한 순간이다 — 1.1초, 한 번, 그 뒤로는 DOM 이다.
+ * 실제로 있어야 설득된다. 여기가 그 한 순간이다 — 1.4초, 한 번, 그 뒤로는 DOM 이다.
  *
  * 이 모델은 **이미 펼쳐진** 수첩이라 은유가 그대로 맞는다. 펼쳐진 가죽 수첩이
  * 화면을 채우고, 그 자리를 펼쳐지는 DOM 수첩이 이어받는다 — 같은 물건의 두 표현이다.
@@ -31,15 +31,35 @@ const URL_ = (Object.values(FILES)[0] as string | undefined)?.replace(/^\/public
 export const hasJournalModel = (): boolean => Boolean(URL_)
 
 /** 연출 길이(ms). `.nb.opening`(900ms)이 이어받으므로 여기서 다 쓰지 않는다. */
-const BEAT = 1100
+const BEAT = 1400
 /** 모션을 줄인 사람에게는 **움직임 없이** 이만큼만 보여준다 */
-const BEAT_STILL = 650
+const BEAT_STILL = 700
+/**
+ * **넘겨주는 시점.** 이 지점에서 DOM 수첩이 아래에서 펼쳐지기 시작하고,
+ * 3D 는 남은 시간 동안 걷힌다. 끝나고 시작하면 두 개의 다른 물건이 되지만,
+ * 겹치면 **같은 물건이 이어지는 것**으로 읽힌다.
+ */
+const HANDOFF = 0.68
 
 /**
- * 수첩을 한 번 세웠다 눕힌다. 끝나면 resolve — 호출부는 그 다음에 수첩을 펼친다.
+ * 수첩을 한 박자 보여주고, **다 끝나기 전에** 다음 화면에 넘긴다.
  * **연출을 못 하면 조용히 넘어간다.** 시작을 막는 연출은 연출이 아니라 장애물이다.
+ *
+ * @param onHandoff 3D 가 걷히기 시작할 때 **정확히 한 번** 불린다.
+ *   호출부는 여기서 DOM 수첩을 펼친다. 연출을 못 하는 상황(에셋 없음·숨은 탭·
+ *   로드 실패)에서도 **반드시 불린다** — 안 그러면 게임이 시작되지 않는다.
  */
-export async function showJournal(): Promise<void> {
+export async function showJournal(onHandoff: () => void): Promise<void> {
+  let handedOff = false
+  const handoff = (): void => { if (!handedOff) { handedOff = true; onHandoff() } }
+  try {
+    await run(handoff)
+  } finally {
+    handoff()
+  }
+}
+
+async function run(handoff: () => void): Promise<void> {
   if (!URL_) return
   /**
    * **모션을 줄이는 사람에게도 물건은 보여준다.**
@@ -139,7 +159,8 @@ export async function showJournal(): Promise<void> {
      * **조명은 취조실의 것을 빌린다.** 놋쇠빛 키 하나와 낮은 환경광 —
      * 게임 팔레트(`--amber #c8912f`)와 같은 색이라야 다음 화면과 이어진다.
      */
-    scene.add(new THREE.AmbientLight(0xffd9b0, 0.95))
+    const amb = new THREE.AmbientLight(0xffd9b0, 0.95)
+    scene.add(amb)
     const key = new THREE.DirectionalLight(0xffe6bc, 3.4)
     key.position.set(1.6, 2.4, 1.8)
     scene.add(key)
@@ -171,15 +192,33 @@ export async function showJournal(): Promise<void> {
          */
         // 모션을 줄인 사람에게는 끝 자세로 고정한다 — 그림은 그대로, 움직임만 없앤다
         const k = still ? 1 : e
+
+        /**
+         * **불이 먼저 켜지고 그 다음 다가간다.**
+         * 어두운 책상에 놓인 수첩 위로 스탠드가 켜지는 것처럼 앞의 35% 동안 빛이 올라온다.
+         * 기하가 아니라 빛이 움직이는 구간이라, 모델에 애니메이션이 없어도 정지 화면이 안 된다.
+         */
+        const lit = still ? 1 : Math.min(1, p / 0.35)
+        key.intensity = 0.45 + 2.95 * lit
+        amb.intensity = 0.30 + 0.65 * lit
+        rim.intensity = 0.10 + 0.70 * lit
+
         pivot.rotation.y = THREE.MathUtils.lerp(-0.30, -0.05, k)
         camera.position.set(
           THREE.MathUtils.lerp(0.30, 0.01, k),
-          THREE.MathUtils.lerp(1.24, 0.76, k),
-          THREE.MathUtils.lerp(0.96, 0.58, k))
+          THREE.MathUtils.lerp(1.24, 0.70, k),
+          THREE.MathUtils.lerp(0.96, 0.53, k))
         camera.lookAt(0, 0, 0)
 
-        // 끝에서 사라진다 — 다음 화면(DOM 수첩)이 그 자리를 이어받는다
-        if (host) host.style.opacity = String(p < 0.82 ? 1 : 1 - (p - 0.82) / 0.18)
+        /**
+         * **겹쳐서 넘긴다.** HANDOFF 지점에서 DOM 수첩이 펼쳐지기 시작하고,
+         * 3D 는 그 위에서 걷힌다. 잘라 붙이면 두 물건이고, 겹치면 한 물건이다.
+         */
+        if (p >= HANDOFF) {
+          handoff()
+          const g = (p - HANDOFF) / (1 - HANDOFF)
+          if (host) host.style.opacity = String(1 - g * g)   // 처음엔 천천히, 끝에서 빠르게
+        }
 
         renderer?.render(scene, camera)
         if (p >= 1) return done()

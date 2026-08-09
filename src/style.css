@@ -973,22 +973,28 @@ body::after {
  * 닫힌 상태를 기본으로 두지 않았다 — 상황판은 항상 보여야 하는 물건이라
  * 한 번 누르는 만큼 정보가 멀어진다. 은유만 완성하고 접근은 안 해친다.
  */
-.nb.opening { perspective: 1800px; }
-.nb.opening .nb-left  { transform-origin: right center; animation: nbOpenL .9s cubic-bezier(.22,.75,.3,1) both; }
-.nb.opening .nb-right { transform-origin: left center;  animation: nbOpenR .9s cubic-bezier(.22,.75,.3,1) both; }
-.nb.opening .nb-spine { animation: nbSpine .9s ease-out both; }
+/**
+ * 각도를 88° → 34° 로 줄였다. 3D 수첩이 **이미 펼쳐진 채** 화면을 채우고 있고
+ * 그 위로 이 연출이 겹쳐 시작하기 때문이다(`journal3d.ts` 의 HANDOFF).
+ * 여기서 90° 로 접었다 펴면 3D 가 보여준 물건과 모양이 어긋나 두 개로 읽힌다.
+ * 지금은 **거의 펼쳐진 상태에서 마지막으로 눕는** 정도만 남긴다.
+ */
+.nb.opening { perspective: 2400px; }
+.nb.opening .nb-left  { transform-origin: right center; animation: nbOpenL 1s cubic-bezier(.18,.8,.24,1) both; }
+.nb.opening .nb-right { transform-origin: left center;  animation: nbOpenR 1s cubic-bezier(.18,.8,.24,1) both; }
+.nb.opening .nb-spine { animation: nbSpine 1s ease-out both; }
 
 @keyframes nbOpenL {
-  0%   { transform: rotateY(88deg); filter: brightness(.25); }
-  60%  { filter: brightness(.7); }
-  100% { transform: rotateY(0);   filter: brightness(1); }
+  0%   { transform: rotateY(34deg) translateZ(-40px); filter: brightness(.5) saturate(.7); }
+  55%  { filter: brightness(.92) saturate(.95); }
+  100% { transform: rotateY(0) translateZ(0);         filter: brightness(1) saturate(1); }
 }
 @keyframes nbOpenR {
-  0%   { transform: rotateY(-88deg); filter: brightness(.25); }
-  60%  { filter: brightness(.7); }
-  100% { transform: rotateY(0);     filter: brightness(1); }
+  0%   { transform: rotateY(-34deg) translateZ(-40px); filter: brightness(.5) saturate(.7); }
+  55%  { filter: brightness(.92) saturate(.95); }
+  100% { transform: rotateY(0) translateZ(0);          filter: brightness(1) saturate(1); }
 }
-@keyframes nbSpine { 0% { opacity: 0; } 55% { opacity: .4; } 100% { opacity: 1; } }
+@keyframes nbSpine { 0% { opacity: 0; } 55% { opacity: .55; } 100% { opacity: 1; } }
 
 /* 연출은 장식이다 — 끄겠다는 사람에게는 즉시 펼쳐진 상태를 준다 */
 @media (prefers-reduced-motion: reduce) {

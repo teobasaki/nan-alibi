@@ -1767,11 +1767,17 @@ function openBriefing(): void {
      * 그 다음 DOM 수첩이 펼쳐진다. 에셋이 없거나 모션을 끈 사람에게는
      * `showJournal()` 이 즉시 resolve 하므로 예전과 똑같이 바로 펼쳐진다.
      */
-    void showJournal().then(() => {
+    /**
+     * **물건이 먼저 서고, 그 위에서 수첩이 펼쳐진다.**
+     * `showJournal` 은 3D 가 걷히기 시작하는 순간 이 콜백을 부른다 — 끝난 뒤가 아니다.
+     * 그래서 두 연출이 0.45초쯤 **겹치고**, 잘라 붙인 두 화면이 아니라 한 물건이 된다.
+     * 에셋이 없거나 못 그리는 상황에서도 이 콜백은 반드시 한 번 불린다.
+     */
+    void showJournal(() => {
       ui.opening = true
       render()
       play('paper')
-      setTimeout(() => { ui.opening = false; render() }, 900)
+      setTimeout(() => { ui.opening = false; render() }, 1000)
     })
   }
   sheet.appendChild(go)
