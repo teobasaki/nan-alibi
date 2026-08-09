@@ -40,12 +40,18 @@ for (const [path, url] of Object.entries(FILES)) {
 function panels(c: CaseFile, culprit: SuspectId, correct: boolean): ComicPanel[] {
   const who = c.suspects[culprit]
   if (!correct) {
+    /**
+     * 미제 전용 그림은 `m0`~`m2` 다. 없으면 검거 그림(0~2)으로 폴백한다 —
+     * 수갑 그림 위에 "사건은 미제로 편철됐다" 가 얹히는 건 틀린 그림이지만,
+     * 빈 칸보다는 낫다. 전용 그림이 오면 저절로 갈아탄다.
+     */
+    const g = (m: string, f: string): string | undefined => PANEL_URL.get(m) ?? PANEL_URL.get(f)
     return [
-      { area: 'p0', img: PANEL_URL.get('0'), key: '남았다', corner: 'tl', tilt: 0.8,
+      { area: 'p0', img: g('m0', '0'), key: '남았다', corner: 'tl', tilt: 0.8,
         line: '조서에 서명이 없었다.', voice: 'creak' },
-      { area: 'p1', img: PANEL_URL.get('1'), key: '미제', corner: 'bl', tilt: -0.7,
+      { area: 'p1', img: g('m1', '1'), key: '미제', corner: 'bl', tilt: -0.7,
         line: '사건은 미제로 편철됐다. 다섯은 각자의 밤으로 돌아갔다.' },
-      { area: 'p2', img: PANEL_URL.get('2'), key: '그중 하나', corner: 'br', tilt: 0.6, bam: '…',
+      { area: 'p2', img: g('m2', '2'), key: '그중 하나', corner: 'br', tilt: 0.6, bam: '…',
         line: '그중 하나는 오늘도 잠을 잘 잘 것이다.', voice: 'filed' },
     ]
   }
