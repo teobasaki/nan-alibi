@@ -71,13 +71,22 @@ def fit_arms(arm, side):
     knee = pb[f'{side}Leg'].head.copy()
     hip = pb['Hips'].head.copy()
 
-    # **허벅지 중간** — 엉덩이와 무릎 사이 55% 지점, 허벅지 위로 조금
+    # **허벅지 중간** — 엉덩이와 무릎 사이 55% 지점, 허벅지 위로 조금.
+    # ⚠️ 아마추어 공간은 1단위 = 1cm 다 (아래 출력부 주석 참조).
+    # 예전엔 0.075 를 더했다 — "허벅지 위 7.5cm" 라고 믿었지만 실제로는 0.75mm 였다.
+    # 그래서 목표가 허벅지 뼈 중심선이 되어 손이 허벅지에 잠겼다.
     target = hip.lerp(knee, 0.55)
-    target.z += 0.075
+    target.z += 7.5
 
-    spine_lo = pb['Spine'].head.copy()
-    spine_hi = pb['Spine02'].tail.copy()
-    CLEAR = max(0.095, abs(pb[f'{side}Shoulder'].head.x - spine_lo.x) * 0.85)
+    # **가드 구간은 엉덩이~가슴 전체다.** 이 리그는 Hips→Spine02→Spine01→Spine
+    # 순서라 `Spine` 이 **맨 위(가슴)** 다 — 이름과 반대다. 예전엔 Spine.head~Spine02.tail
+    # 로 잡아서 가슴 13cm 만 지켰고, 팔꿈치(그 아래)와 손목은 무방비였다.
+    spine_lo = pb['Hips'].head.copy()
+    spine_hi = pb['Spine'].head.copy()
+    # **몸통 반폭은 어깨관절로 잰다.** `{side}Shoulder` 는 쇄골 뿌리라 중심에서
+    # 2.7~3.5cm 뿐이다 — 실제 몸통 반폭(15~26cm)의 1/5 이라 벌점이 사실상 꺼져 있었다.
+    # 어깨관절(`{side}Arm`)은 15.6~20.5cm 로 몸통 폭에 가깝다. 1단위=1cm.
+    CLEAR = max(9.5, abs(pb[f'{side}Arm'].head.x - spine_lo.x) * 0.85)
 
     def torso_hit():
         """팔꿈치·손이 몸통 축에 파고든 양. 0 이면 안 겹친다."""
@@ -90,12 +99,25 @@ def fit_arms(arm, side):
                 pen += CLEAR - horiz
         return pen
 
+    def elbow_flex():
+        """팔꿈치 굽힘(도). 0 = 쭉 뻗음. 앉아 손을 얹으면 45~70 이 자연스럽다."""
+        u = fore.head - upper.head
+        v = pb[f'{side}Hand'].head - fore.head
+        if u.length < 1e-6 or v.length < 1e-6:
+            return 0.0
+        return math.degrees(u.angle(v))
+
     def cost():
         bpy.context.view_layer.update()
-        return (hand() - target).length + torso_hit() * 4.0
+        # 팔꿈치 항이 없으면 최소해가 "쭉 뻗은 팔"이다 — 실제로 그렇게 나왔다(4~27°).
+        return ((hand() - target).length
+                + torso_hit() * 4.0
+                + abs(elbow_flex() - 55.0) * 0.15)
 
     best = None
-    for ux, uy, uz in itertools.product(range(-90, 51, 20), range(-80, 81, 40), range(-60, 81, 20)):
+    # uy(상완 자체축 비틀림)는 **탐색하지 않는다.** 벌점 없는 자유도라 최대 62° 비틀린 채
+    # 굳었고, 그게 "뭉개진 어깨"의 정체였다. 비틀 이유가 있는 자세가 아니다.
+    for ux, uy, uz in itertools.product(range(-90, 51, 20), (0,), range(-60, 81, 20)):
         upper.rotation_euler = Euler((R(ux), R(uy), R(uz)), 'XYZ')
         for fx, fz in itertools.product(range(-110, 111, 25), range(-110, 111, 25)):
             fore.rotation_euler = Euler((R(fx), 0, R(fz)), 'XYZ')
@@ -104,7 +126,8 @@ def fit_arms(arm, side):
                 best = (c, (ux, uy, uz), (fx, fz))
 
     bu, bf = best[1], best[2]
-    for ux, uy, uz in itertools.product(*[range(v - 15, v + 16, 5) for v in bu]):
+    for ux, uy, uz in itertools.product(
+            range(bu[0] - 15, bu[0] + 16, 5), (0,), range(bu[2] - 15, bu[2] + 16, 5)):
         upper.rotation_euler = Euler((R(ux), R(uy), R(uz)), 'XYZ')
         for fx, fz in itertools.product(range(bf[0] - 15, bf[0] + 16, 5), range(bf[1] - 15, bf[1] + 16, 5)):
             fore.rotation_euler = Euler((R(fx), 0, R(fz)), 'XYZ')
@@ -123,8 +146,15 @@ def fit_arms(arm, side):
     # ⚠️ 이 좌표는 **아마추어 공간**이다. Meshy 리그는 아마추어 scale 이 0.01 이라
     # 여기 수치 × 0.01 = 실제 미터다 (14.0 → 14cm). 이 단위를 몰라 IK 를 두 번 틀렸다.
     scale = arm.scale.x or 1.0
+    flex = elbow_flex()
+    pen = torso_hit() * scale * 100
     print(f'  {side} 팔: 손↔허벅지 {(hand() - target).length * scale * 100:.1f}cm · '
-          f'몸통관통 {torso_hit() * scale * 100:.1f}cm')
+          f'몸통관통 {pen:.1f}cm · 팔꿈치 {flex:.0f}°')
+    # 검증 게이트 — 이 두 조건이 깨지면 굽는 의미가 없다. 조용히 넘어가지 않는다.
+    if flex < 30:
+        print(f'  ⚠ {side} 팔꿈치가 {flex:.0f}° 뿐이다 — 쭉 뻗은 팔')
+    if pen > 0.5:
+        print(f'  ⚠ {side} 팔이 몸통을 {pen:.1f}cm 파고든다')
 
 
 def main(src, dst):

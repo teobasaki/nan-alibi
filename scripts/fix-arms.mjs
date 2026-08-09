@@ -33,11 +33,20 @@ const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies(
   'draco3d.encoder': await draco3d.createEncoderModule(),
 })
 
-/** 앉아서 두 손을 허벅지 위에 얹은 자세. 도(°)와 cm. */
-const TARGET = { elbow: 58, wristX: 19, wristY: 5, wristZ: 14 }
+/**
+ * 앉아서 두 손을 허벅지 위에 얹은 자세. 도(°)와 cm.
+ * 값은 **고쳐 다시 구운 pose-seated.py 의 출력 실측**이다 — 그 결과가 눈으로 맞았으므로
+ * 재료가 없어 못 굽는 모델(manager)을 여기에 맞춘다.
+ * `elbowX`(팔꿈치↔몸통중심)가 핵심이다. 처음 이 스크립트는 손목만 봤고,
+ * 그 결과 손목은 밖(19cm)인데 **팔꿈치가 몸 안(9cm)** 인 자세가 나왔다 —
+ * 화면에서 "팔이 몸통을 파고든다" 가 그것이었다.
+ */
+const TARGET = { elbow: 48, wristX: 8, wristY: 8, wristZ: 14, elbowX: 22 }
 
-const SLUGS = ['security', 'investor', 'expartner', 'appraiser', 'manager',
-  'secretary', 'nephew', 'housekeeping']
+const onlyArg = process.argv.indexOf('--only')
+const SLUGS = onlyArg > 0 ? [process.argv[onlyArg + 1]]
+  : ['security', 'investor', 'expartner', 'appraiser', 'manager',
+     'secretary', 'nephew', 'housekeeping']
 
 const mul = (a, b) => { const o = new Array(16).fill(0)
   for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0
@@ -67,9 +76,10 @@ const ang = (u, v) => Math.acos(Math.max(-1, Math.min(1,
   (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (len(u) * len(v))))) * 180 / Math.PI
 
 const score = (m) => Math.abs(m.elbow - TARGET.elbow)
-  + Math.abs(m.wristX - TARGET.wristX) * 1.6      // 몸 파고듦이 가장 눈에 띈다
+  + Math.abs(m.wristX - TARGET.wristX)
   + Math.abs(m.wristY - TARGET.wristY)
   + Math.abs(m.wristZ - TARGET.wristZ) * 0.8
+  + Math.max(0, TARGET.elbowX - m.elbowX) * 2.5   // 팔꿈치가 몸 안으로 들어오는 것이 가장 눈에 띈다
 
 const write = process.argv.includes('--write')
 console.log('모델          팔꿈치 전→후   손목X 전→후   손목Y 후  손목Z 후')
@@ -98,6 +108,7 @@ for (const slug of SLUGS) {
       const hip = P(side + 'UpLeg'), knee = P(side + 'Leg'), hips = P('Hips')
       return { elbow: ang(sub(el, sh), sub(wr, el)),
         wristX: Math.abs(wr[0] - hips[0]) * 100,
+        elbowX: Math.abs(el[0] - hips[0]) * 100,
         // 허벅지 윗면 ≈ 엉덩이~무릎 중간 높이 + 대퇴 반지름(8cm)
         wristY: (wr[1] - ((hip[1] + knee[1]) / 2 + 0.08)) * 100,
         wristZ: (wr[2] - hips[2]) * 100 } }
@@ -122,10 +133,10 @@ for (const slug of SLUGS) {
   if (!ok) { console.log(slug.padEnd(13), '팔 본을 못 찾았다 — 건너뜀'); continue }
   const f = (v) => v.toFixed(0)
   console.log(slug.padEnd(13),
-    `${f(before.Left.elbow)}→${f(after.Left.elbow)}°`.padStart(12),
-    `${f(before.Left.wristX)}→${f(after.Left.wristX)}cm`.padStart(13),
-    f(after.Left.wristY).padStart(8) + 'cm',
-    f(after.Left.wristZ).padStart(8) + 'cm')
+    `팔꿈치 ${f(before.Left.elbow)}→${f(after.Left.elbow)}°`,
+    `팔꿈치X ${f(before.Left.elbowX)}→${f(after.Left.elbowX)}cm`,
+    `손목X ${f(before.Left.wristX)}→${f(after.Left.wristX)}cm`,
+    `손목Y ${f(after.Left.wristY)}cm`)
   if (write) await io.write(path, doc)
 }
 console.log(write ? '\n고쳐 썼다.' : '\n--write 를 붙이면 실제로 고친다.')
