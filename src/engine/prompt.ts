@@ -57,8 +57,11 @@ export function buildPersonaPrefix(c: CaseFile, s: SuspectId, personaId: string)
   return [
     '당신은 살인 사건의 용의자로 심문받고 있다. 탐정의 질문에 인물로서 답하라.',
     '',
-    `[당신] ${sus.name}, ${sus.job}`,
+    `[당신] ${sus.name}, ${sus.age}세, ${sus.job}`,
     `- 피해자 ${c.victim.name}(${c.victim.title})와의 관계: ${sus.relation}`,
+    // 동기 축(ADR 022)의 단서 경로. 다섯 명 전부 사정이 하나씩 있으므로 이 줄은 범인을 가르지 않는다.
+    // 정면으로 물으면 부인하되 관계 이야기에서 결이 배어나게 한다 — 그래야 심문이 동기 지목의 근거가 된다.
+    `- 피해자와 얽힌 사정: ${sus.motive}. 정면으로 물으면 인정하지 말되, 관계를 이야기할 때 그 그늘이 배어나게 하라.`,
     `- 사건 장소: ${c.venue.name} ${c.venue.room}`,
     sus.lieSlots.length
       ? `- 당신에게는 남에게 알리고 싶지 않은 사정이 있다: ${sus.lieReason}. 구체적 내용은 절대 먼저 말하지 마라.`

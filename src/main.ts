@@ -9,9 +9,11 @@
 import './style.css'
 import { generateValidCase } from './engine/validate'
 import {
-  availableEvidence, claimCardId, connect, createGame, interview, lockedRecords, lookupEvidence,
-  presentEvidence, presentReveal, submit, type GameState, type PresentReveal,
+  availableEvidence, claimCardId, connect, createGame, fieldDone, interview, lockedRecords,
+  lookupEvidence, presentEvidence, presentReveal, submit, talksLeft,
+  type GameState, type PresentReveal,
 } from './engine/game'
+import { makeRng, shuffle } from './engine/rng'
 import { cardSummary, renderCard } from './ui/cards'
 import { josa } from './josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
@@ -33,7 +35,7 @@ import { personaById } from './data/personas'
 import { pickPoolSeed } from './data/pool'
 import { candidatesFrom } from './engine/solver'
 import { newTrace, profile, record as trace, type TraceEvent, type TraceInput } from './engine/journey'
-import { journalLines, tally } from './ui/journal'
+import { journalLines } from './ui/journal'
 import { saveTrace } from './ui/journeyStore'
 import { pendingPairs, placeMatrix } from './engine/crossref'
 import { ask } from './api'
@@ -41,7 +43,7 @@ import {
   CRIME_PLACE, CRIME_SLOT, PLACES, PLACE_LABEL, SLOTS, SLOT_LABEL, SUSPECTS,
   type CaseFile, type Evidence, type Slot, type SuspectId,
 } from './types'
-import { INVESTIGATION_BUDGET, METHODS } from './data/config'
+import { FIELD_BUDGET, TALK_CAP, WEAPONS, WEAPON_TRACE } from './data/config'
 
 /**
  * 정형 질문 — **무엇을 확인하려는 질문인지 함께 적는다** (QA 5.2).
@@ -249,7 +251,7 @@ function topbar(): HTMLElement {
   mute.onclick = () => { setMuted(!isMuted()); if (!isMuted()) play('paper'); render() }
   bar.appendChild(mute)
 
-  const btn = h('button', undefined, '범인 지목') as HTMLButtonElement
+  const btn = h('button', undefined, '최종 추론') as HTMLButtonElement
   focusKey(btn, 'submit')
   btn.onclick = openSubmit
   bar.appendChild(btn)
@@ -371,10 +373,10 @@ function exploreRoom(): HTMLElement {
    * 자원이 보이지 않으면 자원 게임이 아니다.
    */
   const pips = h('div', 'expips')
-  for (let i = 0; i < INVESTIGATION_BUDGET; i++) {
+  for (let i = 0; i < FIELD_BUDGET; i++) {
     pips.appendChild(h('i', `expip${i < ui.game.investigationsLeft ? '' : ' spent'}`))
   }
-  pips.appendChild(h('span', 'expip-l', `남은 조사 ${ui.game.investigationsLeft}`))
+  pips.appendChild(h('span', 'expip-l', `남은 현장 조사 ${ui.game.investigationsLeft}`))
   page.appendChild(pips)
 
   const bar = h('div', 'exbar')
@@ -531,11 +533,12 @@ function journalBlock(): HTMLElement {
   ) as Partial<Record<SuspectId, (string | undefined)[]>>
 
   const lines = journalLines(CASE, ui.journey, statements)
-  const t = tally(lines, INVESTIGATION_BUDGET)
 
   const head = h('div', 'nb-cap')
   head.appendChild(document.createTextNode('수사 일지'))
-  head.appendChild(h('span', 'nb-tally', `조사 ${t.spent} / ${INVESTIGATION_BUDGET}`))
+  // 잔량은 상태에서 직접 읽는다 — 일지 줄 수로 세면 심문(대화 지갑)이 현장 예산에 섞인다 (ADR 022)
+  head.appendChild(h('span', 'nb-tally',
+    `현장 조사 ${FIELD_BUDGET - Math.max(0, ui.game.investigationsLeft)} / ${FIELD_BUDGET}`))
   wrap.appendChild(head)
 
   if (lines.length === 0) {
@@ -1037,10 +1040,12 @@ function pendingBlock(): HTMLElement {
 
 function askBox(s: SuspectId): HTMLElement {
   const wrap = h('div', 'ask')
+  const left = talksLeft(ui.game, s)
   const chips = h('div', 'chips')
   const input = h('input') as HTMLInputElement
-  input.placeholder = '직접 질문을 입력하십시오'
+  input.placeholder = left > 0 ? '직접 질문을 입력하십시오' : '이 사람과의 대화는 끝났다'
   input.maxLength = 200
+  input.disabled = left <= 0
 
   for (const { q, why } of PRESETS) {
     // 질문 아래 목적을 함께 적는다 — 무엇을 확인하려는 질문인지 알고 눌러야 한다
@@ -1055,7 +1060,7 @@ function askBox(s: SuspectId): HTMLElement {
   const row = h('div', 'askrow')
   row.appendChild(input)
   const send = h('button', undefined, '심문') as HTMLButtonElement
-  send.disabled = ui.busy || ui.game.investigationsLeft <= 0
+  send.disabled = ui.busy || left <= 0
   send.onclick = () => { void doAsk(s, input.value) }
   input.onkeydown = (e) => {
     // 한글 IME: 조합 확정용 Enter 와 전송용 Enter 는 다르다.
@@ -1065,26 +1070,27 @@ function askBox(s: SuspectId): HTMLElement {
     if (e.key === 'Enter') void doAsk(s, input.value)
   }
   row.appendChild(send)
-  row.appendChild(h('span', 'cost', `조사 ${ui.game.investigationsLeft} → ${Math.max(0, ui.game.investigationsLeft - 1)}`))
+  // 대화는 인당 상한이다 (ADR 022) — 잔량을 이 사람 옆에 붙여야 "누구에게 얼마 남았나" 가 보인다
+  row.appendChild(h('span', 'cost', `대화 ${ui.game.talks[s]} / ${TALK_CAP}`))
   wrap.appendChild(row)
 
-  if (ui.selected.length === 1) {
+  if (ui.selected.length === 1 && left > 0) {
     const evId = ui.selected[0]!
     // 버튼을 조건부로 비활성화하면 **활성화 자체가 정답을 유출한다** (해금 쌍은 범인에게만 있다).
     // 항상 누를 수 있게 두고, 헛수고의 책임은 플레이어가 진다.
-    const present = h('button', undefined, '선택한 카드를 들이민다 (조사 1회)') as HTMLButtonElement
-    present.disabled = ui.busy || ui.game.investigationsLeft <= 0
+    const present = h('button', undefined, '선택한 카드를 들이민다 (대화 1회)') as HTMLButtonElement
+    present.disabled = ui.busy
     present.style.marginTop = '7px'
     present.onclick = () => { void doPresent(s, evId) }
     wrap.appendChild(present)
-    wrap.appendChild(h('div', 'hintline', '엉뚱한 상대에게 들이밀면 조사만 소모된다.'))
+    wrap.appendChild(h('div', 'hintline', '엉뚱한 상대에게 들이밀면 대화 1회만 소모된다.'))
   }
   return wrap
 }
 
 /* ─────────── 오른쪽: 사건 보드 ─────────── */
 function labelOfKind(k: string): string {
-  const m: Record<string, string> = { keycard: '카드키 기록', cctv: 'CCTV', call: '통화 내역', receipt: '영수증' }
+  const m: Record<string, string> = { keycard: '카드키 기록', cctv: 'CCTV', call: '통화 내역', receipt: '영수증', autopsy: '검시 소견' }
   return m[k] ?? k
 }
 
@@ -1138,8 +1144,9 @@ function board(): HTMLElement {
         `🔒 ${labelOfKind(l.evidence.kind)} · ${SLOT_LABEL[l.evidence.slot]} ${PLACE_LABEL[l.evidence.place]}`))
       row.appendChild(h('div', undefined, `   조건 ${l.met}/${l.total} — 필요: ${l.missing.join(', ')}`))
       if (l.evidence.slot === CRIME_SLOT && l.evidence.place === CRIME_PLACE) {
+        // ADR 022: 이 사슬은 채점 축이 아니라 **통찰 보너스**다 — 문구가 배점을 부풀리면 안 된다
         row.appendChild(h('div', undefined,
-          '   이것이 결정적 증거(20점)이며, 카드의 발급 구분이 곧 범행 수단(20점)이다.'))
+          '   이것이 결정적 증거다 — 열면 통찰 보너스 +10. 범인을 현장에 못박는 유일한 기록이기도 하다.'))
       }
       col.appendChild(row)
     }
@@ -1221,13 +1228,13 @@ function act(fn: () => GameState): void {
 
 async function doAsk(s: SuspectId, question: string): Promise<void> {
   const q = question.trim()
-  if (!q || ui.busy || ui.game.investigationsLeft <= 0) return
+  if (!q || ui.busy || talksLeft(ui.game, s) <= 0) return
   ui.busy = true
   setStage('thinking')
   render()
 
   const before = ui.game
-  ui.game = interview(ui.game, s) // 예산은 낙관적으로 먼저 깎는다
+  ui.game = interview(ui.game, s) // 대화 횟수는 낙관적으로 먼저 깎는다 (폴백이면 환불)
 
   const r = await ask({
     seed: CASE.seed, suspectId: s, personaId: CASE.suspects[s].personaId,
@@ -1325,7 +1332,7 @@ function voiceOut(reply: { speech: string; tell: string }, personaId: string): v
 function unlockNote(before: GameState, after: GameState, reveal: PresentReveal): string {
   if (reveal === 'void') {
     // 행동이 없던 일이 됐다. **무엇이 열렸는지 열리지 않았는지 말하지 않는다** — 그게 곧 정답이다.
-    return '\n\n▸ 응답을 받지 못했다. 조사 횟수를 돌려주고, 이 제시는 없던 것으로 한다.'
+    return '\n\n▸ 응답을 받지 못했다. 대화 횟수를 돌려주고, 이 제시는 없던 것으로 한다.'
   }
   if (reveal === 'nothing') {
     return '\n\n▸ 이 사람은 이 기록에 대해 열어줄 진술이 없다 — 이 조합은 해금 경로가 아니다.' +
@@ -1348,71 +1355,62 @@ function animateLast(text: string): void {
   if (node instanceof HTMLElement) typeInto(node, text)
 }
 
-/* ─────────── 제출 · 결과 ─────────── */
+/* ─────────── 최종 추론 · 결과 ─────────── */
+/**
+ * 지목 시트 3축 — 범인 · 동기 · 살인 도구 (ADR 022).
+ *
+ * '결정적 증거 지목' 과 '수단(카드키 발급 구분)' 축은 시트에서 내렸다 —
+ * 둘 다 잠긴 기록 사슬 하나에 걸려 점수가 몰렸고, 이제 그 사슬은 통찰 보너스(+10)로만 산다.
+ */
 function openSubmit(): void {
   const ov = h('div', 'overlay')
   const sheet = h('div', 'sheet casefile')
   sheet.appendChild(fileHeader('송치\n의견'))
-  sheet.appendChild(h('h2', undefined, '범인 지목'))
+  sheet.appendChild(h('h2', undefined, '최종 추론'))
   // 지금까지 손에 쥔 것을 한 줄로 상기시킨다 — 지목은 기억이 아니라 근거로 하는 것이다.
   const held = ui.game.cards.filter((id) => CASE.evidence.some((e) => e.id === id)).length
+  const talksSpent = SUSPECTS.reduce((a, s) => a + ui.game.talks[s], 0)
   sheet.appendChild(h('div', 'tally',
-    `조사 ${INVESTIGATION_BUDGET - ui.game.investigationsLeft}회 소모 · ` +
+    `현장 조사 ${FIELD_BUDGET - Math.max(0, ui.game.investigationsLeft)}회 · 대화 ${talksSpent}회 · ` +
     `확보한 기록 ${held}건 · 찾아낸 인장 ${ui.game.foundContradictions.length}건` +
     (ui.game.ruledOut.length ? ` · 소거한 조합 ${ui.game.ruledOut.length}건` : '')))
-  sheet.appendChild(h('p', undefined, '범인만 맞혀도 부분 점수가 있습니다. 수단과 결정적 증거까지 맞히면 만점입니다.'))
+  sheet.appendChild(h('p', undefined,
+    '누가, 왜, 무엇으로 죽였는가 — 세 가지를 지목합니다. 범인 60점 · 동기 15점 · 도구 15점.'))
 
   const opt = (v: string, t: string): HTMLOptionElement => {
     const o = document.createElement('option'); o.value = v; o.textContent = t; return o
   }
   const who = h('select') as HTMLSelectElement
-  for (const s of SUSPECTS) who.appendChild(opt(s, `${CASE.suspects[s].name} (${CASE.suspects[s].job})`))
-
-  const method = h('select') as HTMLSelectElement
-  for (const m of METHODS) method.appendChild(opt(m, m))
-
-  const dec = h('select') as HTMLSelectElement
-  // 시각 순으로만 정렬한다. **범행 현장 기록에 ★ 를 달았더니 추리를 건너뛰게 됐다**
-  // (자동 리뷰 major 지적: 무반응 제시로 실패한 플레이어가 ★ 만 보고 정답을 골랐다).
-  // 카드에 시각·장소가 이미 적혀 있으므로, 판별은 플레이어의 몫으로 남긴다 (ADR 010).
-  const owned = ui.game.cards
-    .filter((x) => CASE.evidence.some((e) => e.id === x))
-    .sort((a, b) => {
-      const at = (id: string) => CASE.evidence.find((x) => x.id === id)!.slot
-      return at(a) - at(b)
-    })
-  if (owned.length === 0) dec.appendChild(opt('', '(확보한 물증이 없다)'))
-  // 조건("범행 시각")은 이미 화면에 적혀 있고 카드 앞면에 시각이 있다.
-  // 그 조건을 목록에도 반영한다 — 정답 유출이 아니라 **사무 실수 제거**다.
-  // 범행 시각 기록은 여러 건이므로 "어느 장소가 현장인가" 라는 진짜 판단은 남는다
-  // (자동 리뷰 minor/clarity: 22:10 기록을 결정적 증거로 골라 오답이 났다).
-  for (const id of owned) {
-    const e = CASE.evidence.find((x) => x.id === id)!
-    const ok = e.slot === CRIME_SLOT
-    // 범행 시각이 아닌 기록은 아예 못 고른다. 범행 시각이지만 카드키가 아닌 기록은
-    // **고를 수는 있되 사실을 알려준다** — 선택권을 뺏지 않고 혼동만 없앤다
-    // (자동 리뷰 minor/clarity: 22:20 CCTV 를 결정적 증거로 골라 오답이 났다).
-    const note = !ok ? `  — ${SLOT_LABEL[CRIME_SLOT]} 기록이 아니다`
-      : e.kind !== 'keycard' ? '  — 현장 확인용 기록이다. 카드키 출입 기록이 아니다'
-      : ''
-    dec.appendChild(opt(id, cardSummary(CASE, id) + note))
-    if (!ok) (dec.lastElementChild as HTMLOptionElement).disabled = true
+  for (const s of SUSPECTS) {
+    who.appendChild(opt(s, `${CASE.suspects[s].name} (${CASE.suspects[s].age}세 · ${CASE.suspects[s].job})`))
   }
 
+  /**
+   * 동기 — 다섯 용의자의 사정 다섯을 **이름 없이** 나열한다 (ADR 022).
+   * 순서는 시드 파생 셔플로 고정한다: 무작위여야 "몇 번째가 누구" 가 안 성립하고,
+   * 고정이어야 시트를 다시 열 때마다 순서가 바뀌는 사무 실수가 안 생긴다.
+   */
+  const motive = h('select') as HTMLSelectElement
+  const motiveOptions = shuffle(makeRng(CASE.seed ^ 0x51ed270b), SUSPECTS.map((s) => CASE.suspects[s].motive))
+  for (const m of motiveOptions) motive.appendChild(opt(m, m))
+
+  const weapon = h('select') as HTMLSelectElement
+  for (const w of WEAPONS) weapon.appendChild(opt(w, w))
+
   sheet.appendChild(h('label', undefined, '범인')); sheet.appendChild(who)
-  sheet.appendChild(h('label', undefined, '범행 수단'))
+  sheet.appendChild(h('label', undefined, '동기'))
   sheet.appendChild(h('div', 'hintline',
-    '결정적 증거(범행 시각 현장의 카드키 기록) 카드의 "발급 구분" 칸에 어떤 카드로 열었는지가 찍혀 있다. ' +
-    '그 카드를 확보하지 못했다면 수단은 추측이고, **찍어서 맞혀도 점수는 없다.** — 배점 20점.'))
-  sheet.appendChild(method)
-  sheet.appendChild(h('label', undefined, '결정적 증거'))
+    '다섯 사람 모두 피해자와 얽힌 사정이 하나씩 있다 — 그중 **살인까지 간 사정**은 하나다. ' +
+    '심문에서 관계를 캐물어야 각자의 사정이 드러난다.'))
+  sheet.appendChild(motive)
+  sheet.appendChild(h('label', undefined, '살인 도구'))
   sheet.appendChild(h('div', 'hintline',
-    '범행 시각 현장의 **카드키 출입 기록** 이어야 한다. 진술이나 알리바이 기록은 해당하지 않는다. — 배점 20점, 못 맞혀도 범인만 맞히면 해결이다.'))
-  sheet.appendChild(dec)
+    '검시 소견 기록이 도구의 흔적을 말해준다 — 확보하지 않았다면 지금 이 선택은 추측이다.'))
+  sheet.appendChild(weapon)
 
   const go = h('button', undefined, '제출') as HTMLButtonElement
   go.style.marginTop = '16px'
-  go.onclick = () => { ov.remove(); showResult(who.value as SuspectId, method.value, dec.value) }
+  go.onclick = () => { ov.remove(); showResult(who.value as SuspectId, motive.value, weapon.value) }
   const cancel = h('button', undefined, '더 조사하기') as HTMLButtonElement
   cancel.style.cssText = 'margin:16px 0 0 8px'
   cancel.onclick = () => ov.remove()
@@ -1422,8 +1420,8 @@ function openSubmit(): void {
   document.body.appendChild(ov)
 }
 
-function showResult(culprit: SuspectId, method: string, decisiveEvidenceId: string): void {
-  const r = submit(ui.game, { culprit, method, decisiveEvidenceId })
+function showResult(culprit: SuspectId, motive: string, weapon: string): void {
+  const r = submit(ui.game, { culprit, motive, weapon })
   ui.game = r.state
 
   /**
@@ -1525,8 +1523,8 @@ function storyBlock(): HTMLElement {
     ['발단', `${josa(c.name, '은/는')} ${josa(CASE.victim.name, '과/와')} ${c.relation}. ` +
              `${josa(CASE.motive, '이/가')} 둘 사이에 남아 있었다.`],
     ['전개', `${SLOT_LABEL[CRIME_SLOT]}, ${CASE.venue.room}. 그 시각 그 층에 있었던 사람은 하나뿐이었다.`],
-    // 수단은 사건마다 '준비된 것' 일 수도 있어 단정하지 않는다 — 도구 이름만 놓는다
-    ['절정', `그리고 ${josa(CASE.method, '이/가')} 쓰였다.`],
+    // 도구는 사건마다 '준비된 것' 일 수도 있어 단정하지 않는다 — 이름만 놓는다
+    ['절정', `그리고 ${josa(CASE.weapon, '이/가')} 쓰였다.`],
     ['결말', `${josa(d.keyLabel ?? '그 기록', '이/가')} 남았다. ${persona.confession}`],
   ]
   for (const [k, t] of beats) {
@@ -1550,13 +1548,13 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
   sheet.appendChild(fileHeader(r.correct.culprit ? '사건\n해결' : '미제\n편철', !r.correct.culprit))
   /**
    * **판정을 네 등급으로 나눠 이름을 준다** (QA 5.6).
-   * "범인을 맞혔습니다 / 아닙니다" 두 칸뿐이면, 범인을 찾고도 입증에 실패한 판과
-   * 아무것도 못 한 판이 같은 문장으로 끝난다. 핵심 추리와 입증을 갈라서 부른다.
+   * "범인을 맞혔습니다 / 아닙니다" 두 칸뿐이면, 범인을 찾고도 사건의 전모를 놓친 판과
+   * 아무것도 못 한 판이 같은 문장으로 끝난다. 3축(범인·동기·도구)을 갈라서 부른다.
    */
-  const proved = r.correct.decisive && !r.methodGuessed
+  const fullStory = r.correct.motive && r.correct.weapon
   const grade = r.correct.culprit
-    ? (proved ? { t: '사건 완전 해결', k: 'ok' } : { t: '범인은 찾았으나 입증이 부족합니다', k: 'ok half' })
-    : (r.correct.decisive || r.correct.method
+    ? (fullStory ? { t: '사건 완전 해결', k: 'ok' } : { t: '범인은 잡았으나 사건의 전모가 어긋납니다', k: 'ok half' })
+    : (r.correct.motive || r.correct.weapon
         ? { t: '방향은 옳았으나 대상이 틀렸습니다', k: 'no half' }
         : { t: '수사 실패', k: 'no' })
   sheet.appendChild(h('div', `verdict ${grade.k}`, grade.t))
@@ -1565,8 +1563,8 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
    * **맞힌 것과 좁힌 것은 다르다.**
    * 후보가 넷 남은 채 찍어 맞힌 판과 기록으로 한 사람까지 몬 판이
    * 같은 문장으로 끝나고 있었다 (자동 리뷰 major/feedback).
-   * 점수는 건드리지 않는다 — 승리 조건을 바꾸면 밸런스를 다시 재야 한다.
-   * 대신 무엇을 한 것인지 정확히 적는다.
+   * 점수 눈금(60/50/40)은 ADR 022 에서 버렸지만 — 3축에서는 셋 다 찍어 맞힐 확률이
+   * 1/125 라 눈금 없이도 찍기가 배제된다 — 서사는 남긴다: 무엇을 한 판인지 정확히 적는다.
    */
   const endCands = candidatesFrom(CASE, new Set(ui.game.cards))
   if (r.correct.culprit) {
@@ -1574,8 +1572,7 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
       endCands.length === 1
         ? '기록만으로 한 사람까지 좁힌 뒤 지목했습니다 — 추리가 완성된 판입니다.'
         : `다만 기록으로는 아직 ${endCands.length}명이 남아 있었습니다 — 좁혀서 맞힌 것이 아니라 ` +
-          `남은 후보 중에서 고른 것이라 범인 점수는 ${r.breakdown.culprit}점입니다` +
-          `(1명까지 좁히면 60 · 2~3명 50 · 4명 이상 40). ` +
+          `남은 후보 중에서 고른 것입니다. ` +
           `${SLOT_LABEL[CRIME_SLOT]} 기록을 더 열었다면 지목이 필연이 됐을 것입니다.`))
   } else if (endCands.length > 1) {
     sheet.appendChild(h('div', 'hintline',
@@ -1596,31 +1593,22 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
   }
 
   /**
-   * 수단·결정적 증거 해설은 **범인을 맞혔을 때만** 편다 (QA 5.7).
-   * 이 문장들은 결정적 증거의 이름·시각·장소를 그대로 알려준다 —
-   * 오답에 띄우면 진단 화면을 조심스럽게 써 놓고 옆문으로 정답을 흘리는 셈이다.
+   * 축별 해설은 **범인을 맞혔을 때만** 편다 (QA 5.7).
+   * 동기·도구의 정답 언급은 오답 화면에선 정답 유출이다 —
+   * 진단 화면을 조심스럽게 써 놓고 옆문으로 정답을 흘리는 셈이 된다.
    */
   if (r.correct.culprit) {
-    if (r.methodGuessed) {
-      const d = CASE.evidence.find((e) => e.decisive)!
+    if (!r.correct.weapon) {
+      const hadAutopsy = CASE.evidence.some((e) => e.kind === 'autopsy' && ui.game.cards.includes(e.id))
       sheet.appendChild(h('div', 'hintline',
-        `수단은 맞았지만 점수는 없다 — 근거가 되는 카드(${d.keyLabel})를 확보하지 못한 채 찍은 것이기 때문이다.`))
-    } else if (!r.correct.method) {
-      const d = CASE.evidence.find((e) => e.decisive)!
-      sheet.appendChild(h('div', 'hintline',
-        ui.game.cards.includes(d.id)
-          ? `수단은 확보한 결정적 증거 카드의 "발급 구분" 칸에 적혀 있었다 — ${d.keyLabel}.`
-          : `수단은 결정적 증거 카드의 "발급 구분" 칸(${d.keyLabel})에서 읽어낼 수 있었다. 그 카드를 끝내 확보하지 못했다.`))
+        hadAutopsy
+          ? `도구는 검시 소견에 적혀 있었다 — "${WEAPON_TRACE[CASE.weapon]}" 이 흔적이 가리키는 것은 ${josa(CASE.weapon, '이다/다')}.`
+          : `도구는 ${josa(CASE.weapon, '이었다/였다')}. 검시 소견 기록을 확보했다면 판독할 수 있었다.`))
     }
-
-    if (!r.correct.decisive) {
-      const d = CASE.evidence.find((e) => e.decisive)!
-      const had = ui.game.cards.includes(d.id)
+    if (!r.correct.motive) {
       sheet.appendChild(h('div', 'hintline',
-        had
-          ? `결정적 증거는 ${d.id}(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]})였다. 손에 쥐고도 고르지 못했다.`
-          : `결정적 증거(${SLOT_LABEL[d.slot]} ${PLACE_LABEL[d.place]} 기록)를 끝내 확보하지 못했다. ` +
-            `그것은 범인의 자백과 무고한 목격자의 증언이 모두 모여야 열린다.`))
+        `동기는 ${josa(CASE.motive, '이었다/였다')} — ${CASE.suspects[CASE.culprit].name}의 사정이다. ` +
+        `다섯 사정 중 살인까지 간 것이 무엇인지는 심문이 말해준다.`))
     }
   }
 
@@ -1649,13 +1637,14 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
   }
   line(r.correct.culprit && r.candidatesLeft > 1 ? `범인 (후보 ${r.candidatesLeft}명 중 지목)` : '범인',
     r.breakdown.culprit)
-  line('범행 수단', r.breakdown.method)
-  line('결정적 증거', r.breakdown.decisive)
-  line(`남은 조사 ${ui.game.investigationsLeft}회`, r.breakdown.efficiency)
-  line(`발견한 모순 ${ui.game.foundContradictions.length}건`, r.breakdown.insight)
+  line('동기', r.breakdown.motive)
+  line('살인 도구', r.breakdown.weapon)
+  line(`남은 현장 조사 ${Math.max(0, ui.game.investigationsLeft)}회`, r.breakdown.efficiency)
+  // 통찰 = 잠긴 카드키 기록(결정적 증거)을 실제로 열었는가 (ADR 022 — 채점 축에서 보너스로 강등)
+  line('결정적 증거 확보', r.breakdown.insight)
   line('합계', r.total, 'tot')
   sheet.appendChild(sc)
-  sheet.appendChild(h('p', undefined, `최소 ${generated.validation.solve.minActions}회면 풀 수 있었습니다.`))
+  sheet.appendChild(h('p', undefined, `최소 ${generated.validation.solve.minActions}번의 행동이면 풀 수 있었습니다.`))
 
   // 판 기록 — 다음 판이 이전 판에 대한 응답이 되게 한다
   const st = record(CASE.seed, r.total, r.correct.culprit)
@@ -1713,22 +1702,23 @@ function openBriefing(): void {
   sheet.appendChild(h('h2', undefined, '당신이 할 일'))
   const ol = h('ol', 'steps')
   for (const [t, d] of [
-    ['대조표를 읽는다',
-      `가운데 표가 수사의 전부다. 가로가 시각, 세로가 사람이고, ${SLOT_LABEL[CRIME_SLOT]} 열이 범행 시각이다. 읽는 건 무료다.`],
-    ['심문하거나 기록을 조회한다',
-      `조사는 총 ${INVESTIGATION_BUDGET}회뿐 — 이 게임의 유일한 자원이다. 심문하면 그 사람의 나머지 시각이 표에 채워진다.`],
+    ['현장을 조사한다 — 기록 조회 5회',
+      `기록철에서 다섯 번만 조회할 수 있다. 검시 소견은 도구를, ${SLOT_LABEL[CRIME_SLOT]} 기록은 사람을 말한다 — ` +
+      '무엇을 포기할지 고르는 것이 곧 수사다.'],
     ['기록으로 후보를 지운다 — 이게 승리 경로다',
       `${SLOT_LABEL[CRIME_SLOT]} 기록에 현장이 아닌 곳으로 찍힌 사람은 소거된다. ` +
       '표 위의 "남은 후보" 가 줄어드는 걸로 확인하라. 진술은 거짓일 수 있어 사람을 지우지 못한다.'],
+    ['조사가 끝나면 심문이 열린다',
+      `다섯 사람 각각과 대화 ${TALK_CAP}회까지 — 상한이지 의무가 아니다. 심문하면 그 사람의 나머지 시각이 표에 채워지고, ` +
+      '관계를 캐물으면 저마다의 사정이 드러난다.'],
     ['기록과 진술을 맞춰 붉은 인장을 찍는다',
       '기록 한 장과 표의 칸 하나를 누르면 대조된다. 어긋나면 인장이 찍힌다. 대조는 무료이고, ' +
       '인장은 누구를 의심할지 정하는 근거다.'],
     ['(선택) 증거를 들이밀어 잠긴 기록을 연다',
-      '흔들리면 자물쇠가 풀린다. 다만 조사 1회를 거는 도박이고, 헛짚으면 아무것도 안 열린다. ' +
-      '이건 완주 보상(결정적 증거·수단, 40점)을 위한 것이지 범인을 맞히는 데 필요하지는 않다. ' +
-      '잠긴 것은 범행 시각 현장의 카드키 출입 기록이고, 그 카드의 발급 구분이 곧 범행 수단이다.'],
-    ['범인·수단·결정적 증거를 지목한다',
-      '범인만 맞히면 해결이다(60점). 남은 조사와 찾아낸 인장도 점수가 된다.'],
+      '흔들리면 자물쇠가 풀린다. 헛짚으면 그 사람과의 대화 1회만 잃는다. ' +
+      '잠긴 현장 기록을 열면 통찰 보너스 +10 — 범인을 맞히는 데 필수는 아니다.'],
+    ['범인·동기·도구를 지목한다',
+      '누가(60점) · 왜(15점) · 무엇으로(15점). 세 가지가 모두 맞아야 사건이 완전히 닫힌다.'],
   ] as [string, string][]) {
     const li = h('li')
     li.appendChild(h('b', undefined, t))
@@ -1788,42 +1778,37 @@ function openBriefing(): void {
 }
 
 /* ─────────── 다음 할 일 코치 ─────────── */
-/** 상태를 보고 "지금 뭘 하면 되는지" 한 줄로 알려준다. 규칙 설명이 아니라 **다음 행동** 이다. */
+/**
+ * 상태를 보고 "지금 뭘 하면 되는지" 한 줄로 알려준다. 규칙 설명이 아니라 **다음 행동** 이다.
+ * ADR 022 이후 챕터가 둘이므로 코치도 둘로 갈린다 — 1장은 무엇을 조회할지, 2장은 누구를 캐물을지.
+ */
 function coachLine(): string {
   const g = ui.game
   const hasEvidence = g.cards.some((id) => CASE.evidence.some((e) => e.id === id))
-  const interviewed = SUSPECTS.some((s) => (ui.chats[s]?.length ?? 0) > 0)
 
-  if (g.investigationsLeft === 0) return '조사가 끝났다. 상단 [범인 지목]으로 결론을 내리십시오.'
-  if (!interviewed && !hasEvidence) return '① 다섯 진술을 훑고, 가장 걸리는 사람을 눌러 심문하십시오.'
-  if (!hasEvidence) return '② 오른쪽에서 기록을 조회해 진술과 맞춰 보십시오.'
-  if (g.foundContradictions.length === 0) return '③ 기록 카드와 진술 카드를 하나씩 눌러 연결하십시오. 무료입니다.'
-  // **후반에만 경고하면 늦다.** 9회 중 8회를 후보 소거와 무관한 곳에 쓰고
-  // 마지막에야 범행 시각 기록을 연 판이 있었다 (자동 리뷰 minor/pacing).
-  const spent = INVESTIGATION_BUDGET - g.investigationsLeft
-  const hasCrimeRecord = CASE.evidence.some((e) => g.cards.includes(e.id) && e.slot === CRIME_SLOT)
-  if (spent >= 3 && !hasCrimeRecord && availableEvidence(g).some((e) => e.slot === CRIME_SLOT)) {
-    return `④ 조사 ${spent}회를 썼지만 ${SLOT_LABEL[CRIME_SLOT]} 기록을 아직 하나도 열지 않았습니다 — ` +
-      `사람을 지우는 건 그 기록뿐입니다. 승패는 범인 적중입니다.`
-  }
-  if (g.investigationsLeft <= 2) {
-    // 자원이 바닥날 때 **무엇을 포기하는 중인지** 알려준다. 화면에 이미 있는 정보를
-    // 합쳐 말할 뿐이지만, 그 합산을 플레이어가 마지막 2회 안에 스스로 하기는 어렵다
-    // (자동 리뷰: 유망한 실마리를 쥔 채 예산이 끝났다).
-    const sceneLocked = lockedRecords(g).some(
-      (l) => l.evidence.slot === CRIME_SLOT && l.evidence.place === CRIME_PLACE)
-    const left = candidatesFrom(CASE, new Set(g.cards)).length
-    const openCrimeRecords = availableEvidence(g).filter((e) => e.slot === CRIME_SLOT).length
-    // **승패는 범인 적중이다.** 후보가 여럿이면 자물쇠보다 후보 소거가 먼저다.
-    if (left > 1 && openCrimeRecords > 0) {
-      return `④ 남은 조사 ${g.investigationsLeft}회 · 후보 ${left}명. 승패는 범인 적중입니다 — ` +
-        `먼저 ${SLOT_LABEL[CRIME_SLOT]} 기록 ${openCrimeRecords}건 중 하나를 열어 후보를 줄이십시오. 제시는 완주 보상 경로입니다.`
+  // ── 1장: 현장 조사 ──
+  if (!fieldDone(g)) {
+    if (!hasEvidence) {
+      return `① 현장 조사 ${g.investigationsLeft}회 — 오른쪽 기록철에서 기록을 조회하십시오. ` +
+        `조사를 마쳐야 심문이 열립니다.`
     }
-    return sceneLocked
-      ? `④ 남은 조사 ${g.investigationsLeft}회 · 후보 ${left}명. 현장 기록은 아직 잠겨 있습니다 — 지금 결론을 내면 결정적 증거(20점)는 포기하는 것입니다.`
-      : `④ 남은 조사 ${g.investigationsLeft}회 · 후보 ${left}명. 슬슬 결론을 낼 때입니다.`
+    const hasCrimeRecord = CASE.evidence.some((e) => g.cards.includes(e.id) && e.slot === CRIME_SLOT)
+    if (!hasCrimeRecord && availableEvidence(g).some((e) => e.slot === CRIME_SLOT && e.kind !== 'autopsy')) {
+      return `② 사람을 지우는 건 ${SLOT_LABEL[CRIME_SLOT]} 기록뿐입니다 — 남은 ${g.investigationsLeft}회 중 하나는 거기 쓰십시오.`
+    }
+    return `② 현장 조사 ${g.investigationsLeft}회 남음 — 무엇을 포기할지 고르는 것도 조사입니다. 조사를 마치면 심문이 열립니다.`
   }
-  return '④ 모순이 나온 인물에게 그 증거를 제시하면 새 진술이 열립니다.'
+
+  // ── 2장: 심문 ──
+  const interviewed = SUSPECTS.some((s) => (ui.chats[s]?.length ?? 0) > 0)
+  if (!interviewed) return '③ 심문이 열렸습니다 — 대조표의 이름을 눌러 데려오십시오. 인당 대화 10회가 상한입니다.'
+  if (g.foundContradictions.length === 0) return '③ 기록 카드와 진술 카드를 하나씩 눌러 연결하십시오. 무료입니다.'
+  const sceneLocked = lockedRecords(g).some(
+    (l) => l.evidence.slot === CRIME_SLOT && l.evidence.place === CRIME_PLACE)
+  if (sceneLocked) {
+    return '④ 모순이 나온 인물에게 그 증거를 제시하면 새 진술이 열립니다 — 잠긴 현장 기록(통찰 +10)의 열쇠입니다.'
+  }
+  return '④ 근거가 모였으면 상단 [최종 추론]으로 결론을 내리십시오 — 범인·동기·도구 세 가지를 지목합니다.'
 }
 
 /* ─────────── 렌더 ─────────── */

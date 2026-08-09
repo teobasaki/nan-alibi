@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { generateValidCase } from '../src/engine/validate'
 import { botRng, commonsenseBot, optimalBot, randomBot } from '../src/engine/bots'
-import { INVESTIGATION_BUDGET } from '../src/data/config'
+import { FIELD_BUDGET, TALK_CAP } from '../src/data/config'
 
 const SEEDS = Array.from({ length: 100 }, (_, i) => 20000 + i)
 const pct = (n: number, d: number) => `${((n / d) * 100).toFixed(0)}%`
@@ -20,7 +20,7 @@ describe('★ 밸런스 — 봇 승률 (조사 예산 판정 근거)', () => {
     rows.reduce((a, r) => a + r[k].actionsUsed, 0) / rows.length
 
   it('통계 출력', () => {
-    console.log(`\n  예산 ${INVESTIGATION_BUDGET}회 · 시드 ${SEEDS.length}개`)
+    console.log(`\n  현장 ${FIELD_BUDGET}회 · 대화 인당 ${TALK_CAP}회 · 시드 ${SEEDS.length}개`)
     for (const k of ['random', 'common', 'optimal'] as const) {
       console.log(`  ${k.padEnd(11)} 승률 ${pct(rows.filter((r) => r[k].won).length, rows.length).padStart(4)}  평균 소모 ${avgActions(k).toFixed(1)}회  평균 모순 ${(rows.reduce((a, r) => a + r[k].contradictions, 0) / rows.length).toFixed(1)}건`)
     }
@@ -32,6 +32,12 @@ describe('★ 밸런스 — 봇 승률 (조사 예산 판정 근거)', () => {
     expect(rate('optimal')).toBe(1)
   })
 
+  /**
+   * 무작위 봇 실측 22% (2026-08-10, ADR 022 재측정).
+   * 눈감고 찍으면 20% 다 — 무작위 행동은 겨우 +2%p 를 보탠다.
+   * 예전엔 이 봇도 똑똑한 지목 사다리를 탔는데, 대화 지갑 분리로 정보가 흔해지자
+   * 51% 를 "추리" 해버렸다. 하한선의 의미를 되찾으려 지목을 후보 중 무작위로 바꿨다.
+   */
   it('무작위 봇은 절반 아래다 — 찍어서 되는 게임이 아니다', () => {
     expect(rate('random')).toBeLessThan(0.5)
   })
@@ -41,17 +47,22 @@ describe('★ 밸런스 — 봇 승률 (조사 예산 판정 근거)', () => {
   })
 
   /**
-   * ★ 목표 구간 60~75%.
+   * ★ 목표 구간 재설정: 60~75% → **75~95%** (2026-08-10, ADR 022).
    *
-   * 한때 44% 로 떨어져 todo 로 잠갔던 항목이다. 증거 순서 무작위화로
-   * "먼저 걸린 모순 = 범인" 누설을 없앴더니 78% → 44% 가 됐다 — 누설이 승률을
-   * 떠받치고 있었다는 뜻이다. 예산 6 → 9 (ADR 009) 로 올려 64% 가 됐고
-   * 이제 구간 안이다. **잠금을 풀어 회귀를 감시한다.**
+   * 왜 바뀌었나: 옛 구간은 조회·심문·제시가 예산 9회 **한 지갑**을 쓰던 시절의 것이다.
+   * 챕터 구조는 대화를 인당 10회(총 50회)로 풀어놨고, 체계적으로 노는 봇은 전원을
+   * 심문하고 모순마다 들이밀 수 있다 — 정보가 흔해져 실측이 64% → 84% 로 올랐다.
+   * 이건 회귀가 아니라 **의도된 관대함**이다 (ADR 022 §2: 상한은 낭비를 막는 안전선).
+   * 난이도의 긴장은 이제 승패가 아니라 3축 완답(동기·도구까지)과 통찰 보너스에 있다.
+   *
+   * 그래도 상한(95%)은 잠근다 — 100% 에 붙으면 "심문 없이 알리바이만으로 확정되는"
+   * 류의 구조 누설이 되살아났다는 신호다 (ADR 007 이 잡았던 그 병).
+   * 하한(75%)은 상식적인 플레이가 벽에 부딪히는 회귀를 감시한다.
    */
-  it('★ 상식 봇 승률이 목표 구간(60~75%)에 있다', () => {
+  it('★ 상식 봇 승률이 목표 구간(75~95%)에 있다', () => {
     const r = rate('common')
-    expect(r).toBeGreaterThanOrEqual(0.6)
-    expect(r).toBeLessThanOrEqual(0.75)
+    expect(r).toBeGreaterThanOrEqual(0.75)
+    expect(r).toBeLessThanOrEqual(0.95)
   })
 })
 
@@ -145,7 +156,7 @@ describe('★ E1 시간 — 행동 구성을 벽시계로 환산', () => {
 
   it('통계 출력', () => {
     const m = { interview: mean(mixes.map((x) => x.interview)), lookup: mean(mixes.map((x) => x.lookup)), present: mean(mixes.map((x) => x.present)) }
-    console.log(`\n  [E1 시간 환산] 상식봇 ${SEEDS.length}판 · 예산 ${INVESTIGATION_BUDGET}회`)
+    console.log(`\n  [E1 시간 환산] 상식봇 ${SEEDS.length}판 · 현장 ${FIELD_BUDGET}회 · 대화 인당 ${TALK_CAP}회`)
     console.log(`  상수: LLM 왕복 ${LLM_TURN_SEC}초(대기 ${TIME.LLM_WAIT_SEC} + 읽기 ${TIME.LLM_READ_SEC}) · 조회 ${TIME.LOOKUP_SEC}초 · 연결 ${TIME.CONNECT_SEC_PER_GAME}초/판 · 초회 +${TIME.FIRST_TIME_OVERHEAD_SEC}초`)
     console.log(`  평균 행동 구성: 심문 ${m.interview.toFixed(1)} · 제시 ${m.present.toFixed(1)} · 조회 ${m.lookup.toFixed(1)}`)
     console.log(`  숙련  평균 ${mmss(mean(skilled))} · 중앙 ${mmss(p(0.5))} · p95 ${mmss(p(0.95))} · 최악 ${mmss(Math.max(...skilled))}  (상한 ${mmss(TIME.SKILLED_LIMIT_SEC)})`)
@@ -168,11 +179,18 @@ describe('★ E1 시간 — 행동 구성을 벽시계로 환산', () => {
     expect(Math.max(...firstTime)).toBeLessThanOrEqual(TIME.FIRST_TIME_LIMIT_SEC)
   })
 
-  it('예산을 전부 소진해도 상한을 넘지 않는다 — 상한 자체의 안전 여유 확인', () => {
-    // 최악의 이론값: 9회 전부 LLM 왕복 + 연결
-    const worst = INVESTIGATION_BUDGET * LLM_TURN_SEC + TIME.CONNECT_SEC_PER_GAME
-    console.log(`  이론 최악(예산 ${INVESTIGATION_BUDGET}회 전부 심문/제시): ${mmss(worst)} · 초회 ${mmss(worst + TIME.FIRST_TIME_OVERHEAD_SEC)}`)
-    expect(worst).toBeLessThanOrEqual(TIME.SKILLED_LIMIT_SEC)
-    expect(worst + TIME.FIRST_TIME_OVERHEAD_SEC).toBeLessThanOrEqual(TIME.FIRST_TIME_LIMIT_SEC)
+  /**
+   * ADR 022 이후 "전소진 ≤ 5분" 은 **성립하지 않고, 성립할 필요도 없다.**
+   * 대화 50회(5명×10회)는 상한이지 기준이 아니다 — 숙련자는 몇 번으로 끝내고,
+   * 상한은 낭비를 막는 안전선이다 (ADR 022 §2). 5분 상한은 위의 **실측 최악**(상식 봇)이
+   * 지키고, 여기서는 이론적 전소진이 ADR 이 감수한 구간(15~25분)을 안 넘는지만 잠근다.
+   */
+  it('대화 상한까지 전소진해도 ADR 022 가 감수한 상한(25분) 안이다', () => {
+    const TYPING_SEC = 20   // 심문당 작문·타이핑 — 위 민감도 표의 중간값
+    const worst = FIELD_BUDGET * TIME.LOOKUP_SEC
+      + 5 * TALK_CAP * (LLM_TURN_SEC + TYPING_SEC)
+      + TIME.CONNECT_SEC_PER_GAME
+    console.log(`  이론 전소진(현장 ${FIELD_BUDGET}회 + 대화 ${5 * TALK_CAP}회, 타이핑 ${TYPING_SEC}초/회): ${mmss(worst)}`)
+    expect(worst).toBeLessThanOrEqual(25 * 60)
   })
 })

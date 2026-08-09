@@ -31,7 +31,7 @@ export interface Marker {
    * 60 Seconds! 에서 방독면과 수프 캔이 다르게 생긴 것과 같은 이유다 —
    * 전부 같은 링이면 걸어가 보기 전까지 무엇인지 모르고, 그러면 선택이 아니라 순회가 된다.
    */
-  kind: 'keycard' | 'cctv' | 'call' | 'receipt'
+  kind: 'keycard' | 'cctv' | 'call' | 'receipt' | 'autopsy'
   /** 범행 시각 기록인가 — 사람을 지우는 유일한 것이라 눈에 띄어야 한다 */
   crime: boolean
 }
@@ -813,6 +813,7 @@ export async function mountExplore(
         case 'cctv':    return new THREE.ConeGeometry(0.28, 0.5, 4)            // 렌즈가 향하는 원뿔
         case 'keycard': return new THREE.BoxGeometry(0.44, 0.05, 0.28)         // 납작한 카드
         case 'call':    return new THREE.TorusGeometry(0.22, 0.07, 8, 20)      // 수화기 코드
+        case 'autopsy': return new THREE.CylinderGeometry(0.3, 0.34, 0.09, 14) // 낮은 원판 — 검시 접시
         default:        return new THREE.CylinderGeometry(0.06, 0.06, 0.52, 6) // 말린 영수증
       }
     }

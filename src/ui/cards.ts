@@ -15,6 +15,7 @@ import {
   type SuspectId,
 } from '../types'
 import { parseClaimCard } from '../engine/game'
+import { WEAPON_TRACE } from '../data/config'
 
 const el = (tag: string, cls?: string, text?: string): HTMLElement => {
   const n = document.createElement(tag)
@@ -28,6 +29,7 @@ const KIND_LABEL: Record<Evidence['kind'], string> = {
   cctv: 'CCTV 로그',
   call: '통화 기지국 기록',
   receipt: '영수증',
+  autopsy: '검시 소견',
 }
 
 function defList(rows: [string, string][]): HTMLElement {
@@ -55,7 +57,11 @@ export function renderEvidenceCard(c: CaseFile, e: Evidence): HTMLElement {
 
   const who = e.subjects.map((s) => nameOf(c, s)).join(', ')
   const rows: [string, string][] =
-    e.kind === 'cctv'
+    // 검시 소견은 인물이 아니라 **도구의 흔적**을 확정한다 — 소견 문장은 사건이 정한
+    // 도구(weapon)에서 1:1 로 온다. 여기 적힌 것이 곧 도구 축(15점)의 판독 근거다 (ADR 022).
+    e.kind === 'autopsy'
+      ? [['시각', SLOT_LABEL[e.slot]], ['현장', PLACE_LABEL[e.place]], ['소견', WEAPON_TRACE[c.weapon] ?? '판독 불가']]
+      : e.kind === 'cctv'
       ? [['구역', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]], ['식별', who]]
       : e.kind === 'keycard'
         ? [['소지자', who], ['지점', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]], ['결과', '승인'],
@@ -111,6 +117,8 @@ export function renderCard(c: CaseFile, id: string): HTMLElement {
 export function cardSummary(c: CaseFile, id: string): string {
   const ev = c.evidence.find((e) => e.id === id)
   if (ev) {
+    // 검시 소견에는 인물이 없다 — 흔적 서술이 곧 요약이다
+    if (ev.kind === 'autopsy') return `검시 소견: ${WEAPON_TRACE[c.weapon] ?? '판독 불가'}`
     const who = ev.subjects.map((s) => nameOf(c, s)).join(', ')
     return `${KIND_LABEL[ev.kind]}: ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]}, ${who}`
   }

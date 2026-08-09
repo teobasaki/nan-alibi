@@ -24,7 +24,7 @@ import {
   type Testimony,
   type Trajectory,
 } from '../types'
-import { KEY_LABEL, METHODS, MOTIVES, NOISE_EVIDENCE_MAX, NOISE_EVIDENCE_MIN, SECRETS } from '../data/config'
+import { KEY_LABEL, METHODS, MOTIVES, NOISE_EVIDENCE_MAX, NOISE_EVIDENCE_MIN, SECRETS, WEAPONS } from '../data/config'
 import { CASE_TITLES, GIVEN_NAMES, ROLES, SURNAMES, VENUES, VICTIMS } from '../data/names'
 import { PERSONAS, PERSONA_CONFLICTS } from '../data/personas'
 import { makeRng, pick, randInt, sample, shuffle, type Rng } from './rng'
@@ -93,14 +93,28 @@ export function generateCase(seed: number): CaseFile {
   }
   const roles = sample(rng, ROLES, SUSPECTS.length)
 
+  /**
+   * 나이·동기(ADR 022 3축)는 **파생 스트림**에서 뽑는다 — 주 스트림(rng)에서 뽑으면
+   * 이후 모든 추첨이 밀려 **기존 사건이 전부 다른 사건이 된다.** 아래 method 추첨과 같은 이유다:
+   * 사전 검증 시드 풀 400개와 데모 시드의 대본을 지키려면 새 소비는 새 스트림에서 한다.
+   *
+   * 동기는 MOTIVES 6종을 섞어 다섯 명에게 하나씩 — **범인의 것이 사건의 동기다.**
+   * 자유 보기(고정 목록에서 어휘 맞히기)를 버린 이유: 추리가 아니라 어휘 게임이 된다 (ADR 022 버린 대안).
+   */
+  const extraRng = makeRng(seed ^ 0x3c6ef372)
+  const ages = SUSPECTS.map(() => randInt(extraRng, 28, 62))
+  const motiveDeck = shuffle(extraRng, MOTIVES)
+
   const suspects = {} as Record<SuspectId, Suspect>
   SUSPECTS.forEach((s, i) => {
     const truth = s === culprit ? culpritTruth(rng) : innocentTruth(rng, anchorOf[s]!)
     suspects[s] = {
       id: s,
       name: pickName(),
+      age: ages[i]!,
       job: roles[i]!.job,
       relation: roles[i]!.relation,
+      motive: motiveDeck[i]!,
       personaId: chosenPersonas[i]!,
       isCulprit: s === culprit,
       truth,
@@ -210,6 +224,8 @@ export function generateCase(seed: number): CaseFile {
   // 이후 모든 추첨이 밀리고 **기존 사건이 전부 다른 사건이 된다** — 사전 검증 시드 풀 400개도,
   // 데모 시드 36의 대본도 한꺼번에 무효가 된다. 파생 시드로 그 파급을 끊는다.
   const method = pick(makeRng(seed ^ 0x5bf03d1a), METHODS)
+  // 살인 도구도 같은 이유로 파생 스트림 — 주 스트림을 건드리면 기존 사건이 전부 바뀐다.
+  const weapon = pick(makeRng(seed ^ 0x7f4a7c15), WEAPONS)
   const decisive: Evidence = {
     keyLabel: KEY_LABEL[method],
     id: evId(),
@@ -324,14 +340,35 @@ export function generateCase(seed: number): CaseFile {
   }))
   const unlocksRemapped = presentUnlocks.map((u) => ({ ...u, evidenceId: idMap.get(u.evidenceId)! }))
 
+  /**
+   * ⑥ 검시 소견 — 도구 축(ADR 022)의 단서. **셔플이 끝난 뒤에 붙인다.**
+   *   ⑤의 셔플에 넣으면 배열 길이가 달라져 난수 소비가 밀리고 기존 사건이 전부 다른 사건이 된다.
+   *   항상 목록 마지막인 것은 누설이 아니다 — 매 판 똑같이 존재하는 고정 절차 기록이라
+   *   위치가 무엇도 구별해 주지 않는다 (⑤가 막은 건 "생성 순서 = 정답 순서" 였다).
+   *   내용(도구 흔적)은 UI 가 WEAPON_TRACE[weapon] 로 그린다 — 여기엔 사실만 둔다.
+   */
+  remapped.push({
+    id: `E${remapped.length + 1}`,
+    kind: 'autopsy',
+    slot: CRIME_SLOT,
+    place: CRIME_PLACE,
+    subjects: [],          // 인물이 아니라 도구의 흔적을 확정한다
+    exhaustive: false,
+    decisive: false,
+    requires: [],          // 즉시 조회 가능 — 현장 예산 1회면 누구나 근거를 쥔다
+  })
+
   return {
     seed,
     title: pick(rng, CASE_TITLES),
     victim: pick(rng, VICTIMS),
     venue: pick(rng, VENUES),
     culprit,
-    motive: pick(rng, MOTIVES),
+    // 사건의 동기 = 범인의 사정. 주 스트림에서 따로 뽑던 것을 대체한다 —
+    // 그 pick 은 주 스트림의 마지막 소비였으므로 지워도 앞선 추첨은 밀리지 않는다.
+    motive: suspects[culprit].motive,
     method,
+    weapon,
     suspects,
     evidence: remapped,
     testimonies,

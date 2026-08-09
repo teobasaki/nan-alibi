@@ -19,7 +19,8 @@ export const CRIME_PLACE: PlaceId = 2
 /** 물증 1건 = "이 시각 이 장소에 이 인물들이 있었다"를 **확정**한다. 진술과 달리 거짓일 수 없다. */
 export interface Evidence {
   id: string
-  kind: 'keycard' | 'cctv' | 'call' | 'receipt'
+  /** 'autopsy'(검시 소견)는 인물이 아니라 **도구의 흔적**을 확정한다 — subjects 는 항상 빈다 (ADR 022) */
+  kind: 'keycard' | 'cctv' | 'call' | 'receipt' | 'autopsy'
   slot: Slot
   place: PlaceId
   /** 이 기록으로 위치가 확정되는 인물들 (CCTV는 여럿, 카드키는 1명) */
@@ -46,9 +47,17 @@ export interface Suspect {
   id: SuspectId
   /** 표시용 이름 */
   name: string
+  /** 나이 — 용의자 카드에 노출된다 (ADR 022 심문 화면) */
+  age: number
   job: string
   /** 피해자와의 관계 — 용의자 카드에 노출된다 */
   relation: string
+  /**
+   * 이 인물이 피해자와 얽힌 사정 — 다섯 명 전부 하나씩 갖고, **범인의 것이 사건의 동기다.**
+   * 동기 지목이 어휘 맞히기가 아니라 "누구의 사정이 살인까지 갔는가" 가 되게 하는 장치 (ADR 022).
+   * 심문에서 관계를 캐면 드러난다 — 지목 시트에는 이름 없이 사정 문구만 나열된다.
+   */
+  motive: string
   /** 배정된 페르소나 id (data/personas.ts). 클라이언트가 바꿀 수 없다 — 사건이 소유한다. */
   personaId: string
   isCulprit: boolean
@@ -90,8 +99,12 @@ export interface CaseFile {
   victim: { name: string; title: string }
   venue: { name: string; room: string }
   culprit: SuspectId
+  /** 사건의 동기 = 범인의 motive. 지목 시트의 정답 축 */
   motive: string
+  /** 카드키 발급 구분 축 — 채점 축에서는 빠졌지만 잠긴 기록·재현영상이 쓴다 (ADR 022 §1) */
   method: string
+  /** 살인 도구 — 검시 소견(WEAPON_TRACE)이 단서다. 지목 시트의 정답 축 */
+  weapon: string
   suspects: Record<SuspectId, Suspect>
   evidence: Evidence[]
   testimonies: Testimony[]

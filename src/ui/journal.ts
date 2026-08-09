@@ -41,7 +41,7 @@ export interface JournalLine {
 const evLabel = (c: CaseFile, id: string): string => {
   const e = c.evidence.find((x) => x.id === id)
   if (!e) return id
-  const kind = { keycard: '카드키', cctv: 'CCTV', call: '통화', receipt: '영수증' }[e.kind] ?? e.kind
+  const kind = { keycard: '카드키', cctv: 'CCTV', call: '통화', receipt: '영수증', autopsy: '검시' }[e.kind] ?? e.kind
   return `${kind} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`
 }
 
@@ -75,7 +75,7 @@ export function journalLines(
           spent: !e.fallback,
           who: e.who,
           text: e.fallback
-            ? `${name(c, e.who)}에게 물었으나 답을 받지 못했다. 조사 횟수를 돌려받았다.`
+            ? `${name(c, e.who)}에게 물었으나 답을 받지 못했다. 대화 횟수를 돌려받았다.`
             : `${name(c, e.who)}을 심문했다.`,
           note: e.fallback ? undefined : statements[e.who]?.[n],
         })

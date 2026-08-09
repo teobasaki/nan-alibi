@@ -91,6 +91,9 @@ export function pendingPairs(g: GameState): PendingPair[] {
 
   for (const e of g.case.evidence) {
     if (!held.has(e.id)) continue
+    // 검시 소견은 인물 위치를 확정하지 않는다 (subjects 없음 · exhaustive 아님) —
+    // 어떤 진술과도 모순이 성립할 수 없으므로 장부에 올리면 그 줄 전부가 소음이다.
+    if (e.kind === 'autopsy') continue
     for (const s of SUSPECTS) {
       const cid = claimCardId(s, e.slot)
       if (!held.has(cid)) continue

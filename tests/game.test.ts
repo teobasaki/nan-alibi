@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { generateValidCase } from '../src/engine/validate'
 import {
   createGame,
+  fieldDone,
   lookupEvidence,
   interview,
   presentEvidence,
@@ -10,16 +11,28 @@ import {
   submit,
   claimCardId,
   availableEvidence,
+  talksLeft,
   type GameState,
 } from '../src/engine/game'
-import { INVESTIGATION_BUDGET } from '../src/data/config'
+import { FIELD_BUDGET, TALK_CAP, WEAPONS, WEAPON_TRACE } from '../src/data/config'
 import { CRIME_SLOT, SUSPECTS } from '../src/types'
 
 const fresh = (seed = 5001): GameState => createGame(generateValidCase(seed).case)
 
-describe('조사 예산 (Task 6 — 완료기준 B1·B2)', () => {
-  it('시작 시 조사 횟수는 6이다', () => {
-    expect(fresh().investigationsLeft).toBe(INVESTIGATION_BUDGET)
+/** 현장 챕터를 끝까지 민 상태 — 예산 소진 또는 조회할 기록 고갈 (fieldDone 의 두 조건) */
+const fieldExhausted = (seed = 5001): GameState => {
+  let g = fresh(seed)
+  while (g.investigationsLeft > 0) {
+    const ev = availableEvidence(g)[0]
+    if (!ev) break   // 즉시 조회 가능한 기록이 4건뿐인 시드가 있다 — 그래도 챕터는 끝난다
+    g = lookupEvidence(g, ev.id)
+  }
+  return g
+}
+
+describe('현장 조사 예산 (ADR 022 — 챕터 1장)', () => {
+  it('시작 시 현장 조사 횟수는 FIELD_BUDGET(5)이다', () => {
+    expect(fresh().investigationsLeft).toBe(FIELD_BUDGET)
   })
 
   it('기본 진술 카드는 시작부터 5장 보유한다 (무료 정보)', () => {
@@ -27,21 +40,13 @@ describe('조사 예산 (Task 6 — 완료기준 B1·B2)', () => {
     for (const s of SUSPECTS) expect(g.cards).toContain(claimCardId(s, CRIME_SLOT))
   })
 
-  it('기록 조회는 조사 1회를 소모하고 카드를 준다', () => {
+  it('기록 조회는 현장 조사 1회를 소모하고 카드를 준다', () => {
     const g = fresh()
     const ev = availableEvidence(g)[0]!
     const g2 = lookupEvidence(g, ev.id)
-    expect(g2.investigationsLeft).toBe(INVESTIGATION_BUDGET - 1)
+    expect(g2.investigationsLeft).toBe(FIELD_BUDGET - 1)
     expect(g2.cards).toContain(ev.id)
-    expect(g.investigationsLeft).toBe(INVESTIGATION_BUDGET) // 원본 불변
-  })
-
-  it('심문은 조사 1회를 소모하고 그 인물의 진술 궤적을 연다', () => {
-    const g = fresh()
-    const s = SUSPECTS.find((x) => !g.case.suspects[x].isCulprit)!
-    const g2 = interview(g, s)
-    expect(g2.investigationsLeft).toBe(INVESTIGATION_BUDGET - 1)
-    expect(g2.cards.filter((c) => c.startsWith(`C:${s}:`)).length).toBe(5)
+    expect(g.investigationsLeft).toBe(FIELD_BUDGET) // 원본 불변
   })
 
   it('선행 조건이 안 열린 증거는 조회 목록에 안 나온다', () => {
@@ -51,25 +56,69 @@ describe('조사 예산 (Task 6 — 완료기준 B1·B2)', () => {
     for (const e of locked) expect(ids).not.toContain(e.id)
   })
 
-  it('예산을 다 쓰면 더 이상 조사할 수 없다 (B1)', () => {
-    let g = fresh()
-    for (let i = 0; i < INVESTIGATION_BUDGET; i++) {
-      const ev = availableEvidence(g)[0]
-      g = ev ? lookupEvidence(g, ev.id) : interview(g, SUSPECTS[i % 5]!)
+  it('★ 현장 챕터를 끝까지 밀면 fieldDone 이다 (챕터 게이트 전이)', () => {
+    const g = fieldExhausted()
+    expect(fieldDone(g)).toBe(true)
+    // phase 는 'investigate' 를 유지한다 — 챕터는 예산에서 파생되는 것이지 별도 상태가 아니다
+    expect(g.phase).toBe('investigate')
+    if (g.investigationsLeft <= 0) {
+      const free = g.case.evidence.find((e) => !g.cards.includes(e.id) && e.requires.length === 0)
+      if (free) expect(() => lookupEvidence(g, free.id)).toThrow()
     }
-    expect(g.investigationsLeft).toBe(0)
-    expect(g.phase).toBe('submit')
-    expect(() => lookupEvidence(g, g.case.evidence[0]!.id)).toThrow()
-    expect(() => interview(g, 'S1')).toThrow()
   })
 
-  it('카드 연결은 조사 횟수를 소모하지 않는다 (B2)', () => {
+  it('★ 조회할 기록이 바닥나면 예산이 남아도 챕터는 끝난다 — 게이트가 영영 안 열리는 시드 방지', () => {
+    const base = fresh()
+    // 즉시 조회 가능한 기록을 전부 손에 쥔 상태를 만든다 (예산은 그대로)
+    const freeIds = base.case.evidence.filter((e) => e.requires.length === 0).map((e) => e.id)
+    const g = { ...base, cards: [...base.cards, ...freeIds] }
+    expect(g.investigationsLeft).toBeGreaterThan(0)
+    expect(fieldDone(g)).toBe(true)
+  })
+
+  /**
+   * ★ 통찰 보너스의 생존 조건. 잠긴 기록의 선행 조건(자백·증언)은 전부 심문 챕터에서
+   * 모이는데, 심문 챕터는 정의상 현장 예산 0 에서 시작한다. 소진 후 해금 기록 조회가
+   * 무료가 아니면 결정적 증거는 **구조적으로 영원히 못 연다.**
+   */
+  it('★ 예산 소진 후에도 해금 사슬로 열린 기록(requires>0)은 무료로 조회된다', () => {
+    // 검사 대상이 "예산 0 에서의 무료 경로" 그 자체이므로 예산 0 을 강제한다
+    let g: GameState = { ...fieldExhausted(5002), investigationsLeft: 0 }
+    // 사슬을 끝까지 민다: 필요한 증언은 심문으로, 자백은 제시로 연다
+    const unlock = g.case.presentUnlocks[0]!
+    const anchor = g.case.evidence.find((e) => e.id === unlock.evidenceId)!
+    const decisive = g.case.evidence.find((e) => e.decisive)!
+    const need = (id: string) => {
+      const owner = SUSPECTS.find((s) => g.case.suspects[s].testimonies.includes(id))
+      if (owner && !g.cards.includes(id)) g = interview(g, owner)
+    }
+    for (const req of anchor.requires) need(req)
+    if (!g.cards.includes(anchor.id)) {
+      // 앵커가 잠겨 있던 사슬('gate')이면 여기서 무료 조회가 성립해야 한다
+      if (anchor.requires.length > 0) {
+        g = lookupEvidence(g, anchor.id)
+        expect(g.investigationsLeft).toBe(0)   // 예산은 더 깎이지 않는다
+      } else {
+        // 앵커가 즉시 조회형('corrob'/'deep')인데 현장 챕터에서 놓쳤다면 다시 살 수 없다 —
+        // 그건 의도된 손실이므로 이 시드에서는 검사를 접는다
+        return
+      }
+    }
+    g = presentEvidence(g, anchor.id, unlock.suspectId)
+    for (const req of decisive.requires) need(req)
+    expect(availableEvidence(g).map((e) => e.id)).toContain(decisive.id)
+    g = lookupEvidence(g, decisive.id)
+    expect(g.cards).toContain(decisive.id)
+    expect(g.investigationsLeft).toBe(0)       // 무료 — 자물쇠를 여는 값은 대화로 이미 치렀다
+  })
+
+  it('카드 연결은 예산을 소모하지 않는다', () => {
     let g = fresh()
     const ids = g.cards
     for (let i = 0; i < 100; i++) {
       g = connect(g, ids[i % ids.length]!, ids[(i + 1) % ids.length]!).state
     }
-    expect(g.investigationsLeft).toBe(INVESTIGATION_BUDGET)
+    expect(g.investigationsLeft).toBe(FIELD_BUDGET)
   })
 
   it('같은 증거를 두 번 조회해도 예산이 두 번 깎이지 않는다', () => {
@@ -80,14 +129,58 @@ describe('조사 예산 (Task 6 — 완료기준 B1·B2)', () => {
   })
 })
 
+describe('대화 상한 (ADR 022 — 챕터 2장, 인당 TALK_CAP)', () => {
+  it('심문은 현장 예산이 아니라 대화 횟수를 소모한다', () => {
+    const g = fresh()
+    const s = SUSPECTS.find((x) => !g.case.suspects[x].isCulprit)!
+    const g2 = interview(g, s)
+    expect(g2.investigationsLeft).toBe(FIELD_BUDGET)  // 현장 지갑은 그대로
+    expect(g2.talks[s]).toBe(1)
+    expect(talksLeft(g2, s)).toBe(TALK_CAP - 1)
+    expect(g2.cards.filter((c) => c.startsWith(`C:${s}:`)).length).toBe(5)
+    expect(g.talks[s]).toBe(0) // 원본 불변
+  })
+
+  it('증거 제시도 대화 1회를 소모한다', () => {
+    let g = fresh(5003)
+    const ev = availableEvidence(g)[0]!
+    g = lookupEvidence(g, ev.id)
+    const after = presentEvidence(g, ev.id, 'S1')
+    expect(after.talks.S1).toBe(1)
+    expect(after.investigationsLeft).toBe(g.investigationsLeft)
+  })
+
+  it('★ 대화 10회를 소진하면 그 사람과는 심문도 제시도 던진다 (상한)', () => {
+    let g = fresh(5001)
+    const s = 'S2'
+    for (let i = 0; i < TALK_CAP; i++) g = interview(g, s)
+    expect(g.talks[s]).toBe(TALK_CAP)
+    expect(talksLeft(g, s)).toBe(0)
+    expect(() => interview(g, s)).toThrow(/대화/)
+    const ev = availableEvidence(g)[0]!
+    g = lookupEvidence(g, ev.id)
+    expect(() => presentEvidence(g, ev.id, s)).toThrow(/대화/)
+  })
+
+  it('★ 상한은 인당이다 — 한 사람을 소진해도 다른 사람과는 대화할 수 있다', () => {
+    let g = fresh(5001)
+    for (let i = 0; i < TALK_CAP; i++) g = interview(g, 'S3')
+    expect(() => interview(g, 'S4')).not.toThrow()
+  })
+
+  it('현장 예산이 남아 있어도 엔진은 심문을 막지 않는다 — 게이트는 UI 의 것이다', () => {
+    const g = fresh()
+    expect(g.investigationsLeft).toBeGreaterThan(0)
+    expect(() => interview(g, 'S1')).not.toThrow()
+  })
+})
+
 describe('해금 사슬 (Task 6)', () => {
   it('★ 결정적 증거는 범인 혼자로 열리지 않는다 — 목격자 증언이 반드시 낀다 (ADR 008)', () => {
     for (const seed of [5002, 5030, 5031, 5032]) {
       const g0 = fresh(seed)
       const decisive = g0.case.evidence.find((e) => e.decisive)!
       const witnessReqs = decisive.requires.filter((r) => r !== 'T-SLIP')
-      // 결정적 증거의 선행 조건에 **범인의 자백(T-SLIP) 외의 증언**이 최소 1개 있거나,
-      // 앵커 물증 자체가 목격자 증언 뒤에 잠겨 있어야 한다
       const anchor = g0.case.evidence.find((e) => e.id === g0.case.presentUnlocks[0]!.evidenceId)!
       expect(witnessReqs.length + anchor.requires.length, `seed ${seed}`).toBeGreaterThan(0)
     }
@@ -120,7 +213,7 @@ describe('해금 사슬 (Task 6)', () => {
     g = lookupEvidence(g, ev.id)
     const notCulprit = SUSPECTS.find((s) => !g.case.presentUnlocks.some((u) => u.suspectId === s))!
     const after = presentEvidence(g, ev.id, notCulprit)   // 던지지 않는다
-    expect(after.investigationsLeft).toBe(g.investigationsLeft - 1)   // 예산은 소모된다
+    expect(after.talks[notCulprit]).toBe(g.talks[notCulprit] + 1)   // 대화는 소모된다
     expect(after.cards.length).toBe(g.cards.length)                  // 얻는 것은 없다
     expect(after.pressure[notCulprit]).toBeGreaterThan(g.pressure[notCulprit])
   })
@@ -168,83 +261,111 @@ describe('모순 판정 (Task 7 — 완료기준 B3)', () => {
     const g = fresh(5007)
     expect(() => connect(g, 'E-없음', claimCardId('S1', CRIME_SLOT))).toThrow()
   })
+
+  it('검시 소견은 어떤 진술과도 모순이 성립하지 않는다 — 인물이 아니라 도구의 기록이다', () => {
+    let g = fresh(5012)
+    const autopsy = g.case.evidence.find((e) => e.kind === 'autopsy')!
+    g = lookupEvidence(g, autopsy.id)
+    for (const s of SUSPECTS) {
+      const r = connect(g, autopsy.id, claimCardId(s, CRIME_SLOT))
+      expect(r.contradiction, s).toBe(false)
+      g = r.state
+    }
+  })
 })
 
-describe('최종 채점 (Task 7 — 완료기준 B4·B5)', () => {
-  it('전부 정답이면 만점 구성이다 (B4)', () => {
-    // 수단 20점은 **결정적 증거 카드를 쥔 사람만** 받는다 (ADR 014).
-    // 만점 제출은 그 카드를 확보한 플레이어를 뜻하므로, 여기서도 손에 쥐여 준다.
-    const base = fresh(5008)
+describe('최종 채점 — 3축: 범인·동기·도구 (ADR 022)', () => {
+  it('★ 3축이 전부 정답이고 결정적 증거까지 열었으면 100점이다', () => {
+    // 통찰 +10 은 결정적 증거 카드를 실제로 연 판의 보너스다. 현장 예산을 다 쓴
+    // 정상 흐름(게이트 통과)에서는 efficiency 0 이므로 만점 구성은 60+15+15+10 = 100.
+    // 예산 0 은 상태 수술로 만든다 — 시드에 따라 조회 가능한 기록이 5건 미만일 수 있어서다.
+    const raw = fresh(5008)
+    const base = { ...raw, investigationsLeft: 0 }
     const g = { ...base, cards: [...base.cards, base.case.decisiveEvidenceId] }
     const r = submit(g, {
       culprit: g.case.culprit,
-      method: g.case.method,
-      decisiveEvidenceId: g.case.decisiveEvidenceId,
+      motive: g.case.motive,
+      weapon: g.case.weapon,
     })
-    expect(r.correct.culprit).toBe(true)
-    expect(r.correct.method).toBe(true)
-    expect(r.correct.decisive).toBe(true)
+    expect(r.correct).toEqual({ culprit: true, motive: true, weapon: true })
     expect(r.breakdown.culprit).toBe(60)
-    expect(r.breakdown.method).toBe(20)
-    expect(r.breakdown.decisive).toBe(20)
+    expect(r.breakdown.motive).toBe(15)
+    expect(r.breakdown.weapon).toBe(15)
+    expect(r.breakdown.insight).toBe(10)
+    expect(r.breakdown.efficiency).toBe(0)
+    expect(r.total).toBe(100)
   })
 
-  it('범인만 맞히면 부분 점수다 (B4)', () => {
-    const g = fresh(5009)
-    const r = submit(g, { culprit: g.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음' })
-    // 조사 0회 시점이므로 기록으로 좁혀진 게 없다 → 찍어서 맞힌 것이다
-    expect(r.candidatesLeft).toBeGreaterThan(3)
-    expect(r.breakdown.culprit).toBe(40)
-    expect(r.breakdown.method).toBe(0)
-    expect(r.breakdown.decisive).toBe(0)
-    expect(r.total).toBeLessThan(100 + INVESTIGATION_BUDGET * 5)
+  it('범인만 맞히면 부분 점수다', () => {
+    const g = { ...fresh(5009), investigationsLeft: 0 }
+    const r = submit(g, { culprit: g.case.culprit, motive: '틀린 동기', weapon: '틀린 도구' })
+    expect(r.breakdown.culprit).toBe(60)
+    expect(r.breakdown.motive).toBe(0)
+    expect(r.breakdown.weapon).toBe(0)
+    expect(r.total).toBe(60)
   })
 
-  /**
-   * ★ 찍어 맞힌 것과 좁혀서 맞힌 것은 점수가 다르다.
-   * 수단에는 "근거 없이 맞히면 0점" 을 적용해 놓고 범인에는 적용하지 않아
-   * 스스로와 모순이었다 (자동 리뷰가 세 판 연속 지적).
-   */
-  it('★ 기록으로 한 사람까지 좁혀야 범인 60점이다', () => {
+  it('동기·도구만 맞히면 범인 없이도 그 몫은 받는다 — 축이 독립이다', () => {
+    const g = fresh(5013)
+    const wrong = SUSPECTS.find((s) => s !== g.case.culprit)!
+    const r = submit(g, { culprit: wrong, motive: g.case.motive, weapon: g.case.weapon })
+    expect(r.breakdown.culprit).toBe(0)
+    expect(r.breakdown.motive).toBe(15)
+    expect(r.breakdown.weapon).toBe(15)
+  })
+
+  it('★ 통찰 보너스는 잠긴 카드키 기록(결정적 증거)을 연 사람만 받는다', () => {
     const base = fresh(5008)
-    const guessed = submit(base, {
-      culprit: base.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음',
-    })
-    expect(guessed.breakdown.culprit).toBe(40)   // 조사 0회 → 후보 5명
-
-    // 결정적 증거는 범행 시각 현장에 범인을 못박는다 → 후보가 1명으로 확정된다
-    const narrowed = submit(
+    const without = submit(base, { culprit: base.case.culprit, motive: 'x', weapon: 'y' })
+    expect(without.breakdown.insight).toBe(0)
+    const withCard = submit(
       { ...base, cards: [...base.cards, base.case.decisiveEvidenceId] },
-      { culprit: base.case.culprit, method: '틀린 수단', decisiveEvidenceId: 'E-없음' },
+      { culprit: base.case.culprit, motive: 'x', weapon: 'y' },
     )
-    expect(narrowed.candidatesLeft).toBe(1)
-    expect(narrowed.breakdown.culprit).toBe(60)
+    expect(withCard.breakdown.insight).toBe(10)
   })
 
-  it('남은 조사 1회당 +5점이 반영된다 (B5)', () => {
+  it('남은 현장 조사 1회당 +2점이 반영된다 — 조사를 아끼고 확신으로 제출한 판의 웃돈', () => {
     const g = fresh(5010)
-    const full = submit(g, { culprit: g.case.culprit, method: g.case.method, decisiveEvidenceId: g.case.decisiveEvidenceId })
+    const full = submit(g, { culprit: g.case.culprit, motive: g.case.motive, weapon: g.case.weapon })
     const spent = submit(lookupEvidence(g, availableEvidence(g)[0]!.id), {
-      culprit: g.case.culprit, method: g.case.method, decisiveEvidenceId: g.case.decisiveEvidenceId,
+      culprit: g.case.culprit, motive: g.case.motive, weapon: g.case.weapon,
     })
-    expect(full.breakdown.efficiency).toBe(INVESTIGATION_BUDGET * 5)
-    expect(full.total - spent.total).toBe(5)
+    expect(full.breakdown.efficiency).toBe(FIELD_BUDGET * 2)
+    expect(full.total - spent.total).toBe(2)
   })
 
   it('제출 후에는 상태가 결과 단계로 잠긴다', () => {
     const g = fresh(5011)
-    const r = submit(g, { culprit: 'S1', method: 'x', decisiveEvidenceId: 'y' })
+    const r = submit(g, { culprit: 'S1', motive: 'x', weapon: 'y' })
     expect(r.state.phase).toBe('result')
-    expect(() => submit(r.state, { culprit: 'S2', method: 'x', decisiveEvidenceId: 'y' })).toThrow()
+    expect(() => submit(r.state, { culprit: 'S2', motive: 'x', weapon: 'y' })).toThrow()
+    expect(() => interview(r.state, 'S1')).toThrow()
+    expect(() => lookupEvidence(r.state, r.state.case.evidence[0]!.id)).toThrow()
   })
 
   it('정답 제출이면 실제 범인과 일치한다 — 사건 진실과 채점이 어긋나지 않는다', () => {
     for (const seed of [5020, 5021, 5022]) {
       const g = fresh(seed)
       for (const s of SUSPECTS) {
-        const r = submit(g, { culprit: s, method: g.case.method, decisiveEvidenceId: g.case.decisiveEvidenceId })
+        const r = submit(g, { culprit: s, motive: g.case.motive, weapon: g.case.weapon })
         expect(r.correct.culprit).toBe(s === g.case.culprit)
       }
+    }
+  })
+
+  it('동기 정답은 범인의 사정과 같다 — 두 진실이 어긋나면 채점이 거짓말이 된다', () => {
+    for (const seed of [5020, 5021, 5022]) {
+      const c = generateValidCase(seed).case
+      expect(c.motive).toBe(c.suspects[c.culprit].motive)
+    }
+  })
+
+  it('도구 정답은 WEAPONS 목록과 검시 흔적 표 안에 있다', () => {
+    for (const seed of [5020, 5021, 5022]) {
+      const c = generateValidCase(seed).case
+      expect(WEAPONS).toContain(c.weapon)
+      expect(WEAPON_TRACE[c.weapon]).toBeTruthy()
     }
   })
 })
@@ -278,7 +399,7 @@ describe('부재 모순 — "그 구역 기록에 저 사람이 없다" (플레�
 
   it('영수증·카드키에 없는 것은 모순이 아니다 — 결제/출입을 안 했을 뿐일 수 있다', () => {
     let g = fresh(6002)
-    const receipt = g.case.evidence.find((e) => !e.exhaustive && !e.decisive)
+    const receipt = g.case.evidence.find((e) => !e.exhaustive && !e.decisive && e.kind !== 'autopsy')
     if (!receipt) return
     const other = SUSPECTS.find((s) => !receipt.subjects.includes(s))!
     g = { ...g, cards: [...g.cards, receipt.id], case: {
@@ -297,7 +418,8 @@ describe('부재 모순 — "그 구역 기록에 저 사람이 없다" (플레�
   it('범행 시각 알리바이 기록은 전부 구역 촬영이다 (부재 추리가 성립하도록)', () => {
     for (const seed of [6010, 6011, 6012]) {
       const c = generateValidCase(seed).case
-      for (const e of c.evidence.filter((x) => x.slot === CRIME_SLOT && !x.decisive)) {
+      // 검시 소견은 알리바이 기록이 아니다 — 인물을 담지 않으므로 부재 추리 대상이 아니다
+      for (const e of c.evidence.filter((x) => x.slot === CRIME_SLOT && !x.decisive && x.kind !== 'autopsy')) {
         expect(e.exhaustive, `${seed}/${e.id}`).toBe(true)
       }
     }
@@ -337,8 +459,8 @@ describe('폴백은 범인을 알려주지 않는다 (정답 유출 회귀)', ()
   })
 
   /**
-   * 핵심. 폴백이면 조사를 환불하는데, 해금 여부까지 알려주면
-   * **조사 0회로 범인을 특정할 수 있다.** 로컬 dev 는 Function 이 없어 항상 이 경로다.
+   * 핵심. 폴백이면 대화를 환불하는데, 해금 여부까지 알려주면
+   * **대화 0회로 범인을 특정할 수 있다.** 로컬 dev 는 Function 이 없어 항상 이 경로다.
    */
   it('폴백이면 범인에게 제시해도 열렸다고 말하지 않는다', () => {
     const g = lookupEvidence(createGame(C, 99), unlock.evidenceId)

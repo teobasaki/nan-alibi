@@ -90,12 +90,65 @@ describe('사건 생성기 (Task 3)', () => {
     }
   })
 
-  it('물증 개수가 기획서 범위(5~7 + 잡음)에 있다', () => {
+  it('물증 개수가 기획서 범위(5~7 + 잡음 + 검시)에 있다', () => {
     for (const seed of [23, 230, 2300]) {
       const c = generateCase(seed)
-      expect(c.evidence.length).toBeGreaterThanOrEqual(5)
-      expect(c.evidence.length).toBeLessThanOrEqual(9)
+      // 상한 9 → 10 (2026-08-10): ADR 022 가 검시 소견 1건을 고정 추가했다
+      expect(c.evidence.length).toBeGreaterThanOrEqual(6)
+      expect(c.evidence.length).toBeLessThanOrEqual(10)
     }
+  })
+})
+
+describe('3축 추론 재료 — 도구·동기·나이 (ADR 022)', () => {
+  it('검시 소견이 정확히 1건, 범행 시각·현장에, 즉시 조회 가능하게 존재한다', async () => {
+    const { CRIME_SLOT: SLOT, CRIME_PLACE: PLACE } = await import('../src/types')
+    for (const seed of [7001, 7002, 7003]) {
+      const c = generateCase(seed)
+      const autopsy = c.evidence.filter((e) => e.kind === 'autopsy')
+      expect(autopsy).toHaveLength(1)
+      const a = autopsy[0]!
+      expect(a.slot).toBe(SLOT)
+      expect(a.place).toBe(PLACE)
+      expect(a.subjects).toEqual([])      // 인물이 아니라 도구의 기록이다
+      expect(a.exhaustive).toBe(false)    // 부재 모순의 근거가 되면 안 된다
+      expect(a.decisive).toBe(false)
+      expect(a.requires).toEqual([])
+    }
+  })
+
+  it('도구는 WEAPONS 5종 중 하나이고 검시 흔적 표가 1:1 로 덮는다', async () => {
+    const { WEAPONS, WEAPON_TRACE } = await import('../src/data/config')
+    for (const seed of [7010, 7011, 7012, 7013]) {
+      const c = generateCase(seed)
+      expect(WEAPONS).toContain(c.weapon)
+    }
+    // 1:1 — 표가 도구를 전부 덮고, 서술이 겹치면 판독이 갈라지지 않는다
+    const traces = WEAPONS.map((w) => WEAPON_TRACE[w])
+    expect(traces.every(Boolean)).toBe(true)
+    expect(new Set(traces).size).toBe(WEAPONS.length)
+  })
+
+  it('용의자 다섯 명 전부 나이(28~62)와 서로 다른 사정을 갖고, 범인의 사정이 사건의 동기다', () => {
+    for (const seed of [7020, 7021, 7022]) {
+      const c = generateCase(seed)
+      const motives = SUSPECTS.map((s) => c.suspects[s].motive)
+      expect(new Set(motives).size).toBe(5)           // 동기 지목이 성립하려면 겹치면 안 된다
+      expect(c.motive).toBe(c.suspects[c.culprit].motive)
+      for (const s of SUSPECTS) {
+        expect(c.suspects[s].age).toBeGreaterThanOrEqual(28)
+        expect(c.suspects[s].age).toBeLessThanOrEqual(62)
+      }
+    }
+  })
+
+  /**
+   * ★ 결정론 회귀 감시 — 새 축(도구·나이·동기)은 전부 파생 스트림에서 뽑는다.
+   * 주 스트림을 건드리면 사전 검증 시드 풀 400개가 통째로 무효가 된다 (caseGen 주석).
+   * 이 검사는 그 사고가 나면 "같은 시드 = 같은 사건" 이 깨지는 것으로 드러나게 한다.
+   */
+  it('★ 새 축이 추가돼도 같은 시드는 같은 사건이다', () => {
+    expect(JSON.stringify(generateCase(9101))).toEqual(JSON.stringify(generateCase(9101)))
   })
 })
 
