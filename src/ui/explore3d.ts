@@ -56,6 +56,10 @@ export interface Seat {
   label: string
   /** 이미 심문했는가 — 표시가 달라진다 */
   done: boolean
+  /** 이 사람에게서 찾아낸 모순 수. **판단 근거가 화면에 있어야 걷기가 선택이 된다.** */
+  stamps: number
+  /** 기록으로 소거됐는가 — 소거된 사람은 자리에서 일어나 나간다 */
+  cleared: boolean
 }
 
 export interface ExploreHandlers {
@@ -128,6 +132,25 @@ const CEILING_HIDE = true
 const SEAT_HEIGHT = 2.6
 /** 걸어 다니는 나. 앉은 사람보다 조금 커야 눈이 따라간다. */
 const ACTOR_HEIGHT = 3.0
+
+/**
+ * 반경 안에서 **가장 가까운** 것을 고른다. 순수 함수로 떼어낸 이유는
+ * 이 판정이 틀리면 조사 1회를 오발로 잃기 때문이다 — 3D 씬은 테스트가 못 닿으므로
+ * 판정만이라도 게이트가 보게 한다.
+ */
+export function nearestWithin<T extends { id: string; at: [number, number] }>(
+  items: readonly T[], x: number, z: number, radius: number,
+): string | null {
+  let best = radius * radius
+  let hit: string | null = null
+  for (const it of items) {
+    const dx = x - it.at[0]
+    const dz = z - it.at[1]
+    const d = dx * dx + dz * dz
+    if (d < best) { best = d; hit = it.id }
+  }
+  return hit
+}
 
 export async function mountExplore(
   host: HTMLElement,
@@ -269,10 +292,46 @@ export async function mountExplore(
     /** 같은 모델을 두 번 받지 않는다 — 다섯 명이 같은 직업이면 한 번만 받는다 */
     const seatCache = new Map<string, THREE.Object3D>()
 
+    /** 인물 위에 뜨는 이름표 — 캔버스로 그려 스프라이트로 붙인다 (웹폰트 0) */
+    const makeLabel = (st: Seat): THREE.Sprite => {
+      const c = document.createElement('canvas')
+      c.width = 512; c.height = 128
+      const g = c.getContext('2d')!
+      g.fillStyle = 'rgba(13,9,8,.82)'
+      g.roundRect?.(6, 22, 500, 84, 14); g.fill()
+      g.strokeStyle = st.done ? '#4f9b6e' : '#c8912f'
+      g.lineWidth = 3; g.stroke()
+      g.textAlign = 'center'
+      g.fillStyle = '#e9e1d3'
+      g.font = 'bold 40px "Apple SD Gothic Neo", sans-serif'
+      g.fillText(st.label.split(' · ')[0] ?? '', 256, 62)
+      g.fillStyle = st.stamps > 0 ? '#b3372c' : '#9a8b80'
+      g.font = '26px "Apple SD Gothic Neo", sans-serif'
+      const sub = st.cleared ? '기록으로 소거됨'
+        : st.stamps > 0 ? `모순 ${st.stamps}건`
+        : (st.label.split(' · ')[1] ?? '')
+      g.fillText(sub, 256, 96)
+
+      const tex = new THREE.CanvasTexture(c)
+      tex.colorSpace = THREE.SRGBColorSpace
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }))
+      sp.scale.set(4.4, 1.1, 1)
+      sp.position.set(st.at[0], SEAT_HEIGHT + 1.0, st.at[1])
+      sp.renderOrder = 10
+      return sp
+    }
+
     const setSeats = async (list: Seat[]): Promise<void> => {
       seats = list
       seatRoot.clear()
       for (const st of list) {
+        /**
+         * **소거된 사람은 자리에 없다.**
+         * 기록이 그를 지웠으면 경찰서에 붙잡아 둘 이유가 없다 — 집에 갔다.
+         * 방이 비어갈수록 남은 후보가 조여드는 게 **몸으로** 보인다.
+         * 클릭 목록으로는 줄 수 없는 정보이고, 새 에셋이 0개다.
+         */
+        if (st.cleared) continue
         const url = SEAT_BY_SLUG.get(st.slug)
         if (!url) continue
         let proto = seatCache.get(st.slug)
@@ -306,6 +365,14 @@ export async function mountExplore(
         o.rotation.y = Math.atan2(-st.at[0], -st.at[1])   // 방 가운데를 본다
         o.userData.seatId = st.id
         seatRoot.add(o)
+
+        /**
+         * **이름표.** 이게 없으면 대기실에서 보이는 건 익명의 실루엣 다섯이고,
+         * 그러면 격자에서 이름을 눌러 들어가는 기존 경로가 모든 면에서 낫다 —
+         * 빠르고, 그 사람의 모순 인장을 보면서 고를 수 있다.
+         * 걸어가는 몇 초가 판단 시간이 되려면 **걸어가는 동안 그 사람을 알아야** 한다.
+         */
+        seatRoot.add(makeLabel(st))
 
         // 발치 표식 — 이미 심문한 사람은 초록, 아직이면 놋쇠
         const ring = new THREE.Mesh(
@@ -425,23 +492,18 @@ export async function mountExplore(
       }
 
       // **닿았다고 줍지 않는다.** 어느 것에 닿았는지만 알리고, 집는 건 사람이 정한다.
-      let nowNear: string | null = null
-      for (const m of markers) {
-        const dx = actor.position.x - m.at[0]
-        const dz = actor.position.z - m.at[1]
-        if (dx * dx + dz * dz < PICK_RADIUS * PICK_RADIUS) { nowNear = m.id; break }
-      }
+      /**
+       * **가장 가까운 것을 고른다.** 처음엔 반경 안 첫 번째에서 `break` 했는데,
+       * 그건 배열 순서가 이기는 것이지 거리가 이기는 게 아니다. 표식이 겹치는 자리에서
+       * 엉뚱한 것이 잡히고, 이 게임에서 그건 **조사 1회를 오발로 잃는다**는 뜻이다.
+       */
+      const nowNear = nearestWithin(markers, actor.position.x, actor.position.z, PICK_RADIUS)
       if (nowNear !== near) {
         near = nowNear
         handlers.onNear(near)
       }
 
-      let nowSeat: string | null = null
-      for (const st of seats) {
-        const dx = actor.position.x - st.at[0]
-        const dz = actor.position.z - st.at[1]
-        if (dx * dx + dz * dz < PICK_RADIUS * PICK_RADIUS) { nowSeat = st.id; break }
-      }
+      const nowSeat = nearestWithin(seats, actor.position.x, actor.position.z, PICK_RADIUS)
       if (nowSeat !== nearSeat) {
         nearSeat = nowSeat
         handlers.onNearSeat(nearSeat)

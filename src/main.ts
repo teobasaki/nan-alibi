@@ -322,6 +322,8 @@ const SEAT_AT: readonly [number, number][] = [
 
 /** 경찰서에 앉아 있는 다섯 사람 */
 function exploreSeats(): Seat[] {
+  // **규칙은 engine 이 소유한다.** 누가 소거됐는지는 화면이 계산하지 않는다.
+  const cands = candidatesFrom(CASE, new Set(ui.game.cards))
   return SUSPECTS.map((s, i) => ({
     id: s,
     slug: SLUG_BY_JOB[CASE.suspects[s].job] ?? 'security',
@@ -329,6 +331,9 @@ function exploreSeats(): Seat[] {
     label: `${CASE.suspects[s].name} · ${CASE.suspects[s].job}`,
     // 이미 말을 걸어본 사람인가 — 발치 표식 색이 갈린다
     done: (ui.chats[s]?.length ?? 0) > 0,
+    // 이 사람에게서 찾아낸 모순 수 — 이름표에 뜬다
+    stamps: ui.game.foundContradictions.filter((k) => k.split('|')[1] === s).length,
+    cleared: !cands.includes(s),
   }))
 }
 
@@ -381,7 +386,9 @@ function exploreRoom(): HTMLElement {
 
   // 씬은 한 번만 만든다. 재렌더마다 새로 만들면 WebGL 컨텍스트가 쌓인다.
   if (ui.explore && !ui.explore.handle) {
-    const slug = SLUG_BY_JOB[CASE.suspects[SUSPECTS[0]!].job] ?? 'security'
+    // 내가 조종하는 형사의 몸. 걷기 모델이 있는 것 중 아무거나 — 없는 걸 고르면 씬이 안 뜬다.
+    const slug = SUSPECTS.map((s) => SLUG_BY_JOB[CASE.suspects[s].job] ?? '')
+      .find((x) => hasWalkModel(x)) ?? 'security'
     void mountExplore(host, slug, {
       onNear: (id) => {
         if (!ui.explore || ui.explore.near === id) return
@@ -580,8 +587,13 @@ function indexTabs(): HTMLElement {
 
   // 방으로 나간다 — 걷기 모델이 실린 배포에서만 보인다.
   // 없는 기능의 버튼을 두면 눌렀는데 아무 일도 안 일어나는 화면이 된다.
-  const anySlug = SLUG_BY_JOB[CASE.suspects[SUSPECTS[0]!].job] ?? 'security'
-  if (hasWalkModel(anySlug) && hasStation()) {
+  /**
+   * **첫 용의자 하나로 판단하면 안 된다.** 걷기 모델이 없는 직업(manager)이
+   * 0번으로 뽑히는 판에서는 경찰서 탭이 통째로 사라졌다 — 8종 중 1종이므로
+   * 시드의 일부에서 기능이 조용히 없어진다. 걸을 수 있는 사람이 하나라도 있으면 연다.
+   */
+  const walkable = SUSPECTS.some((s) => hasWalkModel(SLUG_BY_JOB[CASE.suspects[s].job] ?? ''))
+  if (walkable && hasStation()) {
     const go = h('button', 'nb-tab exgo') as HTMLButtonElement
     go.appendChild(h('span', 'nbt-l', '경찰서'))
     go.title = '경찰서를 걸어 다니며 사람을 만나고 기록을 줍는다'
