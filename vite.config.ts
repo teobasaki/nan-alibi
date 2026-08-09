@@ -30,7 +30,33 @@ function pagesFunctions(): Plugin {
   return {
     name: 'pages-functions-dev',
     configureServer(server: ViteDevServer) {
+      /**
+       * DEV 전용 에셋 반입구 — **브라우저 페이지가 파일을 직접 밀어 넣는다.**
+       * ChatGPT 세션에서 생성한 패널을 받을 때, 서명 URL 도 base64 도 대화 컨텍스트를
+       * 거치지 않고 페이지 → 이 서버로 바로 온다. 프로덕션 빌드에는 존재하지 않는다.
+       * 경로는 intro/·outro/ 아래 단순 파일명만 허용한다.
+       */
       server.middlewares.use(async (req, res, next) => {
+        const sv = /^\/__save\?name=((?:intro|outro)\/[a-z0-9_.-]+\.(?:webp|png|jpg))$/.exec(req.url ?? '')
+        if (sv && req.method === 'POST') {
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          const chunks: Buffer[] = []
+          for await (const c of req) chunks.push(c as Buffer)
+          const body = Buffer.concat(chunks).toString()
+          const b64 = body.replace(/^data:[^,]+,/, '')
+          const bin = Buffer.from(b64, 'base64')
+          if (bin.length < 10_000) { res.statusCode = 400; return res.end('too small') }
+          const { writeFileSync } = await import('node:fs')
+          writeFileSync(resolve(__dirname, 'public', sv[1]!), bin)
+          console.log(`[__save] public/${sv[1]} (${Math.round(bin.length / 1024)}KB)`)
+          return res.end('ok')
+        }
+        if (req.method === 'OPTIONS' && (req.url ?? '').startsWith('/__save')) {
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.setHeader('Access-Control-Allow-Methods', 'POST')
+          res.setHeader('Access-Control-Allow-Headers', '*')
+          return res.end()
+        }
         const m = /^\/api\/([a-z]+)/.exec(req.url ?? '')
         if (!m) return next()
         try {
