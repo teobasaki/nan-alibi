@@ -20,6 +20,7 @@ import { probeKey } from './ui/tts/supertone'
 import { FALLBACK_LABEL, onStage, setStage, stage as pipeStage, STAGE_LABEL } from './ui/pipeline'
 import { dashboard, probeProviders } from './ui/dashboard'
 import { playIntro } from './ui/intro'
+import { showJournal } from './ui/journal3d'
 import { playOutro } from './ui/outro'
 import { hasReenactment, playReenactment } from './ui/reenact'
 import type { Statement } from './engine/prompt'
@@ -1747,10 +1748,17 @@ function openBriefing(): void {
      * 정보가 멀어진다. 그래서 **첫 진입에 한 번만** 펼쳐지고 그 뒤로는 펼쳐진 채다.
      * 연출은 벌지 않고 은유만 완성한다.
      */
-    ui.opening = true
-    render()
-    play('paper')
-    setTimeout(() => { ui.opening = false; render() }, 900)
+    /**
+     * **물건을 먼저 보여주고 펼친다.** 3D 수첩이 한 박자 서고(1.1초),
+     * 그 다음 DOM 수첩이 펼쳐진다. 에셋이 없거나 모션을 끈 사람에게는
+     * `showJournal()` 이 즉시 resolve 하므로 예전과 똑같이 바로 펼쳐진다.
+     */
+    void showJournal().then(() => {
+      ui.opening = true
+      render()
+      play('paper')
+      setTimeout(() => { ui.opening = false; render() }, 900)
+    })
   }
   sheet.appendChild(go)
 

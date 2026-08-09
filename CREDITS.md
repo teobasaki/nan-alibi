@@ -22,7 +22,7 @@ NAN 2026 제출 규정에 따라 외부 에셋의 출처와 라이선스를 명�
 | 에셋 | 저장소 경로 | 원본 | 저작자 | 라이선스 |
 |---|---|---|---|---|
 | **취조실** | `public/room/room.opt.glb` | ["Interrogation Room"](https://sketchfab.com/3d-models/interrogation-room-56def55221f64eaebd1c05738269d81f) | **Jamie McFarlane** ([@jamiemcfarlane](https://sketchfab.com/jamiemcfarlane)) | **CC BY 4.0** |
-| **수첩 가죽·종이 텍스처** | `public/nb/leather.webp` · `public/nb/paper.webp` | ["A writer's journal"](https://sketchfab.com/3d-models/a-writers-journal-673dee6a48924080b1237f0f09eb4572) | **Valeria Gerontopoulos** ([@vgerontopoulos](https://sketchfab.com/vgerontopoulos)) | **CC BY 4.0** |
+| **수첩 (모델 + 가죽·종이 텍스처)** | `public/nb/journal.opt.glb` · `public/nb/leather.webp` · `public/nb/paper.webp` | ["A writer's journal"](https://sketchfab.com/3d-models/a-writers-journal-673dee6a48924080b1237f0f09eb4572) | **Valeria Gerontopoulos** ([@vgerontopoulos](https://sketchfab.com/vgerontopoulos)) | **CC BY 4.0** |
 
 > **"Interrogation Room"** by **Jamie McFarlane** is licensed under
 > [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). 원저작물을 변형해 사용했다.
@@ -33,12 +33,18 @@ NAN 2026 제출 규정에 따라 외부 에셋의 출처와 라이선스를 명�
 **취조실 변형 내역:** 블렌더 헤드리스로 좌표계를 실측 정규화하고, `gltf-transform` 으로
 Draco + WebP 압축했다(`scripts/`). 조명·재질은 런타임(`src/ui/stage3d.ts`)에서 다시 잡는다.
 
-**변형 내역 (CC BY 4.0 은 변형을 허용하되 표시를 권한다):**
-원본 GLB 에 내장된 baseColor 아틀라스에서 가죽 구역과 종이 구역을 잘라내
-거울 타일로 재구성하고 WebP 로 압축했다. **모델 메시는 배포하지 않고 텍스처만 쓴다.**
+**수첩 변형 내역 (CC BY 4.0 은 변형을 허용하되 표시를 권한다):**
+두 가지로 쓴다.
+1. **텍스처** — 원본 GLB 의 baseColor 아틀라스에서 가죽 구역과 종이 구역을 잘라내
+   거울 타일로 재구성하고 WebP 로 압축했다. DOM 수첩의 표면이다.
+2. **모델** — `gltf-transform optimize` 로 텍스처 1024·WebP, Draco 압축했다
+   (2.62MB → 308KB). 수사가 시작될 때 **1.1초 한 번** 화면에 선다
+   (`src/ui/journal3d.ts`). 조명은 런타임에서 다시 잡는다.
+
 상업 이용 허용 · 저작자 표기 필수 — 둘 다 충족한다.
 
 `stylized_journal_book.glb` 는 검토했으나 **채택하지 않았고 저장소에 포함하지 않는다.**
+(같은 닫힌 책이고 텍스처가 8MB 로 무거워, 펼쳐진 이 수첩이 은유에 더 맞았다.)
 
 CC-BY 계열이면 저작자 표기로 충족된다. NC(비상업)·ND(변경 금지) 조건이면
 **변형(리깅 수정·포즈·최적화)을 했으므로 재검토가 필요하다.**
