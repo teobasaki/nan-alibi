@@ -1037,3 +1037,47 @@ body::after {
 .expip.spent { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
 .expip-l { margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .nb-left.explore { position: relative; }
+
+/* ══ 만화 문법 — 인트로 (에셋 0) ═══════════════════════════════
+ * 지금까지는 정지 이미지 + 자막이라 "삽화" 로 읽혔다. 만화가 되려면 셋이 필요하다:
+ * ① 칸이 그려지듯 나타난다  ② 칸이 기운다  ③ 의성어가 그림 위에 박힌다
+ * 셋 다 새 그림 없이 CSS 로 된다 — 있는 5컷을 그대로 쓰면서 문법만 바꾼다.
+ */
+
+/* ① 잉크가 번지듯 채워진다 — 대각선 와이프. 위에서 아래로 붓이 지나간 것처럼. */
+.intro-frame.ink {
+  transform: rotate(var(--tilt, 0deg));
+  border: 3px solid #0d0908;
+  box-shadow: 0 0 0 1px rgba(233,225,211,.14), 0 14px 40px rgba(0,0,0,.7);
+  animation: inkWipe .62s cubic-bezier(.3,.8,.35,1) both;
+}
+@keyframes inkWipe {
+  from { clip-path: polygon(0 0, 0 0, -18% 100%, -18% 100%); }
+  to   { clip-path: polygon(0 0, 118% 0, 100% 100%, 0 100%); }
+}
+
+/* ③ 의성어 — 만화의 정체성이 여기 있다. 명조 + 인장 붉은색, 이미 있는 것들이다. */
+.intro-bam {
+  position: absolute; right: 6%; top: 16%;
+  font-family: var(--serif); font-size: clamp(38px, 8vw, 110px);
+  font-weight: 700; letter-spacing: -.04em; line-height: .9;
+  color: var(--ink);
+  -webkit-text-stroke: 3px #0d0908;
+  paint-order: stroke fill;
+  text-shadow: 5px 6px 0 var(--red), 0 0 26px rgba(0,0,0,.6);
+  transform: rotate(-7deg);
+  animation: bamPop .34s cubic-bezier(.2,1.6,.4,1) .42s backwards;
+  pointer-events: none;
+}
+@keyframes bamPop {
+  from { opacity: 0; transform: rotate(-7deg) scale(.35); }
+  to   { opacity: 1; transform: rotate(-7deg) scale(1); }
+}
+
+/* 이전 칸이 남아 겹친다 — 넘김이 아니라 포개짐이어야 만화로 읽힌다 */
+.intro-frame.ink.gone { transform: rotate(var(--tilt, 0deg)) scale(.965) translateY(-2%); }
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-frame.ink { animation: none; clip-path: none; }
+  .intro-bam { animation: none; }
+}

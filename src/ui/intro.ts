@@ -33,16 +33,26 @@ interface Panel {
   line: string
   /** 색면 폴백에 쓸 강조어 */
   key: string
+  /**
+   * 그림 위에 박히는 의성어. **만화의 정체성은 여기 있다.**
+   * 비용이 0인데(이미 있는 명조와 인장색을 쓴다) 화면의 장르를 바꾼다.
+   */
+  bam?: string
+  /** 칸이 기우는 각도(deg). 웹툰 칸은 반듯하지 않다. */
+  tilt?: number
 }
 
 function panels(c: CaseFile): Panel[] {
   const five = SUSPECTS.map((s) => c.suspects[s].job).join(' · ')
   return [
-    { key: '어젯밤', line: `어젯밤, ${c.venue.name}.` },
-    { key: SLOT_LABEL[CRIME_SLOT], line: `${SLOT_LABEL[CRIME_SLOT]}. 12층 복도의 불이 반쯤 나가 있었다.` },
-    { key: c.venue.room, line: `${c.venue.room}에서 ${c.victim.title} ${josa(c.victim.name, '이/가')} 숨진 채 발견됐다.` },
-    { key: '다섯', line: `호텔에 남아 있던 다섯 사람 — ${five}.` },
-    { key: '한 명', line: '다섯 모두 그 시간엔 다른 곳에 있었다고 말한다. 그중 한 명이 범인이다.' },
+    { key: '어젯밤', line: `어젯밤, ${c.venue.name}.`, tilt: -1.4 },
+    { key: SLOT_LABEL[CRIME_SLOT], line: `${SLOT_LABEL[CRIME_SLOT]}. 12층 복도의 불이 반쯤 나가 있었다.`,
+      bam: '치직', tilt: 1.1 },
+    { key: c.venue.room, line: `${c.venue.room}에서 ${c.victim.title} ${josa(c.victim.name, '이/가')} 숨진 채 발견됐다.`,
+      bam: '쿵', tilt: -0.9 },
+    { key: '다섯', line: `호텔에 남아 있던 다섯 사람 — ${five}.`, tilt: 1.5 },
+    { key: '한 명', line: '다섯 모두 그 시간엔 다른 곳에 있었다고 말한다. 그중 한 명이 범인이다.',
+      bam: '한 명', tilt: -0.6 },
   ]
 }
 
@@ -100,7 +110,9 @@ export function playIntro(c: CaseFile): Promise<void> {
       const p = list[i]!
 
       const frame = document.createElement('div')
-      frame.className = 'intro-frame'
+      frame.className = 'intro-frame ink'
+      // 칸이 반듯하면 삽화이고, 기울면 만화다. 각도는 패널마다 다르게 준다.
+      frame.style.setProperty('--tilt', `${p.tilt ?? 0}deg`)
       const url = PANEL_URL.get(String(i))
       if (url) {
         frame.style.backgroundImage = `url(${url})`
@@ -108,6 +120,13 @@ export function playIntro(c: CaseFile): Promise<void> {
         // 그림이 없으면 색면 + 큰 활자. 없다고 화면이 비지는 않는다.
         frame.classList.add('noimg')
         frame.textContent = p.key
+      }
+      // 의성어 — 그림 위에 박힌다. 잉크가 번진 뒤에 튀어나온다.
+      if (p.bam) {
+        const bam = document.createElement('span')
+        bam.className = 'intro-bam'
+        bam.textContent = p.bam
+        frame.appendChild(bam)
       }
       stage.appendChild(frame)
       // 이전 컷은 겹쳐서 사라진다 — 넘김이 아니라 포개짐이어야 웹툰처럼 읽힌다

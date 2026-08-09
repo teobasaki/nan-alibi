@@ -24,15 +24,28 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = resolve(ROOT, 'public/sfx')
-const ENDPOINT = process.env.VARCO_SFX_URL ?? 'https://api.varco.ai/v1/audio/generate'
+/**
+ * **탐지로 확인한 실제 규약** (`scripts/probe-varco.mjs`).
+ * `api.varco.ai` 는 문서 사이트다 — 모든 경로에 HTML 200 을 준다.
+ * 진짜 호스트는 `gateway.varco.ai` 이고 스펙이 `/sound/openapi.json` 에 있다.
+ */
+const ENDPOINT = process.env.VARCO_SFX_URL ?? 'https://gateway.varco.ai/sound/api/v1/generate'
 
-/** `.dev.vars` 에서 키를 읽는다. 값을 출력하지 않는다. */
-function readKey() {
+/**
+ * `.dev.vars` 에서 자격 정보를 읽는다. **값을 출력하지 않는다.**
+ * 키 하나로는 안 된다 — 상류가 `x-user-id` 와 `x-user-email` 도 요구한다.
+ * (스펙에는 required:false 로 적혀 있지만 서버는 거부한다. 스펙이 서버보다 느슨하다.)
+ */
+function readCreds() {
   const f = resolve(ROOT, '.dev.vars')
   if (!existsSync(f)) return null
-  const m = readFileSync(f, 'utf8').match(/^VARCO_API_KEY=(.+)$/m)
-  const v = m?.[1]?.trim()
-  return v && v.length > 8 ? v : null
+  const t = readFileSync(f, 'utf8')
+  const g = (k) => t.match(new RegExp(`^${k}=(.+)$`, 'm'))?.[1]?.trim()
+  const key = g('VARCO_API_KEY')
+  const id = g('VARCO_USER_ID')
+  const email = g('VARCO_USER_EMAIL')
+  if (!key || key.length < 8) return null
+  return { key, id, email }
 }
 
 /**
@@ -68,15 +81,28 @@ function lint(specs) {
   return problems
 }
 
-async function generate(spec, key) {
+async function generate(spec, cred) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: spec.prompt, duration: spec.seconds, format: 'wav' }),
+    headers: {
+      openapi_key: cred.key,
+      'x-user-id': cred.id ?? '',
+      'x-user-email': cred.email ?? '',
+      'Content-Type': 'application/json',
+    },
+    // 스펙이 받는 것은 prompt 와 num_sample 뿐이다. duration·format 은 없다 —
+    // 지어내서 보내면 422 가 온다.
+    body: JSON.stringify({ prompt: spec.prompt, num_sample: 1 }),
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} — ${body.slice(0, 200)}`)
+    throw new Error(`HTTP ${res.status} — ${body.slice(0, 220)}`)
+  }
+  const ct = res.headers.get('content-type') ?? ''
+  // 오디오가 바로 오는지 작업 id 가 오는지 아직 모른다 — 받은 것을 보고 판단한다
+  if (ct.includes('json')) {
+    const j = await res.json()
+    throw new Error(`오디오가 아니라 JSON 이 왔다: ${JSON.stringify(j).slice(0, 220)}`)
   }
   const buf = Buffer.from(await res.arrayBuffer())
 
@@ -111,9 +137,13 @@ if (!only && !all) {
   process.exit(0)
 }
 
-const key = readKey()
-if (!key) {
+const cred = readCreds()
+if (!cred) {
   console.error('\n✗ .dev.vars 에 VARCO_API_KEY 가 없다. 값은 직접 넣어라 — 이 스크립트는 키를 출력하지 않는다.')
+  process.exit(1)
+}
+if (!cred.id || !cred.email) {
+  console.error('\n✗ VARCO_USER_ID · VARCO_USER_EMAIL 도 필요하다 (상류가 요구한다).')
   process.exit(1)
 }
 
@@ -128,7 +158,7 @@ let ok = 0
 for (const s of targets) {
   process.stdout.write(`  ${s.key} … `)
   try {
-    const buf = await generate(s, key)
+    const buf = await generate(s, cred)
     writeFileSync(resolve(OUT, `${s.key}.wav`), buf)
     console.log(`${(buf.length / 1024).toFixed(0)}KB`)
     ok++
