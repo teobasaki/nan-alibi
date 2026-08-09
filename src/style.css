@@ -869,3 +869,63 @@ body::after {
   .nb-tab { font-size: 11px; padding: 10px 4px; }
   .nb-page { padding: 10px 12px; }
 }
+
+/* ══ 2단계 — 종이와 가죽 (ADR 018) ═════════════════════════════
+ * 에셋은 Sketchfab 저널 GLB 에 박혀 있던 텍스처를 꺼내 쓴다(CREDITS 참조).
+ * 3D 로 띄우지 않는다 — 우면은 격자·버튼·스크롤이라 DOM 이어야 하고,
+ * 텍스처만 있으면 런타임 비용 0 으로 같은 질감이 나온다. 합 35KB.
+ *
+ * **밝은 종이를 쓰지 않는다.** 가죽의 평균색이 rgb(61,7,6) 으로 기존
+ * --panel(#201519, 호텔 카펫)과 같은 계열이라, 어둡게 깔면 격자의
+ * amber/red/green 대비를 한 줄도 안 고쳐도 그대로 앉는다.
+ */
+.nb {
+  background:
+    url('/nb/leather.webp') repeat,
+    var(--bg);
+  background-size: 256px 256px;
+}
+
+/* 종이 — 손글씨 텍스처를 아주 낮게 깔아 "밑에 뭔가 쓰여 있다" 만 남긴다.
+   진하게 깔면 우리 한글과 싸운다(실측: 원본 명암폭 177). */
+.nb-page {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(32,21,25,.97), rgba(26,18,20,.99)),
+    url('/nb/paper.webp') repeat;
+  background-size: auto, 512px 512px;
+  background-blend-mode: normal, luminosity;
+  box-shadow: inset 0 0 60px rgba(0,0,0,.55);
+}
+/* 괘선 — 종이가 종이로 읽히는 가장 싼 장치. 활자 리듬(20px)에 맞춘다. */
+.nb-page::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg, transparent 0 19px, rgba(200,145,47,.045) 19px 20px);
+}
+.nb-page > * { position: relative; }
+
+/* 제본선 — 가죽이 접히는 자리. 양쪽 페이지에 그림자를 드리운다. */
+.nb-spine {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.75), rgba(0,0,0,.25) 40%,
+                           rgba(180,120,90,.10) 50%, rgba(0,0,0,.25) 60%, rgba(0,0,0,.75)),
+    url('/nb/leather.webp') repeat;
+  background-size: auto, 256px 256px;
+}
+.nb-left { box-shadow: inset -18px 0 26px -18px rgba(0,0,0,.85), inset 0 0 60px rgba(0,0,0,.55); }
+.nb-right { box-shadow: inset 18px 0 26px -18px rgba(0,0,0,.85), inset 0 0 60px rgba(0,0,0,.55); }
+
+/* 인덱스 탭도 가죽이다 — 수첩 가장자리에서 튀어나온 것이므로 */
+.nb-tab {
+  background: url('/nb/leather.webp') repeat, linear-gradient(90deg, #2a1c20, #241719);
+  background-size: 256px 256px, auto;
+  box-shadow: inset -6px 0 10px -6px rgba(0,0,0,.8);
+}
+.nb-tab.on {
+  background: url('/nb/leather.webp') repeat, linear-gradient(90deg, #3a2a16, #2e2214);
+  background-size: 256px 256px, auto;
+  background-blend-mode: overlay, normal;
+}
+
+@media (prefers-reduced-motion: reduce) { .nb-page::before { display: none; } }

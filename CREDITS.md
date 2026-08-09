@@ -18,6 +18,12 @@ NAN 2026 제출 규정에 따라 외부 에셋의 출처와 라이선스를 명�
 | 캐릭터 — 비서 | `public/characters/secretary.opt.glb` | (확인 필요) | (확인 필요) | (확인 필요) |
 | 캐릭터 — 하우스키핑 | `public/characters/housekeeping.opt.glb` | (확인 필요) | (확인 필요) | (확인 필요) |
 | 캐릭터 — 조카 | `public/characters/nephew.opt.glb` | (확인 필요) | (확인 필요) | (확인 필요) |
+| **수첩 가죽·종이 텍스처** | `public/nb/leather.webp` · `public/nb/paper.webp` | (확인 필요) | (확인 필요) | (확인 필요) |
+
+**수첩 텍스처에 대한 부기:** `a_writers_journal.glb`(Sketchfab, 3.1MB)에 내장돼 있던
+베이스컬러 텍스처에서 가죽 구역과 종이 구역을 잘라 거울 타일로 만들어 쓴다.
+**모델 자체는 배포하지 않고 텍스처만 쓴다** — 그래도 원저작물의 파생이므로 출처·라이선스 표기 대상이다.
+`stylized_journal_book.glb` 는 검토했으나 **채택하지 않았고 저장소에 포함하지 않는다.**
 
 CC-BY 계열이면 저작자 표기로 충족된다. NC(비상업)·ND(변경 금지) 조건이면
 **변형(리깅 수정·포즈·최적화)을 했으므로 재검토가 필요하다.**
