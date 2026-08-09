@@ -87,6 +87,14 @@ interface UI {
   selected: string[]
   busy: boolean
   flash: string | null
+  /**
+   * 심문 챕터가 열렸는가 — **걸쇠(latch)다.** `fieldDone()` 은 심문 중 잠긴 기록이
+   * 해금되면 false 로 되돌아갈 수 있으므로(game.ts 주석), 첫 true 를 여기 잡아 둔다.
+   * 게이트가 도로 잠기면 플레이어는 이유를 알 길이 없다.
+   */
+  chapter2: boolean
+  /** 챕터 게이트에 막혔을 때 띄우는 한 줄 — 잠시 떠 있다 사라진다 */
+  gateMsg: string | null
   /** 방금 맞대본 결과 한 줄 — 일치했을 때도 알려줘야 "아무 일도 안 일어났다" 로 안 읽힌다 */
   note: string | null
   /** 이미 화면에 찍힌 인장 — 재렌더 때 전부 다시 찍히는 걸 막는다 */
@@ -141,6 +149,8 @@ const ui: UI = {
   selected: [],
   busy: false,
   flash: null,
+  chapter2: false,
+  gateMsg: null,
   note: null,
   stamped: new Set(),
   dash: false,
@@ -422,6 +432,8 @@ function exploreRoom(): HTMLElement {
        * 이 화면은 장면을 바꾸기만 한다.
        */
       onTake: (id) => {
+        // 챕터 게이트(ADR 022): 걸어 다니는 경찰서에서도 심문의 문은 같다
+        if (!gatePass()) return
         play('doorOpen')
         ui.explore?.handle?.dispose()
         ui.explore = null
@@ -689,8 +701,14 @@ function stage(): HTMLElement {
     ui.scene = null
   }
   const meta = h('div')
-  meta.appendChild(h('div', 'name', `${sus.name} · ${sus.job}`))
+  // 용의자 카드 — 이름·나이·관계·읽힌 성향 (ADR 022 심문 화면). 나이와 관계는 동기 추리의 재료다.
+  meta.appendChild(h('div', 'name', `${sus.name} · ${sus.age}세 · ${sus.job}`))
+  meta.appendChild(h('div', 'hint', `피해자와의 관계 — ${sus.relation}`))
   meta.appendChild(h('div', 'hint', `읽힌 성향: ${persona.label} — ${persona.hint}`))
+  // 남은 대화 칩 — 인당 상한(10회)의 잔량. 소진이 가까울수록 붉어진다.
+  const tl = talksLeft(ui.game, s)
+  meta.appendChild(h('div', `talkchip${tl <= 0 ? ' off' : tl <= 3 ? ' low' : ''}`,
+    tl > 0 ? `남은 대화 ${tl} / ${TALK_CAP}` : '이 사람과의 대화는 끝났다'))
   p.appendChild(meta)
   const back = focusKey(h('button', 'backbtn', '← 대조표'), 'back') as HTMLButtonElement
   back.onclick = () => { hush(); stopVoice(); ui.active = null; render() }
@@ -774,7 +792,11 @@ function alibiGrid(): HTMLElement {
     // **인물을 바꾸면 이전 사람의 목소리와 말풍선을 끊는다.** 안 끊으면 두 용의자가
     // 겹쳐 말한다. 원래 진입 경로(용의자 열)에는 있었는데, 격자·조서에서 들어가는
     // 새 경로 두 곳에 빠져 있었다 — 경로를 늘리면 정리도 같이 늘려야 한다.
-    const choose = (): void => { hush(); stopVoice(); mark({ k: 'open', who: s }); ui.active = s; render() }
+    // 챕터 게이트(ADR 022): 현장 조사가 남아 있으면 심문 진입이 잠긴다.
+    const choose = (): void => {
+      if (!gatePass()) return
+      hush(); stopVoice(); mark({ k: 'open', who: s }); ui.active = s; render()
+    }
     who.onclick = choose
     who.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
     g.appendChild(who)
@@ -944,7 +966,11 @@ function personSheets(): HTMLElement {
     // **인물을 바꾸면 이전 사람의 목소리와 말풍선을 끊는다.** 안 끊으면 두 용의자가
     // 겹쳐 말한다. 원래 진입 경로(용의자 열)에는 있었는데, 격자·조서에서 들어가는
     // 새 경로 두 곳에 빠져 있었다 — 경로를 늘리면 정리도 같이 늘려야 한다.
-    const choose = (): void => { hush(); stopVoice(); mark({ k: 'open', who: s }); ui.active = s; render() }
+    // 챕터 게이트(ADR 022): 조서에서도 같은 문이 잠긴다 — 경로마다 규칙이 다르면 안 된다.
+    const choose = (): void => {
+      if (!gatePass()) return
+      hush(); stopVoice(); mark({ k: 'open', who: s }); ui.active = s; render()
+    }
     head.onclick = choose
     head.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose() } }
     head.appendChild(h('span', 'dossier-name', sus.name))
@@ -1124,7 +1150,8 @@ function board(): HTMLElement {
     // 범행 시각 기록만이 사람을 지운다. 그 사실을 **조회 전에** 밝힌다 —
     // 규칙을 아는 것과 목록에서 알아보는 것은 다르다 (자동 리뷰 major/onboarding).
     const label = `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`
-    const use = e.slot === CRIME_SLOT ? '후보 소거' : '해금·교차검증'
+    // 검시 소견은 범행 시각 기록이지만 사람을 지우지 못한다 — '후보 소거' 로 적으면 거짓말이 된다
+    const use = e.kind === 'autopsy' ? '도구 판독' : e.slot === CRIME_SLOT ? '후보 소거' : '해금·교차검증'
     // 같은 시각·장소 기록이 두 장이면 조회 전에는 **완전히 똑같아 보여** 선택이 동전 던지기가 된다.
     // 기록번호를 붙여 구분한다 — 내용을 흘리지 않으면서 "다른 문서" 임을 알린다 (자동 리뷰 minor/fairness).
     const b = h('button', undefined, `[${e.id}] ${label} — ${use} (조사 1회)`) as HTMLButtonElement
@@ -1220,10 +1247,90 @@ function act(fn: () => GameState): void {
   try {
     ui.game = fn()
     ui.selected = []
+    syncChapter()
     render()
   } catch (e) {
     alert(e instanceof Error ? e.message : String(e))
   }
+}
+
+/**
+ * 챕터 전이 감시 — 현장 조사가 끝나는 **그 행동 직후** 수사 정리를 한 번 편다 (ADR 022).
+ * 걸쇠(ui.chapter2)를 먼저 잠근다: fieldDone 은 심문 중 해금으로 되돌아갈 수 있어서
+ * 이 값으로 게이트를 직접 몰면 열렸던 심문이 도로 잠긴다.
+ */
+function syncChapter(): void {
+  if (ui.chapter2 || !fieldDone(ui.game)) return
+  ui.chapter2 = true
+  play('doorOpen')
+  openCaseReview()
+}
+
+/** 심문 진입 게이트 (ADR 022) — 현장 조사가 남아 있으면 심문은 잠긴다 */
+function gatePass(): boolean {
+  if (ui.chapter2) return true
+  play('deny')
+  ui.gateMsg = `현장 조사 ${ui.game.investigationsLeft}회 남음 — 조사를 마치면 심문이 열린다`
+  render()
+  setTimeout(() => { if (ui.gateMsg) { ui.gateMsg = null; render() } }, 2600)
+  return false
+}
+
+/**
+ * 수사 정리 — 1장과 2장 사이의 쉼표. 확보한 것을 한 화면에 모아 보여주고
+ * 심문에서 무엇을 캐물을지 정하게 한다. **새 정보는 없다** — 전부 이미 손에 쥔 것이고,
+ * 여기서 새 것을 주면 정리 화면이 아니라 보상 화면이 된다.
+ */
+function openCaseReview(): void {
+  const ov = h('div', 'overlay')
+  const sheet = h('div', 'sheet casefile')
+  sheet.appendChild(fileHeader('수사\n정리'))
+  sheet.appendChild(h('h2', undefined, '현장 조사 종료'))
+
+  // ① 확보한 기록
+  const owned = CASE.evidence.filter((e) => ui.game.cards.includes(e.id))
+  sheet.appendChild(h('label', undefined, `확보한 기록 (${owned.length})`))
+  if (owned.length === 0) sheet.appendChild(h('div', 'hintline', '확보한 기록이 없다.'))
+  for (const e of owned) {
+    const who = e.subjects.length ? ` — ${e.subjects.map((s) => CASE.suspects[s].name).join(', ')} 확인` : ''
+    sheet.appendChild(h('div', 'hintline', `${labelOfKind(e.kind)} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}${who}`))
+  }
+
+  // ② 검시 소견 — 도구 축의 근거. 확보 여부가 지목의 성격(판독/추측)을 가른다
+  sheet.appendChild(h('label', undefined, '검시 소견'))
+  const hasAutopsy = owned.some((e) => e.kind === 'autopsy')
+  sheet.appendChild(h('div', hasAutopsy ? 'contradiction' : 'hintline',
+    hasAutopsy
+      ? WEAPON_TRACE[CASE.weapon] ?? ''
+      : '확인하지 않았다 — 살인 도구 지목은 추측이 된다.'))
+
+  // ③ 확보한 증언
+  const heldTestimonies = CASE.testimonies.filter((t) => ui.game.cards.includes(t.id))
+  if (heldTestimonies.length) {
+    sheet.appendChild(h('label', undefined, `확보한 증언 (${heldTestimonies.length})`))
+    for (const t of heldTestimonies) {
+      sheet.appendChild(h('div', 'hintline', `${CASE.suspects[t.from].name} — ${t.text}`))
+    }
+  }
+
+  // ④ 핵심 단서 요약 — 상태를 읽어 그릴 뿐, 판정은 하지 않는다
+  const cands = candidatesFrom(CASE, new Set(ui.game.cards))
+  sheet.appendChild(h('label', undefined, '수사 상황'))
+  sheet.appendChild(h('div', 'tally',
+    `남은 후보 ${cands.length}명 · 찾아낸 인장 ${ui.game.foundContradictions.length}건 · ` +
+    `아직 안 맞춰본 조합 ${pendingPairs(ui.game).length}건`))
+  sheet.appendChild(h('p', undefined,
+    '이제 다섯 사람을 심문한다. 한 사람과의 대화는 10회가 상한이다 — 다 쓸 필요는 없다. ' +
+    '기록과 어긋난 진술이 있는 사람부터 캐묻는 것이 보통 빠르다.'))
+
+  const go = h('button', undefined, '심문 시작') as HTMLButtonElement
+  go.style.marginTop = '12px'
+  go.onclick = () => { play('paper'); ov.remove(); render() }
+  sheet.appendChild(go)
+
+  ov.appendChild(sheet)
+  document.body.appendChild(ov)
+  queueMicrotask(() => go.focus())
 }
 
 async function doAsk(s: SuspectId, question: string): Promise<void> {
@@ -1848,6 +1955,8 @@ function render(): void {
   app.replaceChildren()
   app.appendChild(topbar())
   app.appendChild(h('div', 'coach', coachLine()))
+  // 챕터 게이트에 막힌 순간의 안내 — 코치와 별개다. 코치는 다음 행동을, 이건 방금 막힌 이유를 말한다.
+  if (ui.gateMsg) app.appendChild(h('div', 'gatenote', ui.gateMsg))
   if (ui.dash) app.appendChild(dashboard(() => render()))
 
   /**
@@ -1874,5 +1983,33 @@ function render(): void {
 // 심문 중에만 바뀌는 값이라 재렌더 비용(측정 0.8ms)이 문제되지 않는다.
 onStage(() => { if (ui.active) render() })
 
+/* ─────────── 시작 페이지 (ADR 022) ─────────── */
+/**
+ * 게임은 **자동으로 시작되지 않는다.** 로드 즉시 카툰이 돌던 구조를
+ * 어두운 시작 화면 뒤로 옮겼다. 이유는 둘이다:
+ * ① 브라우저 오디오 정책 — 사용자 제스처 없이는 소리가 죽는다. [사건 시작] 클릭이
+ *    wake() 를 겸하므로 인트로부터 소리가 산다.
+ * ② 심리적 문턱 — 추리 게임은 "시작하겠다" 는 선언과 함께 열려야 한다.
+ *    URL 을 열자마자 사건이 쏟아지면 그건 게임이 아니라 탭이다.
+ */
+function showStartPage(): void {
+  const ov = h('div', 'startpage')
+  const box = h('div', 'startbox')
+  box.appendChild(h('div', 'start-kicker', `사건번호 ${String(CASE.seed).padStart(5, '0')} · 강력 3팀`))
+  box.appendChild(h('h1', 'start-title', 'FIVE ALIBIS'))
+  box.appendChild(h('div', 'start-sub', '다섯 사람이 남아 있었고, 다섯 개의 알리바이가 있다. 하나는 거짓이다.'))
+  const go = h('button', 'start-go', '사건 시작') as HTMLButtonElement
+  go.onclick = () => {
+    wake()          // 이 클릭이 오디오를 깨운다 — 인트로 카툰부터 소리가 살게
+    ov.classList.add('leave')
+    setTimeout(() => ov.remove(), 380)
+    void playIntro(CASE).then(openBriefing)
+  }
+  box.appendChild(go)
+  ov.appendChild(box)
+  document.body.appendChild(ov)
+  queueMicrotask(() => go.focus())
+}
+
 render()
-void playIntro(CASE).then(openBriefing)
+showStartPage()

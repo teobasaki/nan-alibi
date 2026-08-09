@@ -1298,3 +1298,54 @@ body::after {
 
 /* 수첩 안 스크롤바도 잉크빛으로 */
 .nb .nb-page::-webkit-scrollbar-thumb { background: rgba(90,60,20,.35); }
+
+/* ─────────── ADR 022 — 챕터 UX 신규 클래스 (기존 규칙 수정 금지 구역과 무관한 추가분) ─────────── */
+
+/* 시작 페이지 — 게임은 자동으로 시작되지 않는다. 어두운 로비에서 사건번호를 받아 든다. */
+.startpage {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgba(200, 145, 47, .07), transparent 55%),
+    #0d0908;
+  transition: opacity .38s ease;
+}
+.startpage.leave { opacity: 0; pointer-events: none; }
+.startbox { text-align: center; padding: 24px; max-width: 560px; }
+.start-kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
+  color: var(--muted); margin-bottom: 18px;
+}
+.start-title {
+  font-family: var(--serif); font-size: clamp(40px, 8vw, 72px); letter-spacing: .12em;
+  margin: 0 0 14px; color: var(--ink);
+  text-shadow: 0 0 34px rgba(200, 145, 47, .25);
+}
+.start-sub {
+  font-size: 13.5px; line-height: 1.8; color: var(--muted);
+  word-break: keep-all; margin-bottom: 34px;
+}
+.start-go {
+  font: inherit; font-family: var(--serif); font-size: 17px; letter-spacing: .3em; text-indent: .3em;
+  color: var(--ink); background: transparent; border: 1px solid var(--amber);
+  padding: 13px 44px; cursor: pointer; transition: background .2s, color .2s;
+}
+.start-go:hover, .start-go:focus-visible { background: var(--amber); color: #16110f; }
+
+/* 챕터 게이트 안내 — 방금 막힌 이유를 말하는 한 줄. 코치(다음 행동)와 역할이 다르다. */
+.gatenote {
+  margin: 4px 14px 0; padding: 7px 12px;
+  border-left: 3px solid var(--amber); background: rgba(200, 145, 47, .08);
+  font-size: 12.5px; color: var(--ink); word-break: keep-all;
+  animation: fadein .2s ease-out;
+}
+
+/* 남은 대화 칩 — 인당 상한 10회의 잔량. 소진이 가까우면 붉어진다. */
+.talkchip {
+  display: inline-block; margin-top: 6px; padding: 3px 10px;
+  border: 1px solid var(--line); border-radius: 10px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink);
+  background: var(--panel-2);
+}
+.talkchip.low { border-color: var(--red); color: var(--red); }
+.talkchip.off { border-color: var(--muted); color: var(--muted); font-style: italic; }
