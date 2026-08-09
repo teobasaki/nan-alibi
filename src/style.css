@@ -983,3 +983,30 @@ body::after {
 @media (prefers-reduced-motion: reduce) {
   .nb.opening .nb-left, .nb.opening .nb-right, .nb.opening .nb-spine { animation: none; }
 }
+
+/* ── 동시 필기 — 새 줄만 써진다 ────────────────────────────────
+ * 전체 재렌더 구조라 그냥 두면 행동할 때마다 모든 줄이 다시 써진다.
+ * 격자의 인장이 같은 이유로 한 번 겪은 문제다.
+ */
+.jl.fresh .jl-t {
+  background-image: linear-gradient(90deg, var(--ink) 50%, transparent 50%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  animation: jlWrite .75s steps(24) both, jlSettle 0s .75s both;
+}
+.jl.fresh.spent .jl-mark { animation: jlStroke .45s ease-out both; }
+.jl.fresh .jl-note { animation: jlNote .5s .5s ease-out both; }
+.jl.fresh.st-hit .jl-mark::after { animation: jlStamp .35s cubic-bezier(.2,1.4,.4,1) .55s backwards; }
+
+@keyframes jlWrite  { from { background-position: 100% 0; } to { background-position: 0 0; } }
+/* 다 써지면 배경 클립을 풀어 평범한 글자로 되돌린다 — 안 그러면 색이 안 먹는다 */
+@keyframes jlSettle { to { color: inherit; background-image: none; -webkit-text-fill-color: currentColor; } }
+@keyframes jlStroke { from { opacity: 0; transform: scaleY(0); } to { opacity: 1; transform: scaleY(1); } }
+@keyframes jlNote   { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+@keyframes jlStamp  { from { opacity: 0; transform: scale(2.2) rotate(-14deg); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .jl.fresh .jl-t, .jl.fresh .jl-mark, .jl.fresh .jl-note, .jl.fresh.st-hit .jl-mark::after { animation: none; }
+  .jl.fresh .jl-t { color: inherit; background-image: none; }
+}

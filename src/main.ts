@@ -90,6 +90,8 @@ interface UI {
   dash: boolean
   /** 수첩이 펼쳐지는 연출 중인가 — 첫 진입에 한 번만 */
   opening: boolean
+  /** 마지막으로 그린 일지 줄 수 — 새 줄만 써지는 연출을 주기 위해 */
+  journalSeen: number
   /** 플레이 여정 — 개인화의 재료. 규칙에는 영향을 주지 않는다 */
   journey: ReturnType<typeof newTrace>
   scene: { slug: string; handle: Stage3D | null } | null
@@ -125,6 +127,7 @@ const ui: UI = {
   stamped: new Set(),
   dash: false,
   opening: false,
+  journalSeen: 0,
   journey: newTrace(seed, Date.now()),
   scene: null,
   sceneCanvas: null,
@@ -354,15 +357,32 @@ function journalBlock(): HTMLElement {
     wrap.appendChild(h('div', 'hintline', '아직 적을 것이 없다. 기록을 조회하거나 사람을 만나야 한다.'))
   }
 
-  for (const l of lines) {
-    const row = h('div', `jl${l.spent ? ' spent' : ''}${l.stamp ? ` st-${l.stamp}` : ''}`)
+  /**
+   * **동시 필기** — 새로 생긴 줄만 써지는 연출을 준다.
+   *
+   * 전체 재렌더 구조라 그냥 두면 행동할 때마다 **모든 줄이 다시 써진다**.
+   * 알리바이 격자의 인장이 같은 이유로 한 번 겪은 문제다(`ui.stamped`).
+   * 마지막으로 그린 줄 수를 기억해 그보다 늘어난 만큼만 새 줄로 본다.
+   */
+  const fresh = Math.max(0, lines.length - ui.journalSeen)
+  ui.journalSeen = lines.length
+  let lastFresh: HTMLElement | null = null
+
+  lines.forEach((l, i) => {
+    const isNew = i >= lines.length - fresh
+    const row = h('div',
+      `jl${l.spent ? ' spent' : ''}${l.stamp ? ` st-${l.stamp}` : ''}${isNew ? ' fresh' : ''}`)
     row.appendChild(h('span', 'jl-mark', l.spent ? '│' : ''))
     const body = h('div', 'jl-body')
     body.appendChild(h('span', 'jl-t', l.text))
     if (l.note) body.appendChild(h('span', 'jl-note', l.note))
     row.appendChild(body)
     wrap.appendChild(row)
-  }
+    if (isNew) lastFresh = row
+  })
+
+  // 일지가 길어지면 새 줄이 화면 밖에 써진다 — 형사가 안 보고 적는 셈이다
+  if (lastFresh) queueMicrotask(() => (lastFresh as HTMLElement).scrollIntoView({ block: 'nearest' }))
 
   wrap.appendChild(pendingBlock())
   return wrap
