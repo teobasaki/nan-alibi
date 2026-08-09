@@ -379,10 +379,10 @@ function exploreRoom(): HTMLElement {
   const ev = nearId ? CASE.evidence.find((e) => e.id === nearId) : null
   // **사람이 우선한다** — 연행이 조회보다 큰 행동이라 힌트도 그 순서다
   bar.appendChild(h('div', 'exhint', seatId
-    ? `${CASE.suspects[seatId].name} · ${CASE.suspects[seatId].job} — E 키를 눌러 취조실로 데려간다`
+    ? `${CASE.suspects[seatId].name} · ${CASE.suspects[seatId].job} — E 또는 Space 를 눌러 취조실로 데려간다`
     : ev
-      ? `${labelOfKind(ev.kind)} · ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]} — E 키 또는 표식을 눌러 조회 (조사 1회)`
-      : '방향키·WASD 로 걷는다. 앉아 있는 사람에게 다가가면 취조실로 데려갈 수 있다.'))
+      ? `${labelOfKind(ev.kind)} · ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]} — E 또는 Space 로 조회 (조사 1회)`
+      : '방향키·WASD 로 걷는다 · V 로 1인칭 전환 · 앉아 있는 사람에게 다가가면 취조실로 데려간다.'))
   page.appendChild(bar)
 
   // 씬은 한 번만 만든다. 재렌더마다 새로 만들면 WebGL 컨텍스트가 쌓인다.

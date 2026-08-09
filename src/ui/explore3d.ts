@@ -51,6 +51,7 @@ export interface Seat {
   id: string
   /** 착석 모델 slug — 심문 씬이 쓰는 것과 같은 표(roleSlug)에서 온다 */
   slug: string
+  /** 방 안 위치 (미터). 벽 안이면 씬이 빈 칸으로 옮기고 이 값을 갱신한다. */
   at: [number, number]
   /** 화면에 뜰 이름 */
   label: string
@@ -134,6 +135,44 @@ const SEAT_HEIGHT = 2.6
 const ACTOR_HEIGHT = 3.0
 
 /**
+ * 모델의 **화면에 나오는 키**를 잰다.
+ *
+ * ## `Box3.setFromObject` 를 쓰면 안 되는 이유 — 81배 틀렸다
+ * 착석 모델은 스킨드 메시인데 노드에 `scale 0.01` 이 걸려 있다. 스킨드 메시는
+ * 렌더링할 때 그 노드 스케일이 `bindMatrix`/`bindMatrixInverse` 로 **상쇄**되어
+ * 실제로는 뼈가 크기를 정한다. 그런데 `Box3.setFromObject` 는 `matrixWorld` 를
+ * 곧이곧대로 곱하므로 0.01 이 그대로 남는다.
+ *
+ * 실측: 같은 모델을 단순 변환으로 재면 **0.0172m**, 뼈를 적용해 재면 **1.3945m** 다.
+ * 그 값으로 `SEAT_HEIGHT/키` 를 계산했더니 배율이 **185~345배**가 됐고,
+ * 다섯 명이 전부 거인이 되어 카메라가 몸 안에 들어갔다 — 화면에는 후광과 이름표만 남았다.
+ *
+ * 전수 검사는 하지 않는다. 정점이 538,235개인데 **키를 재는 데는 몇백 점이면 충분하다.**
+ */
+function measuredHeight(root: THREE.Object3D): number {
+  root.updateMatrixWorld(true)
+  const v = new THREE.Vector3()
+  let lo = Infinity
+  let hi = -Infinity
+  root.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (!m.isMesh) return
+    const pos = m.geometry.getAttribute('position')
+    if (!pos) return
+    const sk = o as THREE.SkinnedMesh
+    const step = Math.max(1, Math.floor(pos.count / 500))
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i)
+      if (sk.isSkinnedMesh) sk.applyBoneTransform(i, v)   // 뼈가 실제 크기를 정한다
+      v.applyMatrix4(m.matrixWorld)
+      if (v.y < lo) lo = v.y
+      if (v.y > hi) hi = v.y
+    }
+  })
+  return hi > lo ? hi - lo : 0
+}
+
+/**
  * 반경 안에서 **가장 가까운** 것을 고른다. 순수 함수로 떼어낸 이유는
  * 이 판정이 틀리면 조사 1회를 오발로 잃기 때문이다 — 3D 씬은 테스트가 못 닿으므로
  * 판정만이라도 게이트가 보게 한다.
@@ -162,6 +201,14 @@ export async function mountExplore(
   try {
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
     const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js')
+    /**
+     * **스킨드 메시는 `Object3D.clone()` 으로 복제하면 안 된다.**
+     * 착석 모델 다섯은 전부 스킨(뼈대)이 있는데, 일반 clone 은 메시만 복제하고
+     * `skeleton` 은 원본 뼈를 계속 가리킨다. 그러면 복제본이 자기 뼈를 못 찾아
+     * **화면에서 통째로 사라진다** — 실제로 후광과 이름표만 뜨고 사람이 안 보였다.
+     * 심문 씬(`stage3d.ts`)이 멀쩡했던 건 거기서는 복제를 안 하고 그대로 붙이기 때문이다.
+     */
+    const { clone: cloneSkinned } = await import('three/examples/jsm/utils/SkeletonUtils.js')
 
     const w = host.clientWidth || 640
     const h = host.clientHeight || 420
@@ -182,12 +229,23 @@ export async function mountExplore(
      * **정사영 탑다운.** 60 Seconds! 가 그렇듯 방 전체가 한 화면에 들어와야
      * "어디로 갈지" 를 고를 수 있다. 원근이면 벽이 시야를 가린다.
      */
-    // 경찰서가 31.8 × 21.1m 다. 세로가 병목이라 그쪽을 기준으로 화각을 잡는다.
-    const view = 22
+    /**
+     * **두 개의 눈.**
+     * 탑다운은 "어디로 갈지" 를 고르게 하고, 1인칭은 "거기 있다" 를 만든다.
+     * 둘 다 필요해서 둘 다 둔다. V 로 바꾼다.
+     *
+     * 탑다운 화각을 22 → 13 으로 줄였다 — 방 전체가 다 보이면 인물이 점이 되고
+     * 어디로 걷는지도 안 읽힌다. 인물을 따라다니게 하고 주변만 보여준다.
+     */
+    const VIEW = 13
     const camera = new THREE.OrthographicCamera(
-      -view * (w / h) / 2, view * (w / h) / 2, view / 2, -view / 2, 0.1, 200)
-    camera.position.set(16, 20, 16)
+      -VIEW * (w / h) / 2, VIEW * (w / h) / 2, VIEW / 2, -VIEW / 2, 0.1, 200)
+    const CAM_OFF = new THREE.Vector3(9, 12, 9)   // 아이소메트릭 각도 유지
+    camera.position.copy(CAM_OFF)
     camera.lookAt(0, 0, 0)
+
+    /** 1인칭 눈. 정사영으로 1인칭을 하면 원근이 없어 방이 납작해진다. */
+    const eye = new THREE.PerspectiveCamera(72, w / h, 0.08, 200)
 
     const draco = new DRACOLoader().setDecoderPath('/draco/')
     const loader = new GLTFLoader().setDRACOLoader(draco)
@@ -212,6 +270,69 @@ export async function mountExplore(
       }
     })
     scene.add(room)
+
+    /**
+     * 방 지오메트리에 **매 프레임 레이를 쏘면 느리다** — 이 방은 268,199 삼각형이고
+     * BVH 가 없어서 한 번의 intersectObject 가 전수 검사다. 실제로 브라우저가 멎었다.
+     *
+     * 대신 **벽을 한 번만 격자로 구워둔다.** 로딩 때 방을 한 번 훑어
+     * 0.5m 칸마다 "여기 벽이 있나" 를 기록하면, 이동 판정은 배열 조회 한 번이 된다.
+     * 정확도는 칸 크기만큼 거칠지만, 필요한 것은 "벽을 못 지나간다" 하나뿐이다.
+     */
+    const CELL = 0.5
+    const GW = Math.ceil((HALF_X * 2) / CELL) + 1
+    const GH = Math.ceil((HALF_Z * 2) / CELL) + 1
+    const solid = new Uint8Array(GW * GH)
+    const gi = (x: number, z: number): number =>
+      Math.round((z + HALF_Z) / CELL) * GW + Math.round((x + HALF_X) / CELL)
+
+    /**
+     * **레이캐스트를 쓰지 않는다.** 처음엔 격자마다 아래로 레이를 쐈는데,
+     * 이 방이 268,199 삼각형이고 BVH 가 없어서 1,160발이 전수 검사가 됐다 —
+     * 브라우저가 실제로 멎었다.
+     *
+     * 대신 **정점 위치를 한 번 훑는다.** 정한 높이 띠에 정점이 있는 칸은 막힌 칸이다.
+     * 선형 1패스라 즉시 끝난다.
+     *
+     * ## 높이 띠를 2.0~3.0m 로 고른 이유 — 재서 골랐다
+     * 처음엔 사람 허리(0.8~1.7m)를 훑었다. 그랬더니 **23% 가 막혔다** — 책상·카운터·의자가
+     * 전부 벽이 되어 대기 구역이 미로가 됐고, 용의자 자리 다섯 중 둘이 가구 안에 박혔다.
+     * `scripts/probe-walkgrid.mjs` 로 띠를 바꿔 가며 재보니:
+     *
+     * | 높이 | 막힌 칸 | 고립된 칸 | 가구에 박힌 좌석 |
+     * |---|---|---|---|
+     * | 0.8~1.7m | 23% | 11 | 2 |
+     * | 1.6~2.6m | 11% | 0 | 1 |
+     * | **2.0~3.0m** | **9%** | **0** | **0** |
+     *
+     * 2.0~3.0m 는 가구 위·천장 아래라 **벽과 칸막이만** 걸린다. 고립된 칸이 0 이라는 건
+     * 문틀이 통로를 막지 않았다는 뜻이다(높은 띠를 쓸 때 가장 흔한 실패다 — 재서 배제했다).
+     * 인물을 3.0m 로 키워 놨으니 그 키에서 부딪히는 것이 물리적으로도 맞다.
+     */
+    const WALL_LO = 2.0
+    const WALL_HI = 3.0
+    const bakeWalls = (): void => {
+      const v = new THREE.Vector3()
+      room.updateMatrixWorld(true)
+      room.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (!m.isMesh || !m.visible) return          // 숨긴 천장은 벽이 아니다
+        const pos = m.geometry.getAttribute('position')
+        if (!pos) return
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld)
+          if (v.y < WALL_LO || v.y > WALL_HI) continue
+          if (v.x < -HALF_X || v.x > HALF_X || v.z < -HALF_Z || v.z > HALF_Z) continue
+          solid[gi(v.x, v.z)] = 1
+        }
+      })
+    }
+
+    const blocked = (x: number, z: number): boolean => {
+      if (x < -HALF_X || x > HALF_X || z < -HALF_Z || z > HALF_Z) return true
+      return solid[gi(x, z)] === 1
+    }
+
 
     /**
      * **노멀맵을 살리는 재질.**
@@ -239,12 +360,30 @@ export async function mountExplore(
 
     const actor = charGltf.scene
     // 걷기 리그는 A포즈 rest 라 원래 크기다. 방 배율에 맞춘다.
-    const box = new THREE.Box3().setFromObject(actor)
-    const height = box.max.y - box.min.y
+    const height = measuredHeight(actor)
     actor.scale.setScalar(height > 0 ? ACTOR_HEIGHT / height : 1)
     dressUp(actor)
-    actor.position.set(0, 0, 5)
     scene.add(actor)
+
+    bakeWalls()
+
+    /**
+     * **빈 칸에서 시작한다.** 좌표를 손으로 박으면 그 자리가 벽 안일 수 있고,
+     * 그러면 충돌이 붙는 순간 한 발도 못 뗀다 — 실제로 그렇게 멈췄다.
+     * 지정한 자리가 막혀 있으면 가장 가까운 빈 칸을 찾아 옮긴다.
+     */
+    const placeFree = (o: THREE.Object3D, x: number, z: number): void => {
+      if (!blocked(x, z)) { o.position.set(x, 0, z); return }
+      for (let r = CELL; r < 12; r += CELL) {
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+          const px = x + Math.cos(a) * r
+          const pz = z + Math.sin(a) * r
+          if (!blocked(px, pz)) { o.position.set(px, 0, pz); return }
+        }
+      }
+      o.position.set(x, 0, z)
+    }
+    placeFree(actor, 0, 5)
 
     const mixer = new THREE.AnimationMixer(actor)
     const clip = charGltf.animations[0]
@@ -266,6 +405,14 @@ export async function mountExplore(
     scene.add(key)
     scene.add(new THREE.HemisphereLight(0x8899bb, 0x2a1c20, 0.5))
 
+    /**
+     * **벽 충돌.** 지금까지는 사각 경계로만 막아서 내부 벽을 그냥 통과했다.
+     *
+     * 물리 엔진을 넣지 않는다 — 이 게임에 필요한 건 "벽을 못 지나간다" 하나뿐이고,
+     * 그건 **가려는 방향으로 레이를 쏘는 것**으로 끝난다. 방 지오메트리가 이미 씬에 있다.
+     * 세 방향(정면·좌사선·우사선)으로 쏘는 이유는, 한 줄기만 쏘면 벽에 비스듬히
+     * 붙어 걸을 때 모서리를 파고들기 때문이다.
+     */
     // ── 마커 ──
     const markerRoot = new THREE.Group()
     scene.add(markerRoot)
@@ -320,6 +467,11 @@ export async function mountExplore(
 
     // ── 앉아 있는 사람들 ──
     const seatRoot = new THREE.Group()
+    // 개발 중에만 씬을 밖에서 들여다볼 수 있게 둔다 — 3D 는 콘솔 없이는 원인을 못 찾는다.
+    // 실제로 "사람이 안 보인다" 를 이걸로 잡았다. 배포 번들에는 들어가지 않는다.
+    if (import.meta.env.DEV) {
+      ;(window as unknown as Record<string, unknown>).__ex = { scene, seatRoot, markerRoot, camera }
+    }
     scene.add(seatRoot)
     let seats: Seat[] = []
     /** 같은 모델을 두 번 받지 않는다 — 다섯 명이 같은 직업이면 한 번만 받는다 */
@@ -374,11 +526,10 @@ export async function mountExplore(
           dressUp(proto)
           seatCache.set(st.slug, proto)
         }
-        const o = proto.clone(true)
+        const o = cloneSkinned(proto)
         // 착석 모델은 rest pose 가 앉은 자세라 그대로 놓으면 된다.
         // 크기는 사람 키(1.7m)에 맞춘다 — 모델마다 원본 스케일이 다르다.
-        const box = new THREE.Box3().setFromObject(o)
-        const hgt = box.max.y - box.min.y
+        const hgt = measuredHeight(o)
         /**
          * **탑다운에서는 실척이 곧 안 보임이다.**
          * 공간이 31.8×21.1m 인데 앉은 사람은 1.2m 라 화면에서 점이 된다.
@@ -386,7 +537,9 @@ export async function mountExplore(
          * 사실적 비례를 버리고 **읽히는 크기**를 택한다.
          */
         if (hgt > 0) o.scale.setScalar(SEAT_HEIGHT / hgt)
-        o.position.set(st.at[0], 0, st.at[1])
+        // **벽 안에 앉히지 않는다.** 못 닿는 자리에 두면 그 사람은 없는 것과 같다.
+        placeFree(o, st.at[0], st.at[1])
+        st.at = [o.position.x, o.position.z]   // 근접 판정도 옮겨진 자리를 본다
         o.rotation.y = Math.atan2(-st.at[0], -st.at[1])   // 방 가운데를 본다
         o.userData.seatId = st.id
         seatRoot.add(o)
@@ -420,17 +573,29 @@ export async function mountExplore(
     let near: string | null = null
     /** 지금 닿아 있는 사람 */
     let nearSeat: string | null = null
+    /** 1인칭인가. V 로 토글한다 — 넓은 탑다운은 방을 보여주고 1인칭은 방에 있게 한다. */
+    let firstPerson = false
     const keys = new Set<string>()
+    /**
+     * **`e.key` 를 쓰면 한글 모드에서 통째로 죽는다.**
+     * 한글 입력 상태에서 E 를 누르면 `e.key` 는 'ㄷ' 이고, W·A·S·D 는 'ㅈㅁㄴㄷ' 다.
+     * 이 프로젝트는 이미 한글 IME 로 한 번 당했다(Enter 로 질문이 잘려 조사 1회가 날아갔다).
+     * `e.code` 는 **물리 키 위치**라 자판 배열·IME 와 무관하다.
+     */
+    const MOVE_CODES = new Set([
+      'KeyW', 'KeyA', 'KeyS', 'KeyD',
+      'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight',
+    ])
     const onDown = (e: KeyboardEvent): void => {
-      const k = e.key.toLowerCase()
-      if (k === 'e') {
+      if (e.code === 'KeyE' || e.code === 'Space') {
         // **사람이 우선한다.** 둘 다 닿아 있으면 연행이 조회보다 큰 행동이다.
         if (nearSeat) { handlers.onTake(nearSeat); e.preventDefault(); return }
         if (near) { handlers.onPick(near); e.preventDefault(); return }
       }
-      if ('wasd'.includes(k) || k.startsWith('arrow')) { keys.add(k); e.preventDefault() }
+      if (e.code === 'KeyV') { firstPerson = !firstPerson; e.preventDefault(); return }
+      if (MOVE_CODES.has(e.code)) { keys.add(e.code); e.preventDefault() }
     }
-    const onUp = (e: KeyboardEvent): void => { keys.delete(e.key.toLowerCase()) }
+    const onUp = (e: KeyboardEvent): void => { keys.delete(e.code) }
     addEventListener('keydown', onDown)
     addEventListener('keyup', onUp)
 
@@ -443,7 +608,7 @@ export async function mountExplore(
       const ndc = new THREE.Vector2(
         ((e.clientX - r.left) / r.width) * 2 - 1,
         -((e.clientY - r.top) / r.height) * 2 + 1)
-      ray.setFromCamera(ndc, camera)
+      ray.setFromCamera(ndc, firstPerson ? eye : camera)
       // 마커를 눌렀으면 줍는 것이지 거기로 걸어가는 게 아니다
       const onSeat = ray.intersectObjects(seatRoot.children, true)[0]
       if (onSeat) {
@@ -481,10 +646,10 @@ export async function mountExplore(
       const dt = Math.min(0.05, clock.getDelta())
 
       dir.set(0, 0, 0)
-      if (keys.has('w') || keys.has('arrowup')) dir.z -= 1
-      if (keys.has('s') || keys.has('arrowdown')) dir.z += 1
-      if (keys.has('a') || keys.has('arrowleft')) dir.x -= 1
-      if (keys.has('d') || keys.has('arrowright')) dir.x += 1
+      if (keys.has('KeyW') || keys.has('ArrowUp')) dir.z -= 1
+      if (keys.has('KeyS') || keys.has('ArrowDown')) dir.z += 1
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) dir.x -= 1
+      if (keys.has('KeyD') || keys.has('ArrowRight')) dir.x += 1
 
       if (dir.lengthSq() > 0) {
         goal = null                              // 키를 누르면 클릭 목표를 버린다
@@ -498,9 +663,16 @@ export async function mountExplore(
 
       moving = dir.lengthSq() > 0
       if (moving) {
-        actor.position.addScaledVector(dir, SPEED * dt)
-        actor.position.x = Math.max(-HALF_X, Math.min(HALF_X, actor.position.x))
-        actor.position.z = Math.max(-HALF_Z, Math.min(HALF_Z, actor.position.z))
+        /**
+         * 축을 따로 시험한다 — 벽에 비스듬히 부딪히면 **막히는 축만 죽이고**
+         * 나머지 축으로 미끄러진다. 한 덩어리로 막으면 벽에 붙는 순간 완전히 멈춰
+         * 조작이 답답해진다.
+         */
+        const step = SPEED * dt
+        const nx = actor.position.x + dir.x * step
+        const nz = actor.position.z + dir.z * step
+        if (dir.x !== 0 && !blocked(nx, actor.position.z)) actor.position.x = nx
+        if (dir.z !== 0 && !blocked(actor.position.x, nz)) actor.position.z = nz
         // 가는 쪽을 본다. 즉시 돌리면 뚝뚝 끊기므로 각도를 보간한다.
         const want = Math.atan2(dir.x, dir.z)
         let d = want - actor.rotation.y
@@ -542,7 +714,26 @@ export async function mountExplore(
         if (isHalo) mat.opacity = on ? 0.42 : 0.16
       }
 
-      renderer.render(scene, camera)
+      /**
+       * 탑다운은 **인물을 따라간다.** 고정 카메라로 넓은 방을 담으면 인물이 점이 되고,
+       * 좁게 담으면 프레임 밖으로 나간다. 따라다니면 둘 다 안 생긴다.
+       */
+      camera.position.copy(actor.position).add(CAM_OFF)
+      camera.lookAt(actor.position.x, 0.6, actor.position.z)
+
+      if (firstPerson) {
+        // 눈높이는 실제 사람 눈(1.62m)이 아니라 **모델 키에 비례**한다 —
+        // 인물을 화면에 읽히게 키워 놨으므로(3.0m) 눈도 같이 올라가야 바닥이 안 보인다.
+        eye.position.set(actor.position.x, ACTOR_HEIGHT * 0.92, actor.position.z)
+        const fwd = new THREE.Vector3(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y))
+        eye.lookAt(eye.position.clone().add(fwd).setY(ACTOR_HEIGHT * 0.8))
+        // 1인칭에서는 내 몸이 시야를 가린다
+        actor.visible = false
+        renderer.render(scene, eye)
+      } else {
+        actor.visible = true
+        renderer.render(scene, camera)
+      }
     }
     tick()
 
@@ -550,9 +741,11 @@ export async function mountExplore(
       const nw = host.clientWidth || w
       const nh = host.clientHeight || h
       const asp = nw / nh
-      camera.left = -view * asp / 2
-      camera.right = view * asp / 2
+      camera.left = -VIEW * asp / 2
+      camera.right = VIEW * asp / 2
       camera.updateProjectionMatrix()
+      eye.aspect = asp
+      eye.updateProjectionMatrix()
       renderer.setSize(nw, nh)
     }
     addEventListener('resize', onResize)
