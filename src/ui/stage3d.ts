@@ -89,6 +89,8 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
 
   try {
     const THREE = await import('three')
+    // three 와 같이 늦게 불러온다 — 정적으로 잡으면 three 가 첫 번들로 딸려온다
+    const { groundIt, measureY, measuredHeight } = await import('./skinBounds')
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
     const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js')
 
@@ -342,24 +344,30 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     const LAMP = new THREE.Vector3(0.05, 1.55, 0.02)
 
     const bust = IS_BUST.has(slug)
-    const box = new THREE.Box3().setFromObject(model)
-    const size = box.getSize(new THREE.Vector3())
+    /**
+     * **`Box3.setFromObject` 를 쓰면 안 된다.** 착석 모델은 스킨드 메시이고
+     * 노드 scale 0.01 이 렌더링 때 bindMatrix 로 상쇄되므로, Box3 는 이 사람을
+     * **0.017m 로 잰다 — 실제는 1.35m 다.** 그래서 아래 바닥 보정이 100배 작았고
+     * 용의자가 공중에 떴다. 탐색 씬이 같은 함정에 한 번 빠졌던 그 계산이다.
+     */
+    const h0 = measuredHeight(model)
     /**
      * 흉상은 머리+어깨+가슴 윗부분이라 실제 세로가 약 0.66m 다.
      * 전신 정규화(1.72m)를 적용하면 머리가 거대해진다 — 실제로 그렇게 만든 적이 있다.
      */
-    const scale = bust ? 0.66 / (size.y || 1) : (size.y > 1.55 ? 1.72 / size.y : 1)
+    const scale = bust ? 0.66 / (h0 || 1) : (h0 > 1.55 ? 1.72 / h0 : 1)
     model.scale.setScalar(scale)
-    const box2 = new THREE.Box3().setFromObject(model)
     if (bust) {
+      const { hi } = measureY(model)
       /**
        * 흉상 꼭대기를 앉은 사람의 정수리(실측 1.36m)에 맞춘다.
        * 흉상 세로가 0.66m 이므로 잘린 밑면은 0.70m — 테이블 상판(0.74m)보다 아래다.
        * **단면이 테이블에 가려진다.** 몸통이 없어도 성립하는 이유가 이것이다.
        */
-      model.position.y += 1.36 - box2.max.y
+      model.position.y += 1.36 - hi
     } else {
-      model.position.y -= box2.min.y
+      // 앉은 사람은 발(또는 엉덩이)이 바닥에 닿아야 한다
+      groundIt(model)
     }
     /**
      * 방향 — **상수 대신 계산한다.**

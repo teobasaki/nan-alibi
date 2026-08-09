@@ -18,6 +18,7 @@
  */
 
 import * as THREE from 'three'
+import { groundIt, measuredHeight } from './skinBounds'
 
 export interface Marker {
   /** 무엇을 가리키는가 — 기록 id */
@@ -159,61 +160,6 @@ const SEAT_HEIGHT = 1.35
 const ACTOR_HEIGHT = 1.78
 /** 1인칭 눈높이(m). 키 1.78 인 사람의 눈은 대략 여기다. */
 const EYE_HEIGHT = 1.64
-
-/**
- * 모델의 **화면에 나오는 키**를 잰다.
- *
- * ## `Box3.setFromObject` 를 쓰면 안 되는 이유 — 81배 틀렸다
- * 착석 모델은 스킨드 메시인데 노드에 `scale 0.01` 이 걸려 있다. 스킨드 메시는
- * 렌더링할 때 그 노드 스케일이 `bindMatrix`/`bindMatrixInverse` 로 **상쇄**되어
- * 실제로는 뼈가 크기를 정한다. 그런데 `Box3.setFromObject` 는 `matrixWorld` 를
- * 곧이곧대로 곱하므로 0.01 이 그대로 남는다.
- *
- * 실측: 같은 모델을 단순 변환으로 재면 **0.0172m**, 뼈를 적용해 재면 **1.3945m** 다.
- * 그 값으로 `SEAT_HEIGHT/키` 를 계산했더니 배율이 **185~345배**가 됐고,
- * 다섯 명이 전부 거인이 되어 카메라가 몸 안에 들어갔다 — 화면에는 후광과 이름표만 남았다.
- *
- * 전수 검사는 하지 않는다. 정점이 538,235개인데 **키를 재는 데는 몇백 점이면 충분하다.**
- */
-function measureY(root: THREE.Object3D): { lo: number; hi: number } {
-  root.updateMatrixWorld(true)
-  const v = new THREE.Vector3()
-  let lo = Infinity
-  let hi = -Infinity
-  root.traverse((o) => {
-    const m = o as THREE.Mesh
-    if (!m.isMesh) return
-    const pos = m.geometry.getAttribute('position')
-    if (!pos) return
-    const sk = o as THREE.SkinnedMesh
-    const step = Math.max(1, Math.floor(pos.count / 500))
-    for (let i = 0; i < pos.count; i += step) {
-      v.fromBufferAttribute(pos, i)
-      if (sk.isSkinnedMesh) sk.applyBoneTransform(i, v)   // 뼈가 실제 크기를 정한다
-      v.applyMatrix4(m.matrixWorld)
-      if (v.y < lo) lo = v.y
-      if (v.y > hi) hi = v.y
-    }
-  })
-  return { lo, hi }
-}
-
-const measuredHeight = (root: THREE.Object3D): number => {
-  const { lo, hi } = measureY(root)
-  return hi > lo ? hi - lo : 0
-}
-
-/**
- * **발을 바닥에 붙인다.**
- * 모델마다 원점이 다르다 — 어떤 것은 엉덩이, 어떤 것은 발밑, 어떤 것은 그 사이다.
- * `position.y = 0` 으로 두면 그 차이가 그대로 나온다. 실측: 다섯 명 중 하나가
- * **90cm 공중에 떠 있었고**(비서 모델) 나머지는 10~28cm 묻혀 있었다.
- * 크기를 맞춘 **뒤에** 재서, 가장 낮은 점이 바닥에 오도록 내린다.
- */
-function groundIt(o: THREE.Object3D): void {
-  const { lo } = measureY(o)
-  if (Number.isFinite(lo)) o.position.y -= lo
-}
 
 /**
  * 반경 안에서 **가장 가까운** 것을 고른다. 순수 함수로 떼어낸 이유는
