@@ -143,8 +143,48 @@ for (let i = 0; i < solid.length; i++) {
   solid[i] = (obstacle || !floorAt[i]) ? 1 : 0   // 런타임과 같이 **바닥 없으면 못 간다**
 }
 
-// 시작점에서 걸어서 닿는 칸 (BFS)
+if (process.env.EXPORT_GRID) {
+  const { writeFileSync } = await import('node:fs')
+  writeFileSync('/tmp/grid.json', JSON.stringify({ GW, GH, MIN_X, MIN_Z, CELL,
+    solid: [...solid], floorAt: [...floorAt] }))
+}
+
+// **문을 연다** — 런타임(`explore3d.ts` 의 `openDoors`)과 같은 규칙.
+// 빈 칸은 공짜, 막힌 칸은 1 로 0-1 BFS 를 돌려 DOOR_MAX 겹 이하만 뚫는다.
+const DOOR_MAX = Number(process.env.DOOR_MAX ?? 2)
 const SPAWN = [0, 5]
+let doorsOpened = 0
+{
+  const N = GW * GH
+  const dist = new Int32Array(N).fill(0x7fffffff)
+  const prev = new Int32Array(N).fill(-1)
+  const start = gi(SPAWN[0], SPAWN[1])
+  dist[start] = 0
+  const dq = [start]
+  let head = 0
+  while (head < dq.length) {
+    const i = dq[head++]
+    const r = (i / GW) | 0, c = i % GW
+    for (const j of [r > 0 ? i - GW : -1, r < GH - 1 ? i + GW : -1,
+                     c > 0 ? i - 1 : -1, c < GW - 1 ? i + 1 : -1]) {
+      if (j < 0 || !floorAt[j]) continue
+      const w = solid[j] ? 1 : 0
+      if (dist[i] + w < dist[j]) {
+        dist[j] = dist[i] + w; prev[j] = i
+        if (w) dq.push(j); else dq.splice(head, 0, j)
+      }
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    if (!floorAt[i] || solid[i]) continue
+    if (dist[i] === 0 || dist[i] > DOOR_MAX) continue
+    for (let j = i; j !== -1 && dist[j] > 0; j = prev[j]) {
+      if (solid[j]) { solid[j] = 0; doorsOpened++ }
+    }
+  }
+}
+
+// 시작점에서 걸어서 닿는 칸 (BFS)
 const reach = new Uint8Array(GW * GH)
 const q = [gi(SPAWN[0], SPAWN[1])]
 if (solid[q[0]]) console.log('⚠ 시작점이 막혀 있다')
@@ -176,7 +216,7 @@ console.log(JSON.stringify({
   정점: verts,
   bbox: { x: bb.x.map((v) => +v.toFixed(1)), y: bb.y.map((v) => +v.toFixed(1)), z: bb.z.map((v) => +v.toFixed(1)) },
   걷는범위: { x: [+MIN_X.toFixed(1), +MAX_X.toFixed(1)], z: [+MIN_Z.toFixed(1), +MAX_Z.toFixed(1)] },
-  격자: `${GW}x${GH}`, 삼각형: tris.length,
+  격자: `${GW}x${GH}`, 삼각형: tris.length, 뚫은문: doorsOpened,
   보이는칸: nSeen, 막는칸: nSolid, 통과하는칸: nThrough,
   빈칸: nFree, 도달칸: nReach, 고립: nFree - nReach,
   바닥없는데_걸어감: nVoid,

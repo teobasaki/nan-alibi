@@ -490,6 +490,69 @@ export async function mountExplore(
     }
 
     /**
+     * **문을 연다.** — 방과 방을 가르는 **가장 얇은 칸막이**를 뚫어 준다.
+     *
+     * ## 왜 이름으로 못 찾나
+     * 이 경찰서는 노드 2,889개를 재질별로 합쳐 2개로 줄인 모델이라
+     * (`scripts/merge_by_material.py`) **문이라는 이름이 남아 있지 않다.**
+     * 재질도 `Wall___Column` · `Props` 뿐이고 door 계열이 없다.
+     * (다른 후보 모델 `police_station.glb` 에는 `Door_00`… 이 있지만 그건 안 쓰는 모델이다.)
+     *
+     * ## 그래서 두께로 찾는다
+     * 문은 얇고 벽은 두껍다. 시작점에서 **"빈 칸은 공짜, 막힌 칸은 1"** 로 0-1 BFS 를
+     * 돌리면, 각 칸까지 가는 데 **몇 겹을 뚫어야 하는지**가 나온다. 그 값이 상한 이하인
+     * 칸까지의 경로만 열어 준다.
+     *
+     * | 상한 | 뚫은 칸 | 걸을 칸 | 도달 칸 |
+     * |---|---|---|---|
+     * | 0 (안 뚫음) | 0 | 890 | 795 |
+     * | **2칸 = 1.0m** | **15** | **905** | **901** |
+     * | 4칸 = 2.0m | 24 | 914 | 914 |
+     *
+     * 1.0m 에서 사실상 다 열린다(905 중 901). 더 올리면 9칸을 더 뚫어 13칸을 더 얻는데,
+     * 그건 문이 아니라 **벽을 뚫는 것**이다. 남는 4칸은 1m² 라 방이 아니다.
+     */
+    const DOOR_MAX = 2      // 뚫어 줄 최대 두께(칸). 0.5m × 2 = 1.0m
+    const openDoors = (sx: number, sz: number): number => {
+      const N = GW * GH
+      const dist = new Int32Array(N).fill(0x7fffffff)
+      const prev = new Int32Array(N).fill(-1)
+      const start = gi(sx, sz)
+      dist[start] = 0
+      // 0-1 BFS — 공짜 이동은 앞에, 뚫는 이동은 뒤에 넣는다
+      const dq: number[] = [start]
+      let head = 0
+      while (head < dq.length) {
+        const i = dq[head++]!
+        const r = Math.floor(i / GW)
+        const c = i % GW
+        for (const j of [
+          r > 0 ? i - GW : -1, r < GH - 1 ? i + GW : -1,
+          c > 0 ? i - 1 : -1, c < GW - 1 ? i + 1 : -1,
+        ]) {
+          if (j < 0) continue
+          if (floorAt[j] === 0) continue          // 건물 밖으로는 문을 내지 않는다
+          const w = solid[j] === 1 ? 1 : 0
+          if (dist[i]! + w < dist[j]!) {
+            dist[j] = dist[i]! + w
+            prev[j] = i
+            if (w) dq.push(j)
+            else { dq.splice(head, 0, j) }        // 공짜 이동은 지금 처리할 자리에
+          }
+        }
+      }
+      let opened = 0
+      for (let i = 0; i < N; i++) {
+        if (floorAt[i] === 0 || solid[i] === 1) continue
+        if (dist[i] === 0 || dist[i]! > DOOR_MAX) continue
+        for (let j = i; j !== -1 && dist[j]! > 0; j = prev[j]!) {
+          if (solid[j] === 1) { solid[j] = 0; opened++ }
+        }
+      }
+      return opened
+    }
+
+    /**
      * **걸어서 닿는 칸을 미리 구해 둔다.**
      *
      * 보이는 것을 전부 막으면(0.3~2.6m) 책상 뒤·구석에 **고립된 칸이 18개** 생긴다.
@@ -501,7 +564,7 @@ export async function mountExplore(
     const floodFrom = (x: number, z: number): void => {
       reach.fill(0)
       const start = gi(x, z)
-      if (solid[start] === 1) return
+      if (blocked(x, z)) return
       reach[start] = 1
       const q = [start]
       for (let h = 0; h < q.length; h++) {
@@ -513,7 +576,9 @@ export async function mountExplore(
           const nc = c + dc
           if (nr < 0 || nr >= GH || nc < 0 || nc >= GW) continue
           const n = nr * GW + nc
-          if (solid[n] === 1 || reach[n] === 1) continue
+          // **`blocked()` 와 같은 조건이어야 한다.** 여기서 solid 만 보면 바닥 없는
+          // 허공까지 "닿는 칸" 으로 세고, 그러면 사람이 못 서는 자리에 사람을 놓는다.
+          if (solid[n] === 1 || floorAt[n] === 0 || reach[n] === 1) continue
           reach[n] = 1
           q.push(n)
         }
@@ -558,8 +623,14 @@ export async function mountExplore(
           }
         }
       }
+      const doors = openDoors(sx, sz)
       floodFrom(sx, sz)
       actor.position.set(sx, 0, sz)
+      if (import.meta.env.DEV) {
+        let n = 0
+        for (const c of reach) if (c) n++
+        console.info(`[탐색] 문 ${doors}칸 뚫음 · 걸어서 닿는 칸 ${n}`)
+      }
     }
 
     const mixer = new THREE.AnimationMixer(actor)
