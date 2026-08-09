@@ -2,21 +2,21 @@
 
 NAN 2026 제출 규정에 따라 외부 에셋의 출처와 라이선스를 명시한다.
 
-> **미확인 항목이 있다.** 확인되지 않은 것을 확인된 것처럼 적지 않는다 —
-> 아래 “확인 필요” 표의 항목은 마감 전에 원본 페이지 URL과 라이선스를 채워야 하며,
-> 채우지 못하면 해당 에셋을 교체하거나 제거한다.
+> **출처가 확인되지 않은 에셋은 배포하지 않는다.** 확인되지 않은 것을 확인된 것처럼
+> 적지 않고, 채우지 못하면 교체한다 — 실제로 그렇게 했다(아래).
 
-## 확인 필요 — 3D 에셋 (Sketchfab)
+## 교체하고 걷어낸 것 — 출처 미확인 캐릭터 3종
 
-취조실 1점과 기성 리깅 캐릭터 3종을 Sketchfab 에서 받아 사용했다.
-현재 저장소에 **원본 페이지 URL과 라이선스 표기가 남아 있지 않다.**
-다운로드 이력에서 회수해 아래 표를 채운다.
+`secretary` · `housekeeping` · `nephew` 는 한때 Sketchfab 기성 모델을 썼는데
+**원본 페이지 URL과 라이선스가 저장소에 남아 있지 않았다.** 2026-08-10 에
+같은 배역의 **자체 생성본**(Meshy, 아래 "생성 에셋" 표)으로 되돌려 저작권 문제를 없앴다.
 
-| 에셋 | 저장소 경로 | 원본 URL | 저작자 | 라이선스 |
-|---|---|---|---|---|
-| 캐릭터 — 비서 | `public/characters/secretary.opt.glb` | (확인 필요) | (확인 필요) | (확인 필요) |
-| 캐릭터 — 하우스키핑 | `public/characters/housekeeping.opt.glb` | (확인 필요) | (확인 필요) | (확인 필요) |
-| 캐릭터 — 조카 | `public/characters/nephew.opt.glb` | (확인 필요) | (확인 필요) | (확인 필요) |
+되돌린 김에 품질도 같이 해결됐다 — 그 세 모델은 리그 규약이 달라
+`scripts/pose-seated.py` 의 착석 포즈가 아예 안 먹었고, 그중 하나(`nephew`)는
+**누운 채** 배포되어 런타임 배율 4.03배가 얹혀 있었다.
+
+교체 전 파일은 배포에서 빠졌고 `assets-src/*.sketchfab.glb` 에만 남아 있다.
+**되살리려면 원본 URL과 라이선스를 먼저 확인해야 한다.**
 ## 확인 완료 — 3D 에셋
 
 | 에셋 | 저장소 경로 | 원본 | 저작자 | 라이선스 |
@@ -53,7 +53,8 @@ CC-BY 계열이면 저작자 표기로 충족된다. NC(비상업)·ND(변경 �
 
 | 에셋 | 생성 도구 | 비고 |
 |---|---|---|
-| 캐릭터 5종 (`manager` · `security` · `investor` · `expartner` · `appraiser`) | Meshy (multi-image-to-3d + rigging) | 레퍼런스 이미지는 OpenAI `gpt-image-2` 로 생성 |
+| 캐릭터 **8종** (`manager` · `security` · `investor` · `expartner` · `appraiser` · `secretary` · `housekeeping` · `nephew`) | Meshy (multi-image-to-3d + rigging) | 레퍼런스 이미지는 OpenAI `gpt-image-2` 로 생성. 착석 자세는 Blender 헤드리스(`scripts/pose-seated.py`), 팔 자세 보정은 `scripts/fix-arms.mjs` |
+| 걷기 동작 | Mixamo 클립을 자체 리타게팅 (`scripts/retarget.py`) | 다리 축 보정은 런타임에서 한다 (ADR 021) |
 | 인물 레퍼런스 이미지 (`public/refs/`, `docs/refs/`) | OpenAI `gpt-image-2` | 3D 생성 입력용 |
 | 인트로 · 엔딩 패널 (`public/intro/`, `public/outro/`) | OpenAI 이미지 생성 | 그림이 없어도 색면 폴백으로 동작 |
 | 효과음 | Web Audio API 합성 (`src/ui/sound.ts`) | 외부 음원 파일 없음 |
