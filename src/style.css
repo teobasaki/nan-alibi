@@ -982,6 +982,46 @@ body::after {
 /* 좌면이 취조실일 때는 3D 가 폭을 다 쓴다 */
 .nb-left > .stage { flex: 1; min-width: 0; }
 
+/* ══════════════════════════════════════════════════════════════
+   용의자 레일 — 심문 중에도 다섯이 화면에 남는다 (UI 레퍼런스 ①)
+   ══════════════════════════════════════════════════════════════ */
+.srail {
+  flex: 0 0 132px; display: flex; flex-direction: column; gap: 3px;
+  padding: 6px 4px 6px 6px; overflow-y: auto; min-width: 0;
+  border-right: 1px solid var(--line); background: rgba(0,0,0,.28);
+}
+.srow {
+  display: flex; align-items: center; gap: 7px; text-align: left;
+  padding: 6px 6px; border: 1px solid transparent; border-radius: 5px;
+  background: transparent; cursor: pointer; min-width: 0;
+  transition: background .14s, border-color .14s;
+}
+.srow:hover:not(:disabled) { background: rgba(255,255,255,.045); }
+/* 선택된 사람 — 레퍼런스의 청록 대신 우리 팔레트의 앰버를 쓴다(주목의 색은 하나다) */
+.srow.on {
+  background: rgba(200,145,47,.12);
+  border-color: rgba(200,145,47,.5);
+  cursor: default;
+}
+.srow.out { opacity: .42; }
+.srow:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.sface {
+  flex: 0 0 30px; width: 30px; height: 30px; border-radius: 4px;
+  background: #2a1f22 center/cover no-repeat; border: 1px solid var(--line);
+  display: grid; place-items: center;
+  font-family: var(--serif); font-size: 14px; color: var(--muted);
+}
+.sface.photo { color: transparent; }
+.stext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sname { font-size: 12.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sjob, .sprog { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sprog.has { color: var(--amber); opacity: .85; }
+
+@media (max-width: 1100px) {
+  .srail { flex-basis: 108px; }
+  .sface { flex-basis: 26px; width: 26px; height: 26px; }
+}
+
 @media (max-width: 1100px) {
   .nb { grid-template-columns: 58fr 8px 42fr; }
   .nb-tab { font-size: 11px; padding: 10px 4px; }

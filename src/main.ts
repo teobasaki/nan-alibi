@@ -1142,8 +1142,47 @@ function indexTabs(): HTMLElement {
   return tabs
 }
 
+/**
+ * **용의자 레일 — 심문 화면 왼쪽에 다섯이 항상 서 있다** (UI 레퍼런스 ①).
+ *
+ * 예전엔 한 명을 심문하는 동안 나머지 넷이 화면에서 사라졌다. 그래서 "누가 남았고
+ * 누구를 이미 만났는지" 를 보려면 카드 월로 나갔다 와야 했다 — 추리의 리듬이 끊긴다.
+ * 레일은 초상·이름·역할·진행(n/10)을 이고, **기록으로 소거된 사람은 흐려진다.**
+ * 전환은 카드 월과 같은 문(gatePass·hush·stopVoice)을 지난다 — 새 경로를 파지 않는다.
+ */
+function suspectRail(active: SuspectId): HTMLElement {
+  const rail = h('div', 'srail')
+  const cands = candidatesFrom(CASE, new Set(ui.game.cards))
+  for (const s of SUSPECTS) {
+    const sus = CASE.suspects[s]
+    const out = !cands.includes(s)
+    const left = talksLeft(ui.game, s)
+    const spoken = TALK_CAP - left
+    const row = h('button', `srow${s === active ? ' on' : ''}${out ? ' out' : ''}`) as HTMLButtonElement
+    const shot = portraitFor(castTagFor(s, CASE_TAG))
+    const face = h('span', `sface${shot ? ' photo' : ''}`, shot ? '' : sus.name[0]!)
+    if (shot) face.style.backgroundImage = `url(${shot})`
+    row.appendChild(face)
+    const txt = h('span', 'stext')
+    txt.appendChild(h('span', 'sname', sus.name))
+    txt.appendChild(h('span', 'sjob', out ? '기록으로 소거됨' : sus.job))
+    txt.appendChild(h('span', `sprog${spoken > 0 ? ' has' : ''}`, spoken > 0 ? `대화 ${spoken}/${TALK_CAP}` : '아직 안 만남'))
+    row.appendChild(txt)
+    row.disabled = s === active
+    row.onclick = () => {
+      if (s === active) return
+      hush(); stopVoice()
+      ui.active = s
+      mark({ k: 'open', who: s })
+      render()
+    }
+    rail.appendChild(row)
+  }
+  return rail
+}
+
 function stage(): HTMLElement {
-  const col = h('div', 'nb-page nb-left')
+  const col = h('div', 'nb-page nb-left stage-wrap')
   const box = h('div', 'stage')
 
   const s = ui.active!
@@ -1249,6 +1288,8 @@ function stage(): HTMLElement {
   if (ui.busy || pipeStage() !== 'idle') log.appendChild(stageChip())
   box.appendChild(log)
   box.appendChild(askBox(s))
+  // 좌: 용의자 다섯 · 중앙: 무대와 대화 (UI 레퍼런스 3분할의 왼쪽 두 칸)
+  col.appendChild(suspectRail(s))
   col.appendChild(box)
   queueMicrotask(() => { log.scrollTop = log.scrollHeight })
   return col
@@ -1585,7 +1626,13 @@ function askBox(s: SuspectId): HTMLElement {
     const c = h('button', 'chip') as HTMLButtonElement
     c.appendChild(h('span', 'chip-q', q))
     c.appendChild(h('span', 'chip-why', why))
-    c.onclick = () => { input.value = q; input.focus() }
+    /**
+     * **누르면 바로 묻는다** (사용자 실플레이 지적 ⑤).
+     * 예전엔 입력칸을 채우기만 해서, 처음 오는 사람은 이미 질문한 줄 알고 기다렸다.
+     * 버튼이 두 번 필요한 UI 는 첫 번째 버튼이 무엇을 했는지 말해 주지 못한다.
+     */
+    c.disabled = ui.busy || left <= 0
+    c.onclick = () => { input.value = q; void doAsk(s, q) }
     chips.appendChild(c)
   }
   wrap.appendChild(chips)
