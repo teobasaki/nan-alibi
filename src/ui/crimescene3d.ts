@@ -23,7 +23,7 @@ import { groundIt, measuredHeight } from './skinBounds'
 import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
-  PEDESTAL_AT, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
+  GALLERY_OFFSET, PEDESTAL_AT, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
   phaseAt, pulseAt, remainMs, sceneBlocked, vignetteAt, type ScenePhase,
 } from './sceneRules'
 
@@ -136,6 +136,28 @@ for (const [p, url] of Object.entries(EVIDENCE_FILES)) {
   if (k) ICON_BY_KIND.set(k, (url as string).replace(/^\/public/, ''))
 }
 
+/**
+ * 진짜 갤러리 방 (`public/room/gallery.opt.glb`, 원본 23MB → 1.8MB 최적화).
+ * 없으면 프리미티브 방이 그대로 돈다 — 경찰서(station)와 같은 에셋 0 원칙.
+ */
+const GALLERY_URL = (Object.values(
+  import.meta.glob('/public/room/gallery.opt.glb', { eager: true, query: '?url', import: 'default' }),
+)[0] as string | undefined)?.replace(/^\/public/, '')
+
+/**
+ * 대기 클립(`<slug>.idle.opt.glb`) — 정지 상태의 기본. 걷기 0프레임 A포즈가
+ * "리깅 안 돼 있다" 로 읽히던 것의 수리다. pickup 과 같은 방식으로 클립만 얹는다.
+ */
+const IDLE = import.meta.glob('/public/characters/*.idle.opt.glb', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+
+const IDLE_BY_SLUG = new Map<string, string>()
+for (const [p, url] of Object.entries(IDLE)) {
+  const slug = p.split('/').pop()?.replace('.idle.opt.glb', '')
+  if (slug) IDLE_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
+}
+
 const ACTOR_HEIGHT = 1.78
 const EYE_HEIGHT = 1.64
 const MARK_Y = 0.8
@@ -176,47 +198,150 @@ export async function mountCrimeScene(
      * 경찰서(31.8m)는 따라다녔지만 이 방은 12×9m 라 **고정 카메라로 다 보인다** —
      * 따라다니면 오히려 남은 증거의 전모가 안 보여 포기가 선택이 못 된다.
      */
-    const VIEW = 11.5
+    const VIEW = 15
     const camera = new THREE.OrthographicCamera(
       -VIEW * (w / hgt) / 2, VIEW * (w / hgt) / 2, VIEW / 2, -VIEW / 2, 0.1, 200)
-    const CAM_R = Math.hypot(9, 9)
+    const CAM_R = Math.hypot(12, 12)
     const camAngle0 = Math.atan2(9, 9)
+    const CX = (SCENE_ROOM.minX + SCENE_ROOM.maxX) / 2   // 홀 중심 — 갤러리 홀은 원점 중심이 아니다
+    const CZ = (SCENE_ROOM.minZ + SCENE_ROOM.maxZ) / 2
     const placeCam = (ang: number): void => {
-      camera.position.set(Math.cos(ang) * CAM_R, 12, Math.sin(ang) * CAM_R)
-      camera.lookAt(0, 0, 0)
+      camera.position.set(CX + Math.cos(ang) * CAM_R, 15, CZ + Math.sin(ang) * CAM_R)
+      camera.lookAt(CX, 0, CZ)
     }
     placeCam(camAngle0)
 
     /** 1인칭 눈 — explore3d 와 같은 화각·이유 */
     const eye = new THREE.PerspectiveCamera(60, w / hgt, 0.08, 100)
 
-    /* ── 방 — 프리미티브. 재질 몇 개로 드로우콜을 묶는다 ── */
+    /* ── 로더는 방·액터·클립이 같이 쓴다 — 한 번만 만든다 ── */
+    const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
+    const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js')
+    const draco = new DRACOLoader().setDecoderPath('/draco/')
+    const loader = new GLTFLoader().setDRACOLoader(draco)
+
     const mat = (color: number, rough = 0.85): THREE.MeshStandardMaterial =>
       new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.05 })
 
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 9), mat(COL.floor, 0.95))
-    floor.rotation.x = -Math.PI / 2
-    floor.receiveShadow = true
-    scene.add(floor)
+    /**
+     * 갤러리 메시를 **격자로 굽는다** — probe-walkgrid 문법 (경찰서 통합 때와 같은 절차).
+     * 모서리 래스터화(벽은 XZ 투영 넓이가 0이라 면적 래스터화로는 안 잡힌다),
+     * 몸통 높이 띠 0.3~1.9m. 바닥 판정은 굽지 않는다 — 놀이 구역(SCENE_ROOM)을
+     * **연속 바닥인 서관 홀 안에서 실측으로 골랐기 때문**이다 (sceneRules 주석·bbox 실측).
+     */
+    const CELL = 0.5
+    const GW = Math.ceil((SCENE_ROOM.maxX - SCENE_ROOM.minX) / CELL) + 1
+    const GH = Math.ceil((SCENE_ROOM.maxZ - SCENE_ROOM.minZ) / CELL) + 1
+    const solid = new Uint8Array(GW * GH)
+    const gi = (x: number, z: number): number =>
+      Math.round((z - SCENE_ROOM.minZ) / CELL) * GW + Math.round((x - SCENE_ROOM.minX) / CELL)
+    const inGrid = (x: number, z: number): boolean =>
+      x >= SCENE_ROOM.minX && x <= SCENE_ROOM.maxX && z >= SCENE_ROOM.minZ && z <= SCENE_ROOM.maxZ
 
-    const wallMat = mat(COL.wall, 0.9)
-    const mkWall = (wx: number, wz: number, sx: number, sz: number): void => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, 3, sz), wallMat)
-      m.position.set(wx, 1.5, wz)
-      m.receiveShadow = true
-      scene.add(m)
+    const bakeWalls = (root: THREE.Object3D): number => {
+      const WALL_LO = 0.3
+      const WALL_HI = 1.9
+      const a = new THREE.Vector3()
+      const b = new THREE.Vector3()
+      const p = new THREE.Vector3()
+      const v0 = new THREE.Vector3()
+      const v1 = new THREE.Vector3()
+      const v2 = new THREE.Vector3()
+      root.updateMatrixWorld(true)
+      const stamp = (): void => {
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const dz = b.z - a.z
+        // 세로 모서리(기둥)도 놓치지 않는다 — 2D 길이만 보면 표본이 1개다 (explore3d 실측)
+        const steps = Math.max(1,
+          Math.ceil(Math.hypot(dx, dz) / (CELL * 0.5)),
+          Math.ceil(Math.abs(dy) / (CELL * 0.5)))
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps
+          p.set(a.x + dx * t, a.y + dy * t, a.z + dz * t)
+          if (p.y < WALL_LO || p.y > WALL_HI) continue
+          if (!inGrid(p.x, p.z)) continue
+          solid[gi(p.x, p.z)] = 1
+        }
+      }
+      root.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (!m.isMesh) return
+        // 조상까지 본다 — 숨긴 천장을 벽으로 구우면 안 된다 (explore3d 와 같은 함정)
+        for (let q: THREE.Object3D | null = o; q; q = q.parent) if (!q.visible) return
+        /**
+         * **걷는 면과 장식 레일은 굽지 않는다** (격자 실측으로 잡은 함정).
+         * floor 는 단차 테두리가 y 0.3~0.54 로 몸통 띠에 걸리고, corner(픽처레일 몰딩)는
+         * z=±2.5 에서 홀을 **전폭으로 가로지르는 벽**이 되어 시작점이 6.5m² 에 갇혔다 —
+         * 도달성 BFS 가 마커 10개 전부 unreachable 을 찍었다. 벽·가구·조각상만 굽는다.
+         */
+        if (/floor|stairs|corner/i.test(m.name)) return
+        const pos = m.geometry.getAttribute('position')
+        if (!pos) return
+        const idx = m.geometry.getIndex()
+        const count = idx ? idx.count : pos.count
+        for (let i = 0; i < count; i += 3) {
+          v0.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(m.matrixWorld)
+          v1.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(m.matrixWorld)
+          v2.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2).applyMatrix4(m.matrixWorld)
+          const lo = Math.min(v0.y, v1.y, v2.y)
+          const hi = Math.max(v0.y, v1.y, v2.y)
+          if (hi < WALL_LO || lo > WALL_HI) continue
+          a.copy(v0); b.copy(v1); stamp()
+          a.copy(v1); b.copy(v2); stamp()
+          a.copy(v2); b.copy(v0); stamp()
+        }
+      })
+      let n = 0
+      for (const c of solid) if (c) n++
+      return n
     }
-    mkWall(0, SCENE_ROOM.minZ - 0.15, 12.6, 0.3)          // 뒷벽
-    mkWall(SCENE_ROOM.minX - 0.15, 0, 0.3, 9.6)           // 좌벽
-    // **컷어웨이** — 카메라 쪽 두 벽(+X·+Z)은 낮춘다. 60 Seconds! 의 문법이고
-    // 경찰서 씬이 천장을 숨기는 것과 같은 이유다: 보여야 고를 수 있다.
-    {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 9.6), wallMat)
-      m.position.set(SCENE_ROOM.maxX + 0.15, 0.25, 0)
-      scene.add(m)
-      const f = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.5, 0.3), wallMat)
-      f.position.set(0, 0.25, SCENE_ROOM.maxZ + 0.15)
-      scene.add(f)
+
+    /** 분석 경계·소품 상자 + 구운 격자 — 이동·스폰 보정이 같은 값을 본다 */
+    const blockedAt = (x: number, z: number): boolean =>
+      sceneBlocked(x, z) || (inGrid(x, z) && solid[gi(x, z)] === 1)
+
+    if (GALLERY_URL) {
+      /* ── 진짜 갤러리 — 서관 홀을 실측 오프셋으로 y=0 바닥에 맞춘다 (sceneRules 주석) ── */
+      const g = await loader.loadAsync(GALLERY_URL)
+      const room = g.scene
+      room.position.set(GALLERY_OFFSET[0], GALLERY_OFFSET[1], GALLERY_OFFSET[2])
+      room.traverse((o) => {
+        // 탑다운이므로 머리 위 구조물은 숨긴다 — 경찰서의 CEILING_HIDE 와 같은 이유
+        if (/ceiling|skylight|^lights/i.test(o.name)) o.visible = false
+        const m = o as THREE.Mesh
+        if (!m.isMesh) return
+        m.receiveShadow = true
+        m.castShadow = true
+        // 갤러리의 emissive(창·조명 텍스처)는 살린다 — 어둡다는 체감의 반대 방향으로
+      })
+      scene.add(room)
+      const t0 = performance.now()
+      const n = bakeWalls(room)
+      if (import.meta.env.DEV) {
+        console.info(`[현장] 갤러리 격자 ${GW}x${GH} · 막힌 칸 ${n} · ${Math.round(performance.now() - t0)}ms`)
+      }
+    } else {
+      /* ── 폴백 — 프리미티브 방. 에셋이 없어도 게임은 선다 ── */
+      const RW = SCENE_ROOM.maxX - SCENE_ROOM.minX + 0.6
+      const RD = SCENE_ROOM.maxZ - SCENE_ROOM.minZ + 0.6
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(RW, RD), mat(COL.floor, 0.95))
+      floor.rotation.x = -Math.PI / 2
+      floor.position.set(CX, 0, CZ)
+      floor.receiveShadow = true
+      scene.add(floor)
+      const wallMat = mat(COL.wall, 0.9)
+      const mkWall = (wx: number, wz: number, sx: number, sz: number, h = 3): void => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(sx, h, sz), wallMat)
+        m.position.set(wx, h / 2, wz)
+        m.receiveShadow = true
+        scene.add(m)
+      }
+      mkWall(CX, SCENE_ROOM.minZ - 0.15, RW, 0.3)               // 뒷벽
+      mkWall(SCENE_ROOM.minX - 0.15, CZ, 0.3, RD)               // 좌벽
+      // 컷어웨이 — 카메라 쪽 두 벽은 낮춘다 (보여야 고를 수 있다)
+      mkWall(SCENE_ROOM.maxX + 0.15, CZ, 0.3, RD, 0.5)
+      mkWall(CX, SCENE_ROOM.maxZ + 0.15, RW, 0.3, 0.5)
     }
 
     // 장애물 — 충돌 표(SCENE_BOXES)와 **같은 표**로 그린다. 보이는 것과 막히는 것이 같아야 한다.
@@ -253,23 +378,28 @@ export async function mountCrimeScene(
       }
     }
 
-    // 조명 — 현장은 감식용 조명이 켜져 있다. 경찰서보다 차갑고 밝다.
-    scene.add(new THREE.AmbientLight(0xffe2c0, 0.75))
-    const key = new THREE.DirectionalLight(0xfff2dc, 1.5)
-    key.position.set(6, 14, 4)
+    // 조명 — 갤러리 전시 조명. "너무 어둡다"는 실플레이 체감의 수리:
+    // 환경광·키·헤미를 전부 올리고 노출도 1.12 → 1.3. 증거품이 읽히는 밝기가 기준이다.
+    renderer.toneMappingExposure = 1.3
+    scene.add(new THREE.AmbientLight(0xfff0dc, 1.05))
+    const key = new THREE.DirectionalLight(0xfff6e8, 1.8)
+    key.position.set(CX + 5, 16, CZ + 4)
+    key.target.position.set(CX, 0, CZ)
+    scene.add(key.target)
     key.castShadow = true
-    key.shadow.mapSize.set(1024, 1024)
+    key.shadow.mapSize.set(2048, 2048)
     const sc = key.shadow.camera as THREE.OrthographicCamera
-    sc.left = -9; sc.right = 9; sc.top = 9; sc.bottom = -9; sc.near = 1; sc.far = 40
+    sc.left = -14; sc.right = 14; sc.top = 14; sc.bottom = -14; sc.near = 1; sc.far = 50
     key.shadow.bias = -0.0008
     scene.add(key)
-    scene.add(new THREE.HemisphereLight(0x8fa0bb, 0x241a17, 0.45))
+    scene.add(new THREE.HemisphereLight(0xa8b4c8, 0x2a2018, 0.55))
 
     /* ── 내 몸 — 걷기 모델. 없으면 프리미티브 실루엣으로라도 선다 (에셋 0 원칙) ── */
     let picked: THREE.Object3D | null = null
     let mixer: THREE.AnimationMixer | null = null
     let walk: THREE.AnimationAction | null = null
     let pickupAction: THREE.AnimationAction | null = null
+    let idleAction: THREE.AnimationAction | null = null
     /**
      * 달리기 우선 — 클립과 속도는 한 몸이다. run 이 없거나 **리그가 말이 안 되면**
      * 걷기 클립 + 걷기 속도로 떨어진다.
@@ -283,10 +413,6 @@ export async function mountCrimeScene(
     const candidates = [...new Set([runUrl, walkOnly].filter((u): u is string => Boolean(u)))]
     let moveSpeed: number = SCENE_FX.speed
     if (candidates.length) {
-      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
-      const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js')
-      const draco = new DRACOLoader().setDecoderPath('/draco/')
-      const loader = new GLTFLoader().setDRACOLoader(draco)
       for (const url of candidates) {
         const gltf = await loader.loadAsync(url)
         const mh = measuredHeight(gltf.scene)
@@ -320,30 +446,49 @@ export async function mountCrimeScene(
         break
       }
 
-      /* 집기 클립 — 액터가 섰을 때만 의미가 있다. 리그 가드는 동일하게 지난다. */
+      /* 집기·대기 클립 — 액터가 섰을 때만 의미가 있다. 리그 가드는 동일하게 지난다. */
       if (picked && mixer) {
-        const pUrl = PICKUP_BY_SLUG.get(slug) ?? [...PICKUP_BY_SLUG.values()][0]
-        if (pUrl) {
+        /** 같은 리그의 다른 파일에서 클립만 뽑는다. rest 는 그 파일 자신의 씬이다. */
+        const extraClip = async (url: string | undefined, what: string): Promise<THREE.AnimationClip | null> => {
+          if (!url) return null
           try {
-            const pg = await loader.loadAsync(pUrl)
-            const pmh = measuredHeight(pg.scene)
-            const pClip = pg.animations[0]
-            if (pmh >= 1.2 && pmh <= 2.5 && pClip) {
-              unrollLegs(pClip, pg.scene)      // rest 는 이 파일 자신의 씬 — 액터는 이미 rest 가 아니다
-              pickupAction = mixer.clipAction(pClip)
-              pickupAction.setLoop(THREE.LoopOnce, 1)
-              /**
-               * 잠금 0.45s 안에 클립 앞 55%가 보이도록 재생 속도를 맞춘다 —
-               * 클립을 자르는 대신 시간을 접는다 (subclip 은 프레임 수를 알아야 한다).
-               */
-              const want = pClip.duration * SCENE_FX.pickupPortion
-              pickupAction.timeScale = Math.min(3, Math.max(0.8, want / (SCENE_FX.pickupLockMs / 1000)))
-            } else if (import.meta.env.DEV) {
-              console.warn(`[현장] ${pUrl} 집기 리그가 이상하다 — 키 ${pmh.toFixed(2)}m. 집기 연출 없이 간다.`)
+            const g2 = await loader.loadAsync(url)
+            const mh2 = measuredHeight(g2.scene)
+            const clip2 = g2.animations[0]
+            if (mh2 >= 1.2 && mh2 <= 2.5 && clip2) {
+              unrollLegs(clip2, g2.scene)
+              return clip2
             }
-          } catch { /* 집기 없이 간다 — 수거 규칙은 그대로다 */ }
+            if (import.meta.env.DEV) {
+              console.warn(`[현장] ${url} ${what} 리그가 이상하다 — 키 ${mh2.toFixed(2)}m. ${what} 없이 간다.`)
+            }
+          } catch { /* 없이 간다 — 규칙은 그대로다 */ }
+          return null
+        }
+
+        const pClip = await extraClip(PICKUP_BY_SLUG.get(slug) ?? [...PICKUP_BY_SLUG.values()][0], '집기')
+        if (pClip) {
+          pickupAction = mixer.clipAction(pClip)
+          pickupAction.setLoop(THREE.LoopOnce, 1)
+          /**
+           * 잠금 0.45s 안에 클립 앞 55%가 보이도록 재생 속도를 맞춘다 —
+           * 클립을 자르는 대신 시간을 접는다 (subclip 은 프레임 수를 알아야 한다).
+           */
+          const want = pClip.duration * SCENE_FX.pickupPortion
+          pickupAction.timeScale = Math.min(3, Math.max(0.8, want / (SCENE_FX.pickupLockMs / 1000)))
+        }
+
+        const iClip = await extraClip(IDLE_BY_SLUG.get(slug) ?? [...IDLE_BY_SLUG.values()][0], '대기')
+        if (iClip) {
+          idleAction = mixer.clipAction(iClip)
+          idleAction.play()                    // 대기가 기본이다 — 숨쉬는 몸이 A포즈를 지운다
+          if (walk) { walk.paused = false; walk.setEffectiveWeight(0) }
         }
       }
+    }
+    if (import.meta.env.DEV) {
+      console.info(`[현장] 액터 ${slug} — 이동 ${moveSpeed === SCENE_FX.runSpeed ? '달리기' : '걷기'} ` +
+        `${moveSpeed}m/s · 대기 ${idleAction ? '있음' : '없음(0프레임 폴백)'} · 집기 ${pickupAction ? '있음' : '없음'}`)
     }
     // 모든 후보가 없거나 리그가 깨졌다 — 캡슐 실루엣. 게임은 멈추지 않는다.
     const actor: THREE.Object3D = picked ?? (() => {
@@ -355,6 +500,16 @@ export async function mountCrimeScene(
       return g
     })()
     actor.position.set(SCENE_START[0], 0, SCENE_START[1])
+    // 시작점이 갤러리 가구(구운 격자) 안이면 곁의 빈 자리로 — 첫 발이 막히면 게임이 없다
+    if (blockedAt(actor.position.x, actor.position.z)) {
+      outer: for (let r = 0.3; r < 5; r += 0.3) {
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+          const px = SCENE_START[0] + Math.cos(a) * r
+          const pz = SCENE_START[1] + Math.sin(a) * r
+          if (!blockedAt(px, pz)) { actor.position.set(px, 0, pz); break outer }
+        }
+      }
+    }
     groundIt(actor)
     scene.add(actor)
 
@@ -406,8 +561,26 @@ export async function mountCrimeScene(
       return t
     }
 
+    /**
+     * **못 닿는 자리에 놓지 않는다.** 스폰(sceneRules)은 분석 상자만 알고 갤러리의
+     * 의자·조각상(구운 격자)은 모른다 — 그 안에 떨어진 마커는 걸어서 영영 못 줍는다.
+     * 옮긴 좌표를 `at` 에 되써서 화면과 근접 판정이 같은 자리를 본다 (explore3d 문법).
+     */
+    const spotFor = (at: [number, number]): [number, number] => {
+      if (!blockedAt(at[0], at[1])) return at
+      for (let r = 0.3; r < 4; r += 0.3) {
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+          const px = at[0] + Math.cos(a) * r
+          const pz = at[1] + Math.sin(a) * r
+          if (!blockedAt(px, pz)) return [px, pz]
+        }
+      }
+      return at
+    }
+
     const setMarkers = (list: SceneMarker[]): void => {
-      markers = list
+      markers = list.map((m) => ({ ...m, at: spotFor(m.at) }))
+      list = markers
       for (const c of markerRoot.children) {
         const m = c as THREE.Mesh
         m.geometry?.dispose?.()
@@ -768,8 +941,16 @@ export async function mountCrimeScene(
       if (!alive) return
       raf = requestAnimationFrame(tick)
       const gap = clock.getDelta()                    // 프레임 간격 (초)
-      const dt = Math.min(0.05, gap)                  // 이동·애니메이션용 — 벽 뚫기 방지 캡
+      const dt = Math.min(0.05, gap)                  // 조향·연출용 — 프레임 급락 시 과회전 방지 캡
       if (gap <= 1) elapsedMs += gap * 1000           // 1초 넘게 멎었던 시간은 시계가 세지 않는다
+      /**
+       * 이동·애니메이션은 **실시간(simSec)** 을 탄다 — "움직임이 순간이동" 의 수리.
+       * 예전엔 dt(0.05 캡)로만 밀어서, 프레임이 처지면 이동·클립이 함께 느려졌다가
+       * 다음 프레임에 시계(elapsedMs)와 어긋난 채 뚝뚝 끊겨 보였다.
+       * 이제 프레임이 길어도 그 시간만큼 정확히 나아가되, 충돌 검사는 아래에서
+       * 0.05s 조각으로 나눠 민다 — 벽 뚫기(터널링)는 그대로 막는다.
+       */
+      const simSec = gap <= 1 ? Math.min(0.25, gap) : 0
       const elapsed = elapsedMs
       const prevPhase = phase
       if (!ended) phase = phaseAt(elapsed, calm)
@@ -821,31 +1002,52 @@ export async function mountCrimeScene(
         const bz = actor.position.z
         const moving = dir.lengthSq() > 0
         if (moving) {
-          const step = moveSpeed * dt
-          const nx = actor.position.x + dir.x * step
-          const nz = actor.position.z + dir.z * step
-          // 축 분리 — 벽에 비스듬히 닿으면 미끄러진다 (explore3d 와 같은 이유)
-          if (dir.x !== 0 && !sceneBlocked(nx, actor.position.z)) actor.position.x = nx
-          if (dir.z !== 0 && !sceneBlocked(actor.position.x, nz)) actor.position.z = nz
+          // 실시간을 0.05s 조각으로 나눠 민다 — 프레임 드랍에도 속도가 참이고 벽은 안 뚫린다
+          let rem = simSec
+          while (rem > 1e-4) {
+            const st = Math.min(0.05, rem)
+            rem -= st
+            const step = moveSpeed * st
+            const nx = actor.position.x + dir.x * step
+            const nz = actor.position.z + dir.z * step
+            // 축 분리 — 벽에 비스듬히 닿으면 미끄러진다 (explore3d 와 같은 이유).
+            // 격자(갤러리 벽·조각상·의자)와 분석 상자를 같은 판정이 본다.
+            if (dir.x !== 0 && !blockedAt(nx, actor.position.z)) actor.position.x = nx
+            if (dir.z !== 0 && !blockedAt(actor.position.x, nz)) actor.position.z = nz
+          }
           const want = firstPerson ? actor.rotation.y : Math.atan2(dir.x, dir.z)
           let d = want - actor.rotation.y
           while (d > Math.PI) d -= Math.PI * 2
           while (d < -Math.PI) d += Math.PI * 2
-          actor.rotation.y += d * Math.min(1, dt * 12)
+          actor.rotation.y += d * Math.min(1, simSec * 12)
         }
         if (goal) {
           const moved = Math.hypot(actor.position.x - bx, actor.position.z - bz)
-          stuckT = moved < moveSpeed * dt * 0.5 ? stuckT + dt : 0
+          stuckT = moved < moveSpeed * simSec * 0.5 ? stuckT + simSec : 0
           if (stuckT > 0.4) { goal = null; stuckT = 0 }
         } else stuckT = 0
-        // 집기가 끝났다 — 클립을 내리고 걷기 weight 를 되돌린다
+        // 집기가 끝났다 — 클립을 내린다 (weight 복귀는 아래 블렌딩이 맡는다)
         if (pickingUp && elapsedMs >= lockUntil) {
           pickingUp = false
           pickupAction?.stop()
-          walk?.setEffectiveWeight(1)
+          if (!idleAction) walk?.setEffectiveWeight(1)
         }
-        if (walk) walk.paused = !moving && !pickingUp
-        mixer?.update(dt)
+        /**
+         * 상태 → 클립 블렌딩. 대기 클립이 있으면 세 상태(집기/이동/대기)를
+         * weight 로 섞는다 — 걷기 0프레임(A포즈) 정지는 "리깅 안 된" 몸으로 읽혔다.
+         * 대기 클립이 없는 배포에서는 예전 규칙(정지=0프레임) 그대로다.
+         */
+        if (idleAction && walk) {
+          const k = Math.min(1, simSec * 8)
+          const tW = pickingUp ? 0 : moving ? 1 : 0
+          const tI = pickingUp ? 0 : moving ? 0 : 1
+          walk.paused = false
+          walk.setEffectiveWeight(walk.getEffectiveWeight() + (tW - walk.getEffectiveWeight()) * k)
+          idleAction.setEffectiveWeight(idleAction.getEffectiveWeight() + (tI - idleAction.getEffectiveWeight()) * k)
+        } else if (walk) {
+          walk.paused = !moving && !pickingUp
+        }
+        mixer?.update(simSec)
 
         /* 근접 판정 — 가장 가까운 것 (nearestWithin 재사용) */
         const nowNear = nearestWithin(markers, actor.position.x, actor.position.z, SCENE_FX.pickRadius)
@@ -942,8 +1144,9 @@ export async function mountCrimeScene(
     // 개발 중에만 씬을 밖에서 들여다본다 — 3D 는 콘솔 없이는 원인을 못 찾는다 (explore3d 의 __ex 와 같은 이유)
     if (import.meta.env.DEV) {
       ;(window as unknown as Record<string, unknown>).__cs = {
-        scene, actor, markerRoot, camera, moveSpeed,
+        scene, actor, markerRoot, camera, moveSpeed, blockedAt,
         hasPickupClip: Boolean(pickupAction),
+        hasIdleClip: Boolean(idleAction),
         teleport: (x: number, z: number) => { actor.position.x = x; actor.position.z = z },
         time: () => elapsedMs,
         skip: (ms: number) => { elapsedMs += ms },

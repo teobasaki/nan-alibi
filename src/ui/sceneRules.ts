@@ -125,11 +125,20 @@ export function bagIds(g: GameState): string[] {
   return g.case.evidence.filter((e) => g.cards.includes(e.id)).map((e) => e.id)
 }
 
-/* ─────────── 방 배치 (기획서 §A — 12×9m 추상 현장) ───────────
+/* ─────────── 방 배치 — 갤러리 서관 홀 (실측 기반) ───────────
  * 지오메트리는 하나, 라벨은 월드가 소유한다(기획서 위험 §2). 좌표는 전부 미터.
+ *
+ * ## 갤러리 실측 (gallery-bbox 스크립트, art_gallery.glb 원본 좌표)
+ * 바닥 x[-10, 20.6]·z[-7.5, 7.5], 서관 홀 바닥면 y=-0.6, 계단이 x=10 부터
+ * 동관(저층 -2.2)으로 내려간다. 조각상 받침 x[7.5, 8.7]. 그래서 모델을
+ * GALLERY_OFFSET(+1.5, +0.6, 0) 으로 옮기면 서관 홀 바닥이 y=0 에 오고,
+ * 놀이 구역은 **벽 안쪽면(-8.3·±7.3)과 계단 목전(11.5)** 사이가 된다.
+ * 동쪽 경계만 보이는 벽이 없다 — 계단 낙하 방지의 통제선이다.
  */
 
-export const SCENE_ROOM = { minX: -6, maxX: 6, minZ: -4.5, maxZ: 4.5 } as const
+export const GALLERY_OFFSET: readonly [number, number, number] = [1.5, 0.6, 0]
+
+export const SCENE_ROOM = { minX: -8.6, maxX: 10.9, minZ: -7.2, maxZ: 7.2 } as const
 
 /** 벽에서 이만큼 물러선 안쪽만 걷는다 */
 const MARGIN = 0.5
@@ -150,24 +159,26 @@ export interface Box {
 /**
  * 현장 받침대 1 · 파티션 2 · 운송 상자 5 · 큐레이터 데스크 1 (기획서 §A 표).
  * 파티션은 동선을 꺾는 벽이다 — 최단 직선을 끊어 "달린다" 가 성립하게 한다.
+ * 좌표는 갤러리 서관 홀(약 19×14m)에 다시 폈다 — 갤러리 자체 가구(의자·조각상)는
+ * 씬이 메시에서 격자로 구워 막는다.
  */
 export const SCENE_BOXES: readonly Box[] = [
-  { x: 0, z: -2.9, hx: 0.7, hz: 0.7, h: 0.95, kind: 'pedestal' },
-  { x: -1.9, z: 0.6, hx: 1.3, hz: 0.14, h: 1.8, kind: 'partition' },
-  { x: 2.5, z: -0.9, hx: 0.14, hz: 1.2, h: 1.8, kind: 'partition' },
-  { x: -4.7, z: -3.5, hx: 0.42, hz: 0.42, h: 0.8, kind: 'crate' },
-  { x: -3.8, z: -3.7, hx: 0.42, hz: 0.42, h: 0.55, kind: 'crate' },
-  { x: -4.4, z: -2.6, hx: 0.42, hz: 0.42, h: 1.1, kind: 'crate' },
-  { x: 5.1, z: -0.2, hx: 0.42, hz: 0.42, h: 0.8, kind: 'crate' },
-  { x: 5.3, z: 1.0, hx: 0.42, hz: 0.42, h: 0.6, kind: 'crate' },
-  { x: 4.6, z: 3.4, hx: 0.95, hz: 0.4, h: 1.05, kind: 'desk' },
+  { x: -0.6, z: -4.2, hx: 0.7, hz: 0.7, h: 0.95, kind: 'pedestal' },
+  { x: -3.2, z: 0.8, hx: 1.5, hz: 0.14, h: 1.8, kind: 'partition' },
+  { x: 3.4, z: -1.2, hx: 0.14, hz: 1.4, h: 1.8, kind: 'partition' },
+  { x: -7.0, z: -4.6, hx: 0.42, hz: 0.42, h: 0.8, kind: 'crate' },
+  { x: -6.0, z: -5.0, hx: 0.42, hz: 0.42, h: 0.55, kind: 'crate' },
+  { x: -6.6, z: -3.7, hx: 0.42, hz: 0.42, h: 1.1, kind: 'crate' },
+  { x: 8.6, z: -2.6, hx: 0.42, hz: 0.42, h: 0.8, kind: 'crate' },
+  { x: 8.9, z: -1.4, hx: 0.42, hz: 0.42, h: 0.6, kind: 'crate' },
+  { x: 6.6, z: 5.2, hx: 0.95, hz: 0.4, h: 1.05, kind: 'desk' },
 ] as const
 
 /** 현장 받침대(발견 지점) 위치 — 접근하면 서술 1줄이 뜬다. 줍는 물건이 아니다. */
-export const PEDESTAL_AT: readonly [number, number] = [0, -2.9]
+export const PEDESTAL_AT: readonly [number, number] = [-0.6, -4.2]
 
-/** 플레이어 시작 위치 — 입구 쪽 */
-export const SCENE_START: readonly [number, number] = [0, 3.6]
+/** 플레이어 시작 위치 — 출입문(+z 벽) 쪽 */
+export const SCENE_START: readonly [number, number] = [2.0, 5.6]
 
 /**
  * 장소(PlaceId 0~4) → 방 안 앵커. **규칙이 아니라 배치다** — 어느 기록이 어느
@@ -175,11 +186,11 @@ export const SCENE_START: readonly [number, number] = [0, 3.6]
  * 현장(2번)은 받침대 곁이다.
  */
 export const SCENE_PLACE_AT: readonly [number, number][] = [
-  [-4.3, 2.6],   // 0 로비 — 입구 왼쪽
-  [4.0, 2.2],    // 1 복도 — 입구 오른쪽, 데스크 곁
-  [-1.5, -3.3],  // 2 현장 — 받침대 곁 (받침대 안이면 못 줍는다)
-  [-4.6, -1.3],  // 3 계단 — 상자 더미 곁
-  [3.8, -3.2],   // 4 라운지 — 오른쪽 안쪽
+  [-6.4, 3.6],   // 0 로비 — 입구 왼쪽 안
+  [6.2, 3.6],    // 1 복도 — 데스크 곁
+  [-2.4, -4.4],  // 2 현장 — 받침대 곁 (받침대 안이면 못 줍는다)
+  [-6.6, -2.2],  // 3 계단 — 상자 더미 곁
+  [5.8, -4.4],   // 4 라운지 — 오른쪽 안쪽
 ]
 
 /** 몸(반지름 ~0.35m)이 설 수 없는 자리인가 — 벽 밖이거나 장애물 안 */

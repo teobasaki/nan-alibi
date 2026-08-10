@@ -49,12 +49,18 @@ Draco + WebP 압축했다(`scripts/`). 조명·재질은 런타임(`src/ui/stage
 CC-BY 계열이면 저작자 표기로 충족된다. NC(비상업)·ND(변경 금지) 조건이면
 **변형(리깅 수정·포즈·최적화)을 했으므로 재검토가 필요하다.**
 
+## 출처 확인 필요 — 배포 전 반드시 채울 것
+
+| 에셋 | 저장소 경로 | 상태 |
+|---|---|---|
+| **미술관(갤러리) 방** | `public/room/gallery.opt.glb` (원본 `art_gallery.glb`, Sketchfab 제너레이터 흔적) | **출처 확인 필요** — 사용자가 원본 페이지 URL·저작자·라이선스를 주면 채운다. 확인 전에는 제출물에 포함하지 않는 것이 이 문서 서두의 원칙이다 |
+
 ## 생성 에셋 — 저작권이 이쪽에 있는 것
 
 | 에셋 | 생성 도구 | 비고 |
 |---|---|---|
 | 캐릭터 **8종** (`manager` · `security` · `investor` · `expartner` · `appraiser` · `secretary` · `housekeeping` · `nephew`) | Meshy (multi-image-to-3d + rigging) | 레퍼런스 이미지는 OpenAI `gpt-image-2` 로 생성. 착석 자세는 Blender 헤드리스(`scripts/pose-seated.py`), 팔 자세 보정은 `scripts/fix-arms.mjs` |
-| 걷기 동작 | Mixamo 클립을 자체 리타게팅 (`scripts/retarget.py`) | 다리 축 보정은 런타임에서 한다 (ADR 021) |
+| 걷기·달리기·집기·대기(Breathing Idle) 동작 | Mixamo 클립을 자체 리타게팅 (`scripts/retarget.py` + `scripts/strip-beta.mjs`) | 다리 축 보정은 런타임에서 한다 (ADR 021) |
 | 인물 레퍼런스 이미지 (`public/refs/`, `docs/refs/`) | OpenAI `gpt-image-2` | 3D 생성 입력용 |
 | 인트로 · 엔딩 만화 패널 (`public/intro/`, `public/outro/`) | ChatGPT(OpenAI) 이미지 생성 — 팀 계정 세션에서 생성 | 호텔 12장 + 골든 케이스 10장(`public/intro/gc001/`). 그림이 없어도 색면 폴백으로 동작 |
 | 효과음 | Web Audio API 합성 (`src/ui/sound.ts`) | 외부 음원 파일 없음 |
