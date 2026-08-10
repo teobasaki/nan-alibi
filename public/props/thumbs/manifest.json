@@ -3,7 +3,6 @@
   "reel": "/public/props/thumbs/reel.webp",
   "call": "/public/props/thumbs/call.webp",
   "receipt": "/public/props/thumbs/receipt.webp",
-  "autopsy": "/public/props/thumbs/autopsy.webp",
   "keycard": "/public/props/thumbs/keycard.webp",
   "crate": "/public/props/thumbs/crate.webp",
   "$meta": {
@@ -60,7 +59,8 @@
       "flag": "증거 깃발 — 파일 에셋이 아니라 씬이 프리미티브로 세운다. kind 풀을 넘어선 k번째 증거가 이걸 입는다."
     },
     "excluded": {
-      "fallscene": "현장 사망 지점 표시물 — 수거되는 증거품이 아니라 수첩 카드가 없다. 정본 §4(유혈·신체 묘사 금지)에도 걸린다."
+      "fallscene": "현장 사망 지점 표시물 — 수거되는 증거품이 아니라 수첩 카드가 없다. 정본 §4(유혈·신체 묘사 금지)에도 걸린다.",
+      "autopsy": "왕진 가방 에셋에 톱·붉은 액체 약병이 함께 모델링돼 있어 정본 §4(수단·신체·유혈 묘사 금지)에 걸린다. 현장에서도 빼고 증거 깃발로 대체했다 — sceneRules.KIND_MODELS.autopsy = []"
     }
   }
 }

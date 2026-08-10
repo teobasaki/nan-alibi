@@ -439,11 +439,25 @@ export function rampTo(cur: number, target: number, dtSec: number, tauSec = SCEN
  * CC-BY 확인 모델로 같은 경로에 교체된다 — 파일이 잠시 없어도 에셋 0 원칙이라
  * 그 자리는 빌보드/프리미티브가 받을 뿐 코드는 안 죽는다.
  */
+/**
+ * 증거 종류 → 현장에 세울 실모델. 풀을 넘어선 분량은 아래 증거 깃발로 간다.
+ *
+ * **`autopsy` 만 실모델이 없다 — 의도한 공백이다.** 왕진 가방 에셋(Sketchfab
+ * "Doctor's bag")에는 톱과 붉은 액체 약병이 함께 모델링돼 있는데, 정본 §4 가
+ * 수단·신체·유혈 묘사를 금지한다. 카메라 각도로는 못 가린다(톱이 가방 뒤에 선
+ * 별개 덩어리라 어느 방위각에서도 위로 나온다). 머티리얼 병합본이라 부분 삭제도
+ * 삼각형 단위 수술이 된다.
+ *
+ * 그래서 「현장 판정」은 **증거 깃발**(감식 텐트 카드 + 폴라로이드)로 세운다.
+ * 사실 이쪽이 더 정확하다 — 현장 판정은 물건이 아니라 **기록**이고,
+ * 감식 마커야말로 그 기록이 만들어진 자리를 가리키는 물건이다.
+ * 에셋 파일과 저작자 표기는 CREDITS 에 그대로 남긴다.
+ */
 export const KIND_MODELS: Record<EvKind, readonly string[]> = {
   cctv: ['cctv', 'reel'],
   call: ['call'],
   receipt: ['receipt'],
-  autopsy: ['autopsy'],
+  autopsy: [],
   keycard: ['keycard'],
 }
 
