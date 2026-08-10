@@ -34,6 +34,11 @@ const CANDIDATES: Candidate[] = [
   { name: 'private_investigator', url: `${DL}/character/private_investigator_detective.glb`, kind: 'glb', x: 2.6, z: 1.5 },
   // 리타게팅 실증본 — retarget.py(접미 번호 정규화) + strip-beta 로 idle 을 구웠다. '내장' 버튼으로 확인
   { name: 'PI (리타게팅됨)', url: '/characters/pi.idle.opt.glb', kind: 'glb', x: 5.2, z: 1.5 },
+  // 용의자 후보 4종 (사용자 다운로드) — Female1/3 는 mixamorig 리그, Female2 는 CC_Base(규약 상이), Male1 은 접미 번호형
+  { name: 'Male1', url: `${DL}/character/Male1.glb`, kind: 'glb', x: -3.9, z: 4.2 },
+  { name: 'Female1', url: `${DL}/character/Female1.glb`, kind: 'glb', x: -1.3, z: 4.2 },
+  { name: 'Female2', url: `${DL}/character/Female2.glb`, kind: 'glb', x: 1.3, z: 4.2 },
+  { name: 'Female3', url: `${DL}/character/Female3.glb`, kind: 'glb', x: 3.9, z: 4.2 },
   // 뒷줄 — 우리 배우들 (프로젝트 파일이라 dev 서버가 그대로 서빙한다)
   ...OUR.map((slug, i): Candidate => ({
     name: slug, url: `/assets-src/${slug}.mvrigged.glb`, kind: 'glb',
