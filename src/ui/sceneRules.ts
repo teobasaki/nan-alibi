@@ -281,7 +281,8 @@ export function spawnFor(list: readonly { id: string; place: PlaceId }[]): Map<s
  * 검시 소견은 사망 지점 옆, 봉인(keycard)은 수장고 구석. 라벨은 여전히 월드 소유다.
  */
 
-export interface SpawnSpot {
+/** 서사 앵커 한 자리 (배치표의 원소) */
+export interface Anchor {
   at: [number, number]
   /** 부양 높이(m) — 없으면 바닥 기본(씬의 MARK_Y). cctv 는 1인칭 시야(1.6m)에서 올려다보이는 2.2~2.6 */
   y?: number
@@ -289,11 +290,17 @@ export interface SpawnSpot {
   mounted?: boolean
 }
 
+/** 실제로 배정된 자리 — 앵커에 **입을 모델**까지 정해진 것 */
+export interface SpawnSpot extends Anchor {
+  /** 이 자리에 설 실모델 키 (`props/ev-<키>.opt.glb`) — 같은 kind 라도 번갈아 입는다 */
+  model: string
+}
+
 /**
  * kind → 서사 앵커 서열. 같은 kind 복수는 순번대로 **서로 다른 앵커**를 받는다.
  * 좌표는 갤러리 서관 홀 실측(SCENE_ROOM·SCENE_BOXES·GLB 노드 t)에서 골랐다.
  */
-export const KIND_SPOTS: Record<EvKind, readonly SpawnSpot[]> = {
+export const KIND_SPOTS: Record<EvKind, readonly Anchor[]> = {
   cctv: [
     { at: [2.0, 6.9], y: 2.45, mounted: true },    // 출입구(+z 벽, 시작점 곁) 위
     { at: [-8.0, -6.6], y: 2.5, mounted: true },   // 북서 벽 상단 코너
@@ -343,7 +350,10 @@ export function spawnAnchored(list: readonly { id: string; kind: EvKind }[]): Ma
     if (anchor.mounted && k < spots.length) {
       // 부착 — 벽·가구 위라 서 있을 수 없어도 된다. 줍기는 발치(XZ 반경)로 판정된다.
       taken.push([anchor.at[0], anchor.at[1]])
-      out.set(it.id, { at: [anchor.at[0], anchor.at[1]], y: anchor.y, mounted: true })
+      out.set(it.id, {
+        at: [anchor.at[0], anchor.at[1]], y: anchor.y, mounted: true,
+        model: modelKeyFor(it.kind, k),
+      })
       continue
     }
 
@@ -366,7 +376,7 @@ export function spawnAnchored(list: readonly { id: string; kind: EvKind }[]): Ma
       }
     }
     taken.push([x, z])
-    out.set(it.id, { at: [x, z], y: over > 0 ? undefined : anchor.y })
+    out.set(it.id, { at: [x, z], y: over > 0 ? undefined : anchor.y, model: modelKeyFor(it.kind, k) })
   }
   return out
 }
@@ -396,4 +406,64 @@ export function rampTo(cur: number, target: number, dtSec: number, tauSec = SCEN
   const next = cur + (target - cur) * k
   // 부동소수 꼬리가 영원히 남지 않게 — 정지는 진짜 0 이어야 대기 클립으로 넘어간다
   return Math.abs(target - next) < 1e-3 ? target : next
+}
+
+/* ─────────── 표현 변주 — "같은 물건 복제"로 안 읽히게 (실플레이 체감) ───────────
+ * 사용자가 본 "중복"의 정체는 노드 중복이 아니라 **같은 kind 가 같은 GLB 하나**라는 것이었다.
+ * cctv 5장이면 똑같은 보안 카메라 5대가 선다. 배치가 개연적일수록 이 반복이 더 눈에 띈다.
+ * 그래서 ① 모델을 번갈아 쓰고 ② 같은 모델도 자세·크기를 흩는다. **수거·기록 매핑은 불변.**
+ */
+
+/**
+ * kind → 실모델 키 풀 (`public/props/ev-<키>.opt.glb`). 순번대로 돌려 쓴다.
+ * cctv 는 보안 카메라 ↔ **필름 릴**(반입돼 있었으나 놀고 있던 에셋) — 둘 다
+ * "카메라 기록"이라는 한 기록의 서로 다른 물증이라 서사가 깨지지 않는다.
+ * 나머지 kind 는 아직 풀이 하나뿐이라 기하 변주(variantFor)가 그 몫을 진다.
+ */
+export const KIND_MODELS: Record<EvKind, readonly string[]> = {
+  cctv: ['cctv', 'reel'],
+  /**
+   * 둘째 통화 기록은 **출력된 통화 내역**(서류)이다 — 실플레이에서 "똑같은 전화기 2대"로
+   * 잡힌 자리다. 라벨·수거·기록 매핑은 그대로고 물증의 형태만 다르다.
+   */
+  call: ['call', 'receipt'],
+  receipt: ['receipt'],
+  autopsy: ['autopsy'],
+  keycard: ['keycard'],
+}
+
+/** 같은 kind 의 k번째가 입을 모델. 풀이 하나면 언제나 그것이다. */
+export function modelKeyFor(kind: EvKind, k: number): string {
+  const pool = KIND_MODELS[kind]
+  return pool[k % pool.length]!
+}
+
+/** 변주 상한 — 너무 크면 "물건이 부서졌나"가 되고, 너무 작으면 복제로 남는다 */
+export const VARIANT = {
+  /** 크기 ±12% */
+  scaleSpread: 0.12,
+  /** 바닥에 놓인 것의 기울기(rad) — 넘어졌거나 기대 있는 각 */
+  tiltMax: 0.22,
+  /** 벽 부착물이 정면(방 중심)에서 흔들리는 폭(rad) — 사람이 대충 단 각도 */
+  mountJitter: 0.26,
+} as const
+
+/**
+ * **증거 id 로 결정되는 자세.** 순번이 아니라 id 를 쓰는 이유: 수거하면 목록이 줄어드는데,
+ * 순번 기반이면 남은 물건들의 생김새가 그때마다 바뀐다(같은 판에서 물건이 변신한다).
+ * FNV-1a 해시 — Math.random 금지 규칙 아래서 "무작위처럼 보이는 결정론"을 만든다.
+ */
+export function variantFor(id: string): { yaw: number; tilt: number; tiltDir: number; scale: number } {
+  let h = 0x811c9dc5
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  const u = (shift: number, mod: number): number => ((h >>> shift) % mod) / mod
+  return {
+    yaw: u(0, 3600) * Math.PI * 2,
+    tilt: u(11, 1000) * VARIANT.tiltMax,
+    tiltDir: u(19, 3600) * Math.PI * 2,
+    scale: 1 + (u(23, 1000) * 2 - 1) * VARIANT.scaleSpread,
+  }
 }

@@ -24,7 +24,8 @@ import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
   DEATH_AT, DEATH_ZONE, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
-  moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, vignetteAt, type ScenePhase,
+  moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, variantFor, vignetteAt,
+  VARIANT, type ScenePhase,
 } from './sceneRules'
 
 /**
@@ -48,6 +49,11 @@ export interface SceneMarker {
   y?: number
   /** 벽·가구 부착 — 서 있을 수 없는 자리가 정상이므로 도달성 재배치(spotFor)를 건너뛴다 */
   mounted?: boolean
+  /**
+   * 입을 실모델 키 (`props/ev-<키>.opt.glb`). 없으면 kind 이름으로 떨어진다.
+   * 같은 kind 라도 순번대로 다른 모델을 입는다 — cctv 는 카메라 ↔ 필름 릴.
+   */
+  model?: string
 }
 
 export interface SceneHandlers {
@@ -182,10 +188,10 @@ const PROP_FILES = import.meta.glob('/public/props/ev-*.opt.glb', {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 
-const PROP_BY_KIND = new Map<string, string>()
+const PROP_BY_KEY = new Map<string, string>()
 for (const [p, url] of Object.entries(PROP_FILES)) {
   const k = p.split('/').pop()?.replace(/^ev-/, '').replace('.opt.glb', '')
-  if (k) PROP_BY_KIND.set(k, (url as string).replace(/^\/public/, ''))
+  if (k) PROP_BY_KEY.set(k, (url as string).replace(/^\/public/, ''))
 }
 
 const CRATE_URL = (Object.values(
@@ -430,7 +436,7 @@ export async function mountCrimeScene(
      * bbox 실측으로 최대 치수를 PROP_TARGET(0.85m — 0.5m 급 × 과장 1.6배)에 정규화.
      */
     const propProto = new Map<string, { obj: THREE.Object3D; scale: number }>()
-    await Promise.all([...PROP_BY_KIND.entries()].map(async ([kind, url]) => {
+    await Promise.all([...PROP_BY_KEY.entries()].map(async ([key, url]) => {
       try {
         const g = await loader.loadAsync(url)
         const size = new THREE.Vector3()
@@ -440,8 +446,8 @@ export async function mountCrimeScene(
           const mm = o as THREE.Mesh
           if (mm.isMesh) { mm.castShadow = true }
         })
-        propProto.set(kind, { obj: g.scene, scale: maxD > 0 ? PROP_TARGET / maxD : 1 })
-      } catch { /* 이 kind 는 빌보드/프리미티브가 받는다 */ }
+        propProto.set(key, { obj: g.scene, scale: maxD > 0 ? PROP_TARGET / maxD : 1 })
+      } catch { /* 이 키는 빌보드/프리미티브가 받는다 */ }
     }))
 
     // 장애물 — 충돌 표(SCENE_BOXES)와 **같은 표**로 그린다. 보이는 것과 막히는 것이 같아야 한다.
@@ -868,7 +874,7 @@ export async function mountCrimeScene(
          * 빌보드 아이콘이 있으면 그것, 없으면 프리미티브 실루엣 — 폴백이 본선이다.
          * 봉인은 회색으로 눌러 두고(틴트 곱), 범행 시각의 붉음은 발치 링이 계속 말한다.
          */
-        const proto = propProto.get(m.kind)
+        const proto = propProto.get(m.model ?? m.kind)
         const tex = iconFor(m.kind)
         const baseEm = m.sealed ? 0x241f1a : m.crime ? 0x5a1a14 : 0x4a3410
         const my = m.y ?? MARK_Y
@@ -892,14 +898,31 @@ export async function mountCrimeScene(
             }
           })
           g.userData.mats = mats
-          g.userData.baseScale = proto.scale
-          g.scale.setScalar(proto.scale)
+          /**
+           * **자세 변주** — 같은 모델이라도 복제로 안 읽히게 (실플레이 체감).
+           * 자세는 증거 id 가 정한다(순번이 아니라) — 하나를 주워 목록이 줄어도
+           * 남은 물건들이 그 자리에서 변신하지 않는다.
+           * · 벽·가구 부착: 방 중심을 보되 사람이 대충 단 만큼 흔들린다. 기울기 없음.
+           * · 바닥: 아무 방향으로 놓이고, 넘어졌거나 기대 있는 각으로 살짝 눕는다.
+           */
+          const v = variantFor(m.id)
+          if (m.mounted) {
+            g.rotation.y = Math.atan2(CX - m.at[0], CZ - m.at[1])
+              + (v.yaw / (Math.PI * 2) * 2 - 1) * VARIANT.mountJitter
+          } else {
+            g.rotation.y = v.yaw
+            g.rotation.x = Math.cos(v.tiltDir) * v.tilt
+            g.rotation.z = Math.sin(v.tiltDir) * v.tilt
+          }
+          g.userData.baseScale = proto.scale * v.scale
+          g.scale.setScalar(proto.scale * v.scale)
         } else if (tex) {
           g = new THREE.Sprite(new THREE.SpriteMaterial({
             map: tex, transparent: true,
             color: m.sealed ? 0x8a8078 : 0xffffff,
           }))
           g.userData.baseScale = 1.3           // 스프라이트 배율은 월드 크기다 — 펄스가 덮으면 안 된다
+          g.userData.spin = true               // 추상 표현은 돈다 — 그것이 "주울 것"의 신호다
           g.scale.setScalar(1.3)
         } else {
           g = new THREE.Mesh(
@@ -910,10 +933,13 @@ export async function mountCrimeScene(
               roughness: 0.45, metalness: 0.3,
             }))
           g.userData.em = baseEm               // 근접 하이라이트가 되돌릴 기준값
+          g.userData.spin = true               // 프리미티브 실루엣도 추상이다 — 돈다
         }
         g.position.set(m.at[0], my, m.at[1])   // 서사 앵커의 높이 — 벽 cctv 2.2~2.6·데스크 위 1.35
         g.userData.id = m.id
         g.userData.part = 'body'               // 구성 집계용 꼬리표 (markerStats)
+        g.userData.kind = m.kind
+        g.userData.model = proto ? (m.model ?? m.kind) : (tex ? 'billboard' : 'primitive')
         markerRoot.add(g)
 
         const haloCol = m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber
@@ -1484,7 +1510,9 @@ export async function mountCrimeScene(
          */
         for (const g of markerRoot.children) {
           const isHalo = (g as THREE.Mesh).geometry?.type === 'RingGeometry'
-          if (!isHalo) g.rotation.y += dt * 1.1   // 스프라이트에는 회전이 안 보인다 — 빌보드니까. 무해하다.
+          // **실물은 놓이고, 추상만 돈다.** 실모델은 배치된 자세(변주)를 지킨다 —
+          // 벽에 붙은 카메라가 빙글빙글 돌면 현장이 아니라 아이템 창고가 된다.
+          if (g.userData.spin === true) g.rotation.y += dt * 1.1
           const on = g.userData.id === near
           const base = (g.userData.baseScale as number) ?? 1
           g.scale.setScalar(base * (on ? (isHalo ? 1.12 : 1.35) : 1))

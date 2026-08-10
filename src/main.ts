@@ -647,6 +647,8 @@ function sceneMarkersNow(): SceneMarker[] {
         at: sp?.at ?? [0, 0],
         y: sp?.y,
         mounted: sp?.mounted,
+        // 같은 kind 라도 순번대로 다른 모델을 입는다 — cctv 5장이 같은 카메라 5대로 보이던 것의 수리
+        model: sp?.model,
       }
     })
 }

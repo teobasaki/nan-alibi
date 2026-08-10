@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest'
 import {
   SCENE_FX, phaseAt, remainMs, pulseAt, vignetteAt, timeUp, swapField, bagIds,
   sceneBlocked, spawnFor, spawnAnchored, moveSpeedFor, rampTo,
+  KIND_MODELS, modelKeyFor, variantFor, VARIANT,
   DEATH_AT, SCENE_START, SCENE_PLACE_AT,
 } from '../src/ui/sceneRules'
 import { generateValidCase } from '../src/engine/validate'
@@ -267,5 +268,62 @@ describe('마커 구성 — 한 증거는 한 자리다 (중복 스폰 회귀 �
     const b = spawnAnchored(list)
     expect(b.size).toBe(a.size)
     for (const [id, sp] of a) expect(b.get(id)).toEqual(sp)
+  })
+})
+
+describe('표현 변주 — 같은 kind 가 복제로 안 읽히게 (실플레이 체감)', () => {
+  type EvKind = 'keycard' | 'cctv' | 'call' | 'receipt' | 'autopsy'
+  const mk = (kinds: EvKind[]) => kinds.map((k, i) => ({ id: `E${i}`, kind: k }))
+
+  it('cctv 는 카메라와 필름 릴을 번갈아 입는다 — 놀던 에셋을 쓴다', () => {
+    expect(modelKeyFor('cctv', 0)).toBe('cctv')
+    expect(modelKeyFor('cctv', 1)).toBe('reel')
+    expect(modelKeyFor('cctv', 2)).toBe('cctv')
+  })
+
+  it('seed 36 처럼 cctv 5장이면 3+2 로 갈린다 — 같은 카메라 5대가 아니다', () => {
+    const spots = [...spawnAnchored(mk(['cctv','cctv','cctv','cctv','cctv'])).values()]
+    const models = spots.map((s) => s.model)
+    expect(models.filter((m) => m === 'cctv')).toHaveLength(3)
+    expect(models.filter((m) => m === 'reel')).toHaveLength(2)
+  })
+
+  it('통화 기록 둘째는 출력된 내역(서류)이다 — 똑같은 전화기 2대를 없앤다', () => {
+    expect(modelKeyFor('call', 0)).toBe('call')
+    expect(modelKeyFor('call', 1)).toBe('receipt')
+  })
+
+  it('풀이 하나뿐인 kind 는 언제나 자기 모델이다 — 매핑이 흔들리지 않는다', () => {
+    for (const k of ['receipt', 'autopsy', 'keycard'] as EvKind[]) {
+      for (let i = 0; i < 4; i++) expect(modelKeyFor(k, i)).toBe(k)
+    }
+  })
+
+  it('모든 kind 에 모델 풀이 있고, 풀은 비어 있지 않다', () => {
+    for (const k of ['cctv', 'call', 'receipt', 'autopsy', 'keycard'] as EvKind[]) {
+      expect(KIND_MODELS[k].length).toBeGreaterThan(0)
+    }
+  })
+
+  it('자세는 증거 id 가 정한다 — 수거로 목록이 줄어도 남은 물건이 변신하지 않는다', () => {
+    expect(variantFor('E3')).toEqual(variantFor('E3'))
+    expect(variantFor('E3').yaw).not.toBe(variantFor('E4').yaw)
+  })
+
+  it('변주 폭은 상한 안이다 — 크기 ±12%·기울기 한계', () => {
+    for (const id of ['E1','E2','E3','E4','E5','E6','E7','E8','E9','E10']) {
+      const v = variantFor(id)
+      expect(v.scale).toBeGreaterThanOrEqual(1 - VARIANT.scaleSpread)
+      expect(v.scale).toBeLessThanOrEqual(1 + VARIANT.scaleSpread)
+      expect(v.tilt).toBeGreaterThanOrEqual(0)
+      expect(v.tilt).toBeLessThanOrEqual(VARIANT.tiltMax)
+      expect(v.yaw).toBeGreaterThanOrEqual(0)
+      expect(v.yaw).toBeLessThan(Math.PI * 2 + 1e-9)
+    }
+  })
+
+  it('같은 사건의 배치는 모델까지 결정론이다', () => {
+    const list = CASE.evidence.map((e) => ({ id: e.id, kind: e.kind }))
+    expect(spawnAnchored(list)).toEqual(spawnAnchored(list))
   })
 })
