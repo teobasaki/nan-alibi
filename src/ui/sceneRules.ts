@@ -395,6 +395,18 @@ export function moveSpeedFor(clipSpeed: number, firstPerson: boolean): number {
 }
 
 /**
+ * 걷기/달리기 클립의 **고정 재생 배율.** 예전에는 매 프레임 `curSpeed / clipSpeed` 로
+ * 동기화했는데, 램프 중 속도가 변하는 동안 클립 재생속도가 함께 출렁여 **몸 전체가
+ * 떨려 보였다** (실플레이 "현장이 계속 버벅인다" — 경찰서는 고정 배율이라 매끄럽다).
+ * 발 미끄러짐보다 떨림이 더 나쁘다는 사용자 판정에 따라 배율을 **시점별 상한에 고정**한다:
+ * 1인칭 = fpSpeed/클립속도(예: 2.4/3.4 ≈ 0.71), 조감 = 1. 가감속 램프(tau 0.15s)의
+ * 짧은 순간에만 발이 살짝 미끄러지는데, 그때는 대기 클립과의 가중치 전환이 겹쳐 안 보인다.
+ */
+export function clipRateFor(clipSpeed: number, firstPerson: boolean): number {
+  return clipSpeed > 0 ? moveSpeedFor(clipSpeed, firstPerson) / clipSpeed : 1
+}
+
+/**
  * 지수 접근 램프 — dt 가 들쭉날쭉해도 **시간상수(tau)가 결과를 정한다**.
  * 선형 가속(속도 += a·dt)은 프레임이 처지면 한 프레임에 목표를 뛰어넘어
  * 급출발이 그대로 남는다. `1 - exp(-dt/tau)` 는 어떤 dt 에도 단조 수렴한다.
@@ -415,27 +427,32 @@ export function rampTo(cur: number, target: number, dtSec: number, tauSec = SCEN
  */
 
 /**
- * kind → 실모델 키 풀 (`public/props/ev-<키>.opt.glb`). 순번대로 돌려 쓴다.
- * cctv 는 보안 카메라 ↔ **필름 릴**(반입돼 있었으나 놀고 있던 에셋) — 둘 다
- * "카메라 기록"이라는 한 기록의 서로 다른 물증이라 서사가 깨지지 않는다.
- * 나머지 kind 는 아직 풀이 하나뿐이라 기하 변주(variantFor)가 그 몫을 진다.
+ * kind → 실모델 키 풀 (`public/props/ev-<키>.opt.glb`).
+ *
+ * **한 현장에 같은 모델은 한 번만 선다** (사용자 재판정 — "하나만 쓰여야 한다".
+ * 모델 교대 3+2 로는 부족했다). 그래서 풀은 **kind 간에도 겹치면 안 된다** —
+ * 예전의 call: ['call','receipt'] 는 receipt kind 의 모델과 충돌해 서류가 두 번 섰다.
+ * 풀을 소진한 초과분은 증거 깃발(FLAG_KEY, 감식 번호판)로 선다 — "무엇인지"는
+ * 훑기 라벨과 근접 힌트가 말하므로 판독은 깨지지 않는다 (ADR 028 §10 보류 근거 소멸).
  */
 export const KIND_MODELS: Record<EvKind, readonly string[]> = {
   cctv: ['cctv', 'reel'],
-  /**
-   * 둘째 통화 기록은 **출력된 통화 내역**(서류)이다 — 실플레이에서 "똑같은 전화기 2대"로
-   * 잡힌 자리다. 라벨·수거·기록 매핑은 그대로고 물증의 형태만 다르다.
-   */
-  call: ['call', 'receipt'],
+  call: ['call'],
   receipt: ['receipt'],
   autopsy: ['autopsy'],
   keycard: ['keycard'],
 }
 
-/** 같은 kind 의 k번째가 입을 모델. 풀이 하나면 언제나 그것이다. */
+/**
+ * 실모델 풀 소진분의 표현 — **증거 깃발**(감식 텐트 카드 + 폴라로이드, 숫자 없음).
+ * 에셋 파일이 아니라 씬이 프리미티브로 세운다 — 에셋 0 원칙 그대로다.
+ */
+export const FLAG_KEY = 'flag'
+
+/** 같은 kind 의 k번째가 입을 모델. 풀을 넘어서면 증거 깃발이다 — 같은 모델은 한 번만. */
 export function modelKeyFor(kind: EvKind, k: number): string {
   const pool = KIND_MODELS[kind]
-  return pool[k % pool.length]!
+  return k < pool.length ? pool[k]! : FLAG_KEY
 }
 
 /** 변주 상한 — 너무 크면 "물건이 부서졌나"가 되고, 너무 작으면 복제로 남는다 */

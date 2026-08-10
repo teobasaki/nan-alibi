@@ -23,8 +23,8 @@ import { groundIt, measuredHeight } from './skinBounds'
 import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
-  DEATH_AT, DEATH_ZONE, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
-  moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, variantFor, vignetteAt,
+  DEATH_AT, DEATH_ZONE, FLAG_KEY, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
+  clipRateFor, moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, variantFor, vignetteAt,
   VARIANT, type ScenePhase,
 } from './sceneRules'
 
@@ -237,6 +237,8 @@ const KEYCARD_TINT_K = 0.6
  * pickup 잠금(0.45s) 동안 사인 곡선으로 내려갔다 돌아온다. 모션 축소면 없다.
  */
 const PICKUP_EYE_DIP = 0.38
+/** 회중시계 부채꼴·침의 각도 양자화 폭 — 0.25°. 이보다 곱게 쓰면 프레임마다 SVG 페인트다 */
+const HUD_ANG_STEP = Math.PI / 720
 
 /** 씬 팔레트 — style.css 의 세계(불 꺼진 갤러리)와 같은 계열 */
 const COL = {
@@ -449,6 +451,44 @@ export async function mountCrimeScene(
         propProto.set(key, { obj: g.scene, scale: maxD > 0 ? PROP_TARGET / maxD : 1 })
       } catch { /* 이 키는 빌보드/프리미티브가 받는다 */ }
     }))
+
+    /**
+     * **증거 깃발** (FLAG_KEY) — 실모델 풀을 소진한 초과분의 표현. 감식 텐트 카드
+     * (Λ, 숫자 없음) + 발치에 기대 놓은 폴라로이드 + 작은 깃발. 에셋 파일이 아니라
+     * 프리미티브로 세운다 — 프로토 표에 넣어 두면 복제·재질 복제·자세 변주·근접
+     * 하이라이트가 실모델과 **같은 경로**로 돈다. "무엇인지"는 라벨·힌트가 말한다.
+     */
+    {
+      const flag = new THREE.Group()
+      const card = new THREE.MeshStandardMaterial({ color: COL.tape, roughness: 0.75, side: THREE.DoubleSide })
+      const lean = 0.42                              // 텐트 카드가 벌어진 반각(rad)
+      for (const s of [-1, 1]) {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.27), card)
+        p.rotation.x = s * (Math.PI / 2 - lean)
+        p.position.set(0, 0.115, s * 0.055)
+        p.castShadow = true
+        flag.add(p)
+      }
+      const photoBack = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.2, 0.24),
+        new THREE.MeshStandardMaterial({ color: 0xe8e2d4, roughness: 0.9, side: THREE.DoubleSide }))
+      photoBack.rotation.x = -0.5
+      photoBack.position.set(0.21, 0.1, 0.1)
+      const photoIn = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.15, 0.15),
+        new THREE.MeshStandardMaterial({ color: 0x2a2320, roughness: 0.95, side: THREE.DoubleSide }))
+      photoIn.rotation.x = -0.5
+      photoIn.position.set(0.21, 0.117, 0.102)
+      flag.add(photoBack, photoIn)
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, 0.56, 6),
+        new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 0.6, metalness: 0.4 }))
+      pole.position.set(-0.16, 0.28, -0.06)
+      const banner = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.11), card)
+      banner.position.set(-0.06, 0.5, -0.06)
+      flag.add(pole, banner)
+      propProto.set(FLAG_KEY, { obj: flag, scale: 1 })
+    }
 
     // 장애물 — 충돌 표(SCENE_BOXES)와 **같은 표**로 그린다. 보이는 것과 막히는 것이 같아야 한다.
     // 운송 상자는 실모델(crate.opt.glb)이 있으면 그 옷을 입는다 — 충돌은 여전히 표가 정한다.
@@ -1341,6 +1381,18 @@ export async function mountCrimeScene(
     const camFwd = new THREE.Vector3()
     const camRight = new THREE.Vector3()
     const UP = new THREE.Vector3(0, 1, 0)
+    /**
+     * 루프 안에서 `new` 를 만들지 않는다 — 매 프레임 할당은 GC 를 주기적으로 불러
+     * 수십 ms 멈춤(=버벅임)으로 돌아온다. 경찰서 루프가 매끄러운 또 하나의 이유다.
+     */
+    const toGoal = new THREE.Vector3()
+    const eyeFwd = new THREE.Vector3()
+    const eyeTo = new THREE.Vector3()
+    /** HUD 는 값이 **바뀌었을 때만** 쓴다 — SVG 어트리뷰트·스타일 변이는 매 프레임 페인트를 부른다 */
+    let hudDigits = ''
+    let hudSector = ''
+    let hudNeedle = ''
+    let hudVin = ''
     const keyNum = (a: string, b: string): number => (keys.has(a) || keys.has(b) ? 1 : 0)
 
     const tick = (): void => {
@@ -1388,7 +1440,9 @@ export async function mountCrimeScene(
         const side = locked ? 0 : keyNum('KeyD', 'ArrowRight') - keyNum('KeyA', 'ArrowLeft')
         dir.set(0, 0, 0)
         if (firstPerson) {
-          if (side !== 0) actor.rotation.y -= side * TURN * dt
+          // 조향도 이동과 **같은 시계**(simSec)를 탄다 — dt(0.05 캡)로 돌리면 프레임이
+          // 처질 때 몸은 실시간으로 가는데 시선만 늦게 돌아 곡선 궤적이 덜컥거린다
+          if (side !== 0) actor.rotation.y -= side * TURN * simSec
           if (fwd !== 0) dir.set(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y)).multiplyScalar(fwd)
         } else if (fwd !== 0 || side !== 0) {
           camera.getWorldDirection(camFwd)
@@ -1400,10 +1454,10 @@ export async function mountCrimeScene(
         }
         if (dir.lengthSq() > 0) { goal = null; dir.normalize() }
         else if (goal && !locked) {
-          const to = goal.clone().sub(actor.position)
-          to.y = 0
-          if (to.length() < 0.06) goal = null
-          else dir.copy(to.normalize())
+          toGoal.copy(goal).sub(actor.position)
+          toGoal.y = 0
+          if (toGoal.length() < 0.06) goal = null
+          else dir.copy(toGoal.normalize())
         }
 
         const bx = actor.position.x
@@ -1470,13 +1524,15 @@ export async function mountCrimeScene(
           walk.setEffectiveWeight(rampTo(walk.getEffectiveWeight(), tW, simSec))
           idleAction.setEffectiveWeight(rampTo(idleAction.getEffectiveWeight(), tI, simSec))
           /**
-           * 클립 재생 속도를 실제 속도에 맞춘다 — 3.4 클립을 2.4 로 걸으면
-           * 발이 미끄러진다. 서면 0 이 되지만 그때는 weight 도 0 이라 안 보인다.
+           * 클립 재생 배율은 **고정**이다 (clipRateFor — 시점별 상한/클립속도).
+           * 예전의 매 프레임 `curSpeed / moveSpeed` 동기화는 램프가 도는 동안
+           * 재생속도가 함께 출렁여 몸 전체가 떨려 보였다 — "현장이 계속 버벅인다"의
+           * 주범. 경찰서(explore3d)가 매끄러운 이유가 바로 고정 배율이다.
            */
-          walk.timeScale = moveSpeed > 0 ? Math.max(0.35, curSpeed / moveSpeed) : 1
+          walk.timeScale = clipRateFor(moveSpeed, firstPerson)
         } else if (walk) {
           walk.paused = !moving && !pickingUp
-          walk.timeScale = moveSpeed > 0 ? Math.max(0.35, curSpeed / moveSpeed) : 1
+          walk.timeScale = clipRateFor(moveSpeed, firstPerson)
         }
 
         /* 근접 판정 — 가장 가까운 것 (nearestWithin 재사용) */
@@ -1535,23 +1591,33 @@ export async function mountCrimeScene(
           const rm = remainMs(elapsed)
           const sec = Math.floor(rm / 1000)
           const tenth = Math.floor((rm % 1000) / 100)
-          digitsEl.textContent = `00:${String(sec).padStart(2, '0')}.${tenth}`
+          /**
+           * **HUD 는 바뀐 값만 쓴다.** 예전에는 부채꼴 path·침 transform·숫자·비네트를
+           * **매 프레임** 밀어 넣었다 — WebGL 프레임마다 SVG 레이아웃·페인트가 같이 돌아
+           * 주기적인 밀림(버벅임)의 한 축이었다. 각도는 0.25° 로 양자화해 문자열이 같으면
+           * 쓰기 자체를 건너뛴다 — 눈으로는 구분되지 않는 해상도다.
+           */
+          const dg = `00:${String(sec).padStart(2, '0')}.${tenth}`
+          if (dg !== hudDigits) { hudDigits = dg; digitsEl.textContent = dg }
           const pulse = pulseAt(rm / 1000)
           timerEl.classList.toggle('hot', pulse === 'heart')
           // 회중시계 — 남은 시간의 붉은 부채꼴이 줄고, 침이 그 가장자리를 짚는다
           const frac = rm / SCENE_FX.collectMs
           const ang = frac * Math.PI * 2
+          let sd: string
           if (frac > 0.9995) {
-            sectorEl.setAttribute('d', `M50,50 L50,${50 - WR} A${WR},${WR} 0 1 1 49.99,${50 - WR} Z`)
+            sd = `M50,50 L50,${50 - WR} A${WR},${WR} 0 1 1 49.99,${50 - WR} Z`
           } else {
-            const px = 50 + WR * Math.sin(ang)
-            const py = 50 - WR * Math.cos(ang)
-            sectorEl.setAttribute('d',
-              `M50,50 L50,${50 - WR} A${WR},${WR} 0 ${ang > Math.PI ? 1 : 0} 1 ${px.toFixed(2)},${py.toFixed(2)} Z`)
+            const angQ = Math.round(ang / HUD_ANG_STEP) * HUD_ANG_STEP
+            const px = 50 + WR * Math.sin(angQ)
+            const py = 50 - WR * Math.cos(angQ)
+            sd = `M50,50 L50,${50 - WR} A${WR},${WR} 0 ${angQ > Math.PI ? 1 : 0} 1 ${px.toFixed(2)},${py.toFixed(2)} Z`
           }
+          if (sd !== hudSector) { hudSector = sd; sectorEl.setAttribute('d', sd) }
           // 마지막 5초 — 침이 떨린다 (결정론: elapsed 기반 사인, Math.random 금지)
           const jitter = pulse === 'heart' ? Math.sin(elapsed * 0.045) * 3.2 : 0
-          needleEl.setAttribute('transform', `rotate(${(ang * 180 / Math.PI + jitter).toFixed(2)} 50 50)`)
+          const nd = `rotate(${(Math.round((ang * 180 / Math.PI + jitter) * 4) / 4).toFixed(2)} 50 50)`
+          if (nd !== hudNeedle) { hudNeedle = nd; needleEl.setAttribute('transform', nd) }
           if (pulse === 'heart') {
             if (performance.now() - lastHeartAt > SCENE_FX.heartGapMs) {
               lastHeartAt = performance.now()
@@ -1563,7 +1629,8 @@ export async function mountCrimeScene(
           } else {
             if (sec !== lastPulseSec) { lastPulseSec = sec; sfx('tick') }
           }
-          vin.style.opacity = String(vignetteAt(rm / 1000))
+          const vo = (Math.round(vignetteAt(rm / 1000) * 100) / 100).toFixed(2)
+          if (vo !== hudVin) { hudVin = vo; vin.style.opacity = vo }
         }
       }
 
@@ -1583,9 +1650,9 @@ export async function mountCrimeScene(
           eyeY = EYE_HEIGHT - PICKUP_EYE_DIP * Math.sin(Math.PI * p)
         }
         eye.position.set(actor.position.x, eyeY, actor.position.z)
-        const f = new THREE.Vector3(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y))
+        eyeFwd.set(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y))
         const dip = EYE_HEIGHT - eyeY
-        eye.lookAt(eye.position.clone().add(f).setY(eyeY - dip * 1.6))
+        eye.lookAt(eyeTo.copy(eye.position).add(eyeFwd).setY(eyeY - dip * 1.6))
         actor.visible = false
         renderer.render(scene, eye)
       } else {
