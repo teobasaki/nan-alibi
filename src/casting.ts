@@ -39,6 +39,19 @@ const CANDIDATES: Candidate[] = [
   { name: 'Female1', url: `${DL}/character/Female1.glb`, kind: 'glb', x: -1.3, z: 4.2 },
   { name: 'Female2', url: `${DL}/character/Female2.glb`, kind: 'glb', x: 1.3, z: 4.2 },
   { name: 'Female3', url: `${DL}/character/Female3.glb`, kind: 'glb', x: 3.9, z: 4.2 },
+  /**
+   * **리타게팅 완성본** — 셋째 줄. 이 캐릭터들은 Mixamo 리그가 아니었지만
+   * (CC_Base·carla 소문자 규약) 이름이 규칙적이라 `retarget.py` 의 FOREIGN 표로
+   * 흡수했다(매핑 23·14개). 여기 뜨는 것은 **착석 클립이 구워진 결과물**이라
+   * '내장' 버튼으로 봐야 앉은 자세가 보인다 — 서 있는 것은 idle 쪽이다.
+   */
+  { name: 'carla ✅sit', url: '/characters/carla.sit.opt.glb', kind: 'glb', x: -5.2, z: 6.6, ours: true },
+  { name: 'wong ✅sit', url: '/characters/wong.sit.opt.glb', kind: 'glb', x: -2.6, z: 6.6, ours: true },
+  { name: 'alina ✅sit', url: '/characters/alina.sit.opt.glb', kind: 'glb', x: 0, z: 6.6, ours: true },
+  { name: 'Female2 ✅sit', url: '/characters/f2.sit.opt.glb', kind: 'glb', x: 2.6, z: 6.6, ours: true },
+  { name: 'Male1 ✅sit', url: '/characters/m1.sit.opt.glb', kind: 'glb', x: 5.2, z: 6.6, ours: true },
+  { name: 'Female1 ✅sit', url: '/characters/f1.sit.opt.glb', kind: 'glb', x: 7.8, z: 6.6, ours: true },
+  { name: 'Female3 ✅sit', url: '/characters/f3.sit.opt.glb', kind: 'glb', x: -7.8, z: 6.6, ours: true },
   // 뒷줄 — 우리 배우들 (프로젝트 파일이라 dev 서버가 그대로 서빙한다)
   ...OUR.map((slug, i): Candidate => ({
     name: slug, url: `/assets-src/${slug}.mvrigged.glb`, kind: 'glb',
@@ -223,7 +236,12 @@ async function playAll(key: string): Promise<void> {
     const el = slot.card.querySelector('.compat')!
     el.className = `compat ${pct >= 80 ? 'ok' : pct >= 40 ? 'warn' : 'bad'}`
     el.textContent = `호환 ${pct}%`
-    if (bound.tracks.length) slot.mixer.clipAction(bound).play()
+    // 리타게팅 완성본(✅)은 자기 클립이 곧 결과물이다 — 외부 클립을 덧씌우면 그 결과를 못 본다
+    if (slot.def.name.includes('✅') && slot.own[0]) {
+      slot.mixer.clipAction(slot.own[0]).play()
+      el.className = 'compat ok'
+      el.textContent = `구운 클립: ${slot.own[0].name}`
+    } else if (bound.tracks.length) slot.mixer.clipAction(bound).play()
     else if (slot.own[0]) slot.mixer.clipAction(slot.own[0]).play()
   }
 }

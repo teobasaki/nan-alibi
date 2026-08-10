@@ -52,6 +52,50 @@ RENAME = {
     'headtop_end': 'head_end',
 }
 
+# ── 타 리그 → 믹사모 이름 ──────────────────────────────────────────────
+# 기성 리깅 모델은 저마다 다른 규약을 쓴다. 이름이 **규칙적이면** 표로 흡수할 수 있고,
+# 그러면 리타게팅이 성립한다. 실측한 두 계열만 적는다 (캐스팅 룸에서 본 이름을 떠서 확인).
+#
+#   CC_Base (Character Creator: alina · wong · Female2)
+#   소문자 규약 (carla: root/hip/spine_01/upperarm_l …)
+#
+# 손가락은 걷기·착석에 안 쓰므로 넣지 않는다 — 매핑이 길어질수록 틀릴 곳만 는다.
+_LR = [('l', 'left'), ('r', 'right')]
+FOREIGN = {
+    # CC_Base 계열 — 몸통
+    'ccbasehip': 'hips', 'ccbasepelvis': 'hips',
+    'ccbasespine01': 'spine', 'ccbasespine02': 'spine1',
+    'ccbaseneckwist01': 'neck', 'ccbaseneck': 'neck',
+    'ccbasenecktwist01': 'neck', 'ccbasenecktwist02': 'neck',
+    'ccbasehead': 'head',
+    # carla 계열 — 몸통
+    'hip': 'hips', 'spine01': 'spine', 'spine02': 'spine1', 'spine03': 'spine2',
+    'neck': 'neck', 'head': 'head',
+}
+for _s, _side in _LR:
+    FOREIGN.update({
+        # CC_Base 사지
+        f'ccbase{_s}clavicle': f'{_side}shoulder',
+        f'ccbase{_s}upperarm': f'{_side}arm',
+        f'ccbase{_s}forearm': f'{_side}forearm',
+        f'ccbase{_s}hand': f'{_side}hand',
+        f'ccbase{_s}thigh': f'{_side}upleg',
+        f'ccbase{_s}calf': f'{_side}leg',
+        f'ccbase{_s}foot': f'{_side}foot',
+        f'ccbase{_s}toebase': f'{_side}toebase',
+        # carla 사지 (접미 _l/_r 은 아래 norm 에서 앞으로 끌어온다)
+        f'clavicle{_s}': f'{_side}shoulder',
+        f'upperarm{_s}': f'{_side}arm',
+        f'lowerarm{_s}': f'{_side}forearm',
+        f'forearm{_s}': f'{_side}forearm',
+        f'hand{_s}': f'{_side}hand',
+        f'thigh{_s}': f'{_side}upleg',
+        f'calf{_s}': f'{_side}leg',
+        f'shin{_s}': f'{_side}leg',
+        f'foot{_s}': f'{_side}foot',
+        f'toe{_s}': f'{_side}toebase',
+    })
+
 
 def norm(name: str) -> str:
     """비교용 정규화 — 접두사·접미 번호·대소문자·구분자 차이를 없앤다.
@@ -63,7 +107,9 @@ def norm(name: str) -> str:
     n = re.sub(r'^mixamorig[:_0-9]*', '', name, flags=re.I).lower()
     n = re.sub(r'_\d+$', '', n)
     n = RENAME.get(n, n)
-    return n.replace('_', '').replace('.', '')
+    n = n.replace('_', '').replace('.', '')
+    # 타 리그 이름이면 믹사모 이름으로 흡수한다 (CC_Base·carla 계열)
+    return FOREIGN.get(n, n)
 
 
 def count_fcurves(action) -> int:
