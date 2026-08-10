@@ -245,6 +245,12 @@ const KEYCARD_TINT_K = 0.6
 const PICKUP_EYE_DIP = 0.38
 /** 회중시계 부채꼴·침의 각도 양자화 폭 — 0.25°. 이보다 곱게 쓰면 프레임마다 SVG 페인트다 */
 const HUD_ANG_STEP = Math.PI / 720
+/**
+ * **한 프레임이 적분할 수 있는 최대 시간(초).** 20fps 바닥 — 이 위의 프레임은 손해가 없고,
+ * 밑으로 떨어진 프레임(히치·GC·탭 복귀)만 잔여 거리를 버린다. 순간이동의 상한이 이 값이다:
+ * 조감 3.4m/s × 0.05s = 17cm. 충돌 서브스텝(0.05s)과 같은 눈금이라 조각도 한 번이면 끝난다.
+ */
+const STEP_CAP = 0.05
 
 /** 씬 팔레트 — style.css 의 세계(불 꺼진 갤러리)와 같은 계열 */
 const COL = {
@@ -271,6 +277,16 @@ export async function mountCrimeScene(
     renderer.toneMappingExposure = 1.12
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    /**
+     * **그림자는 한 프레임 걸러 굽는다.** 실측: 조감(3인칭) 한 프레임의 삼각형 44만 중
+     * **21만(49%)·드로우콜 52개가 그림자 패스**다. 그런데 이 방에서 움직이는 그림자는
+     * 사람 하나뿐이다 — 빛도 벽도 조각상도 30초 내내 그 자리다. 매 프레임 다시 구울
+     * 이유가 없다. 걸러 구우면 사람 그림자가 한 프레임 늦는데, 3.4m/s 라도 그 사이
+     * 이동은 3cm 라 눈에 잡히지 않는다. 1인칭보다 조감이 무거운 것이 3인칭 버벅임의
+     * 정체였으므로, 깎이는 곳도 조감이다.
+     */
+    renderer.shadowMap.autoUpdate = false
+    renderer.shadowMap.needsUpdate = true
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
@@ -384,11 +400,64 @@ export async function mountCrimeScene(
     const blockedAt = (x: number, z: number): boolean =>
       sceneBlocked(x, z) || (inGrid(x, z) && solid[gi(x, z)] === 1)
 
+    /**
+     * **걷는 면의 world y 를 잰다** — 상수를 믿지 않고 모델에게 묻는다.
+     * 위에서 아래로 광선을 쏴 `floor` 노드의 윗면을 맞힌다. 놀이 구역 안 세 점의
+     * 중앙값이라 한 점이 단차·계단에 걸려도 흔들리지 않는다. 못 재면 null —
+     * 그때는 아무것도 하지 않는다 (보정이 오히려 위험하다).
+     */
+    const measureWalkY = (room: THREE.Object3D): number | null => {
+      room.updateMatrixWorld(true)
+      const floors: THREE.Object3D[] = []
+      room.traverse((o) => { if ((o as THREE.Mesh).isMesh && /floor/i.test(o.name)) floors.push(o) })
+      if (!floors.length) return null
+      const rc = new THREE.Raycaster()
+      rc.far = 60
+      const down = new THREE.Vector3(0, -1, 0)
+      const from = new THREE.Vector3()
+      const ys: number[] = []
+      for (const [px, pz] of [SCENE_START, [CX, CZ], DEATH_AT] as [number, number][]) {
+        from.set(px, 30, pz)
+        rc.set(from, down)
+        const hit = rc.intersectObjects(floors, false)[0]
+        if (hit) ys.push(hit.point.y)
+      }
+      if (!ys.length) {
+        // 광선이 뒷면(FrontSide 재질)을 못 맞히는 GLB 도 있다 — 그때는 바닥 노드의 윗면으로 떨어진다
+        const bb = new THREE.Box3()
+        for (const f of floors) bb.expandByObject(f)
+        return Number.isFinite(bb.max.y) ? bb.max.y : null
+      }
+      ys.sort((a, b) => a - b)
+      return ys[Math.floor(ys.length / 2)]!
+    }
+
+    /** 갤러리 루트 — DEV 계측(그림자 A/B)이 밖에서 잡는다 */
+    let galleryRoom: THREE.Object3D | null = null
+
     if (GALLERY_URL) {
       /* ── 진짜 갤러리 — 서관 홀을 실측 오프셋으로 y=0 바닥에 맞춘다 (sceneRules 주석) ── */
       const g = await loader.loadAsync(GALLERY_URL)
       const room = g.scene
+      galleryRoom = room
       room.position.set(GALLERY_OFFSET[0], GALLERY_OFFSET[1], GALLERY_OFFSET[2])
+      /**
+       * **바닥 묻힘의 수리 — 걷는 면을 실측해 y=0 으로 내린다.**
+       * 이 방의 배치는 전부 "바닥은 y=0" 을 전제로 계산한다 (액터 `groundIt`, 상자 접지,
+       * 테이프 0.02, 마커 `MARK_Y`, 눈높이 `EYE_HEIGHT`). 그런데 실측하면 서관 홀의
+       * 걷는 면은 **y=0.538** 이었다 — 발이 0 에 놓이니 무릎(약 0.48m)까지 잠긴다.
+       * 1인칭이 기본이라 몸이 안 보였고, **V 조감(3인칭)에서만 드러나** 오래 숨어 있었다.
+       * 상수(GALLERY_OFFSET[1])를 고치지 않고 여기서 재서 내리는 이유: GLB 가 갈리면
+       * 상수는 다시 틀리지만 실측은 따라간다. 격자를 굽기 **전**에 내려야 벽 띠(0.3~1.9m)도
+       * 걷는 면 기준이 된다.
+       */
+      const walkY = measureWalkY(room)
+      if (walkY !== null && Math.abs(walkY) > 0.02) {
+        room.position.y -= walkY
+        if (import.meta.env.DEV) {
+          console.info(`[현장] 걷는 면 ${walkY.toFixed(3)}m 실측 — 바닥을 y=0 으로 내렸다`)
+        }
+      }
       room.traverse((o) => {
         // 탑다운이므로 머리 위 구조물은 숨긴다 — 경찰서의 CEILING_HIDE 와 같은 이유
         if (/ceiling|skylight|^lights/i.test(o.name)) o.visible = false
@@ -1393,6 +1462,8 @@ export async function mountCrimeScene(
      * 아니라 몸의 속도**가 정한다.
      */
     let curSpeed = 0
+    /** 그림자 재굽기 홀짝 — 0/1 을 오가며 1일 때만 굽는다 */
+    let shadowParity = 0
     /** DEV 프레임 통계 누적 (2초 창) */
     let frames = 0
     let statAcc = 0
@@ -1427,8 +1498,15 @@ export async function mountCrimeScene(
        * 다음 프레임에 시계(elapsedMs)와 어긋난 채 뚝뚝 끊겨 보였다.
        * 이제 프레임이 길어도 그 시간만큼 정확히 나아가되, 충돌 검사는 아래에서
        * 0.05s 조각으로 나눠 민다 — 벽 뚫기(터널링)는 그대로 막는다.
+       *
+       * **다만 상한이 있다 (STEP_CAP).** 눈은 렌더된 프레임만 본다. 0.25s 를 한 번에
+       * 적분하면 조감 3.4m/s 에서 **한 프레임에 85cm** 를 건너뛴다 — 평상시 한 걸음(2cm)의
+       * 40배라, 시간상으로는 정확해도 화면에서는 순간이동이다 (실측: 120ms 히치에서
+       * 조감 42cm · 1인칭 29cm 도약). 상한을 0.05s 로 두면 최악이 17cm 로 줄고,
+       * 20fps 위의 프레임은 **하나도 손해 보지 않는다** — 잃는 것은 진짜로 떨어뜨린
+       * 프레임의 잔여 거리뿐이고, 30초 한 판에서 그 총합은 눈에 띄지 않는다.
        */
-      const simSec = gap <= 1 ? Math.min(0.25, gap) : 0
+      const simSec = gap <= 1 ? Math.min(STEP_CAP, gap) : 0
       const elapsed = elapsedMs
       const prevPhase = phase
       if (!ended) phase = phaseAt(elapsed, calm)
@@ -1665,6 +1743,9 @@ export async function mountCrimeScene(
        */
       mixer?.update(simSec)
 
+      // 그림자 재굽기 — 한 프레임 걸러 (autoUpdate 를 끈 대가를 여기서 치른다)
+      if ((shadowParity ^= 1) === 1) renderer.shadowMap.needsUpdate = true
+
       // 훑기만 조감이다 — 종료 국면(화이트아웃 뒤)에도 시점이 튀지 않아야 한다
       if (firstPerson && phase !== 'survey') {
         /* 집는 동안 시선이 숙는다 — 몸이 안 보이는 1인칭에서는 카메라가 그 몸짓을 진다 */
@@ -1704,7 +1785,13 @@ export async function mountCrimeScene(
     // 개발 중에만 씬을 밖에서 들여다본다 — 3D 는 콘솔 없이는 원인을 못 찾는다 (explore3d 의 __ex 와 같은 이유)
     if (import.meta.env.DEV) {
       ;(window as unknown as Record<string, unknown>).__cs = {
-        scene, actor, markerRoot, camera, moveSpeed, blockedAt,
+        scene, actor, markerRoot, camera, eye, renderer, moveSpeed, blockedAt,
+        /** 그림자 패스의 원가를 재는 스위치 — "버벅임이 그림인지" 를 A/B 로 가른다 */
+        shadowAuto: (on: boolean) => { renderer.shadowMap.autoUpdate = on },
+        shadowInfo: () => ({ auto: renderer.shadowMap.autoUpdate, size: key.shadow.mapSize.x }),
+        roomShadows: (on: boolean) => {
+          galleryRoom?.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.castShadow = on })
+        },
         hasPickupClip: Boolean(pickupAction),
         hasIdleClip: Boolean(idleAction),
         markerStats,
