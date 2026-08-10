@@ -66,6 +66,8 @@ export interface CrimeScene {
    * **setMarkers 로 마커가 지워지기 전에** 불러야 출발 좌표가 남아 있다.
    */
   flyFrom(id: string): void
+  /** 수거 몸동작 원샷 — 0.45s 이동 잠금 후 걷기/달리기 복귀. 클립이 없으면 아무 일 없다. */
+  playPickup(): void
   /** 안내줄(봉인·가방 가득 등) — 힌트바에 잠깐 띄운다 */
   note(text: string): void
   /**
@@ -98,6 +100,25 @@ const RUN_BY_SLUG = new Map<string, string>()
 for (const [p, url] of Object.entries(RUN)) {
   const slug = p.split('/').pop()?.replace('.run.opt.glb', '')
   if (slug) RUN_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
+}
+
+/**
+ * 물건 집기 클립(`<slug>.pickup.opt.glb`) — E 수거 순간 원샷.
+ * 같은 리그의 다른 파일이라 **클립만 뽑아 액터의 mixer 에 얹는다** (본 이름으로 바인딩).
+ * unrollLegs 의 rest 기준은 그 파일 자신의 씬이다 — 액터는 이미 움직인 뒤라 rest 가 아니다.
+ *
+ * turn180 클립은 도착해 있지만 **배선하지 않는다**: 이 씬의 조향은 12rad/s 보간이라
+ * 클릭 이동마다 방향이 수시로 뒤집히고, 급반전 원샷이 그때마다 걸리면 달리기가
+ * 덜컥거린다. 코디네이터가 생략을 허용한 항목이다 (판단 기록: ADR 026).
+ */
+const PICKUP = import.meta.glob('/public/characters/*.pickup.opt.glb', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+
+const PICKUP_BY_SLUG = new Map<string, string>()
+for (const [p, url] of Object.entries(PICKUP)) {
+  const slug = p.split('/').pop()?.replace('.pickup.opt.glb', '')
+  if (slug) PICKUP_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
 }
 
 /**
@@ -248,6 +269,7 @@ export async function mountCrimeScene(
     let picked: THREE.Object3D | null = null
     let mixer: THREE.AnimationMixer | null = null
     let walk: THREE.AnimationAction | null = null
+    let pickupAction: THREE.AnimationAction | null = null
     /**
      * 달리기 우선 — 클립과 속도는 한 몸이다. run 이 없거나 **리그가 말이 안 되면**
      * 걷기 클립 + 걷기 속도로 떨어진다.
@@ -296,6 +318,31 @@ export async function mountCrimeScene(
           walk.paused = true
         }
         break
+      }
+
+      /* 집기 클립 — 액터가 섰을 때만 의미가 있다. 리그 가드는 동일하게 지난다. */
+      if (picked && mixer) {
+        const pUrl = PICKUP_BY_SLUG.get(slug) ?? [...PICKUP_BY_SLUG.values()][0]
+        if (pUrl) {
+          try {
+            const pg = await loader.loadAsync(pUrl)
+            const pmh = measuredHeight(pg.scene)
+            const pClip = pg.animations[0]
+            if (pmh >= 1.2 && pmh <= 2.5 && pClip) {
+              unrollLegs(pClip, pg.scene)      // rest 는 이 파일 자신의 씬 — 액터는 이미 rest 가 아니다
+              pickupAction = mixer.clipAction(pClip)
+              pickupAction.setLoop(THREE.LoopOnce, 1)
+              /**
+               * 잠금 0.45s 안에 클립 앞 55%가 보이도록 재생 속도를 맞춘다 —
+               * 클립을 자르는 대신 시간을 접는다 (subclip 은 프레임 수를 알아야 한다).
+               */
+              const want = pClip.duration * SCENE_FX.pickupPortion
+              pickupAction.timeScale = Math.min(3, Math.max(0.8, want / (SCENE_FX.pickupLockMs / 1000)))
+            } else if (import.meta.env.DEV) {
+              console.warn(`[현장] ${pUrl} 집기 리그가 이상하다 — 키 ${pmh.toFixed(2)}m. 집기 연출 없이 간다.`)
+            }
+          } catch { /* 집기 없이 간다 — 수거 규칙은 그대로다 */ }
+        }
       }
     }
     // 모든 후보가 없거나 리그가 깨졌다 — 캡슐 실루엣. 게임은 멈추지 않는다.
@@ -674,6 +721,21 @@ export async function mountCrimeScene(
     let lastHeartAt = 0
     let ended = false
     let doneSent = false
+    /** 집기 동작 중 — 이동이 잠긴다 (elapsedMs 기준이라 탭이 멎으면 같이 멎는다) */
+    let lockUntil = 0
+    let pickingUp = false
+
+    /**
+     * E 수거 원샷 — 몸을 숙여 집고, 잠금이 풀리면 걷기/달리기로 돌아온다.
+     * 걷기 액션의 weight 를 0 으로 눌러 두 클립이 반반 섞이는 것을 막는다.
+     */
+    const playPickup = (): void => {
+      if (!pickupAction) return
+      lockUntil = elapsedMs + SCENE_FX.pickupLockMs
+      pickingUp = true
+      walk?.setEffectiveWeight(0)
+      pickupAction.reset().play()
+    }
 
     const endScene = (reason: 'time' | 'exit'): void => {
       if (ended) return
@@ -731,8 +793,10 @@ export async function mountCrimeScene(
 
       /* 이동 — collect 중에만. 화면 축 기준(정사영) / 몸 기준(1인칭) */
       if (phase === 'collect') {
-        const fwd = keyNum('KeyW', 'ArrowUp') - keyNum('KeyS', 'ArrowDown')
-        const side = keyNum('KeyD', 'ArrowRight') - keyNum('KeyA', 'ArrowLeft')
+        // 집는 동안은 발이 멎는다 — 잠금은 0.45s, 클릭 목표는 잠금 뒤에 이어서 간다
+        const locked = elapsedMs < lockUntil
+        const fwd = locked ? 0 : keyNum('KeyW', 'ArrowUp') - keyNum('KeyS', 'ArrowDown')
+        const side = locked ? 0 : keyNum('KeyD', 'ArrowRight') - keyNum('KeyA', 'ArrowLeft')
         dir.set(0, 0, 0)
         if (firstPerson) {
           if (side !== 0) actor.rotation.y -= side * TURN * dt
@@ -746,7 +810,7 @@ export async function mountCrimeScene(
           dir.copy(camFwd).multiplyScalar(fwd).addScaledVector(camRight, side)
         }
         if (dir.lengthSq() > 0) { goal = null; dir.normalize() }
-        else if (goal) {
+        else if (goal && !locked) {
           const to = goal.clone().sub(actor.position)
           to.y = 0
           if (to.length() < 0.06) goal = null
@@ -774,7 +838,13 @@ export async function mountCrimeScene(
           stuckT = moved < moveSpeed * dt * 0.5 ? stuckT + dt : 0
           if (stuckT > 0.4) { goal = null; stuckT = 0 }
         } else stuckT = 0
-        if (walk) walk.paused = !moving
+        // 집기가 끝났다 — 클립을 내리고 걷기 weight 를 되돌린다
+        if (pickingUp && elapsedMs >= lockUntil) {
+          pickingUp = false
+          pickupAction?.stop()
+          walk?.setEffectiveWeight(1)
+        }
+        if (walk) walk.paused = !moving && !pickingUp
         mixer?.update(dt)
 
         /* 근접 판정 — 가장 가까운 것 (nearestWithin 재사용) */
@@ -872,7 +942,8 @@ export async function mountCrimeScene(
     // 개발 중에만 씬을 밖에서 들여다본다 — 3D 는 콘솔 없이는 원인을 못 찾는다 (explore3d 의 __ex 와 같은 이유)
     if (import.meta.env.DEV) {
       ;(window as unknown as Record<string, unknown>).__cs = {
-        scene, actor, markerRoot, camera,
+        scene, actor, markerRoot, camera, moveSpeed,
+        hasPickupClip: Boolean(pickupAction),
         teleport: (x: number, z: number) => { actor.position.x = x; actor.position.z = z },
         time: () => elapsedMs,
         skip: (ms: number) => { elapsedMs += ms },
@@ -897,6 +968,7 @@ export async function mountCrimeScene(
       setBag,
       addPenalty: (ms) => { elapsedMs += ms },
       flyFrom,
+      playPickup,
       note,
       openSwap,
       dispose() {

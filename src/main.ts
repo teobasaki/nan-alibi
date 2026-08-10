@@ -680,6 +680,7 @@ function onScenePick(id: string): void {
       if (!CALM) csHandle.addPenalty(SCENE_FX.swapPenaltyMs)
       mark({ k: 'lookup', ev: id })
       playAny('pickup')
+      csHandle.playPickup()    // 몸이 숙여 집는다 — 0.45s 이동 잠금
       csHandle.flyFrom(id)     // 착지 프레임이 snap 을 낸다
       syncSceneState()
     })
@@ -688,6 +689,7 @@ function onScenePick(id: string): void {
   ui.game = lookupEvidence(ui.game, id)
   mark({ k: 'lookup', ev: id })
   playAny('pickup')
+  csHandle.playPickup()        // 몸이 숙여 집는다 — 0.45s 이동 잠금
   csHandle.flyFrom(id)         // 포물선 착지가 snap(폴라로이드 찰칵)을 낸다
   syncSceneState()
 }
