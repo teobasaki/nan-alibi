@@ -23,7 +23,7 @@ import { groundIt, measuredHeight } from './skinBounds'
 import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
-  GALLERY_OFFSET, PEDESTAL_AT, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
+  DEATH_AT, DEATH_ZONE, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
   phaseAt, pulseAt, remainMs, sceneBlocked, vignetteAt, type ScenePhase,
 } from './sceneRules'
 
@@ -42,8 +42,12 @@ export interface SceneMarker {
   crime: boolean
   /** 봉인(requires 미충족) — 주워 담아도 열람은 기존 사슬이다 */
   sealed: boolean
-  /** 방 안 위치. main 이 spawnFor 로 정해서 넘긴다 — 화면과 판정이 같은 값을 본다 */
+  /** 방 안 위치. main 이 spawnAnchored 로 정해서 넘긴다 — 화면과 판정이 같은 값을 본다 */
   at: [number, number]
+  /** 부양 높이(m) — 없으면 바닥 기본(MARK_Y). cctv 벽 부착은 2.2~2.6 이 온다 */
+  y?: number
+  /** 벽·가구 부착 — 서 있을 수 없는 자리가 정상이므로 도달성 재배치(spotFor)를 건너뛴다 */
+  mounted?: boolean
 }
 
 export interface SceneHandlers {
@@ -177,12 +181,40 @@ const CRATE_URL = (Object.values(
   import.meta.glob('/public/props/crate.opt.glb', { eager: true, query: '?url', import: 'default' }),
 )[0] as string | undefined)?.replace(/^\/public/, '')
 
+/** 사망 지점 연출 — 조각상 아래 fallscene (30KB). 없으면 테이프 윤곽+서류 폴백이 선다 */
+const FALLSCENE_URL = (Object.values(
+  import.meta.glob('/public/props/fallscene.opt.glb', { eager: true, query: '?url', import: 'default' }),
+)[0] as string | undefined)?.replace(/^\/public/, '')
+
+/** 현장 테이프 — Plane 리본을 분리해 사망 구역 둘레에 두른다. 실패 시 생략 가능(과제 명세) */
+const CRIMETAPE_URL = (Object.values(
+  import.meta.glob('/public/props/crimetape.opt.glb', { eager: true, query: '?url', import: 'default' }),
+)[0] as string | undefined)?.replace(/^\/public/, '')
+
 const ACTOR_HEIGHT = 1.78
 const EYE_HEIGHT = 1.64
 const MARK_Y = 0.8
 const TURN = 2.4
 /** 증거품 실모델의 목표 최대 치수(m) — 0.5m 급 소품 × 과장 1.6배 규칙 */
 const PROP_TARGET = 0.85
+/**
+ * Mixamo **네이티브 베이크** 액터 — 리그 결함 0 이라 다리 축 보정(unrollLegs)을
+ * 걸지 않는다 (걸면 멀쩡한 다리를 뒤집는다). 리타게팅 슬러그(security 등)는 보정 유지.
+ */
+const NATIVE_SLUGS = new Set(['joe'])
+/** 현장 액터 서열 — **Joe 확정** (사용자 결정 1). 기존 슬러그 액터는 폴백. */
+const ACTOR_PREFERENCE: readonly string[] = ['joe']
+/** 사망 지점 fallscene 실모델의 목표 최대 평면 치수(m) — 사람 하나가 쓰러진 자리 크기 */
+const FALL_TARGET = 2.2
+/** fallscene 잿빛 틴트 — 유혈 요소가 있어도 톤이 죽는다 (골든 케이스 §4, 부분 숨김 불가한 단일 메시) */
+const FALL_TINT = 0x77716a
+const FALL_TINT_K = 0.55
+/** 현장 테이프 리본 — 중심 높이·세로 폭(m). 실물 폴리스라인의 허리 높이다 */
+const TAPE_RIBBON_Y = 0.78
+const TAPE_RIBBON_H = 0.3
+/** keycard 메탈 박스의 잿빛 틴트 — futuristic 톤을 무대(불 꺼진 갤러리)에 맞춰 누른다 */
+const KEYCARD_TINT = 0x8a8478
+const KEYCARD_TINT_K = 0.6
 
 /** 씬 팔레트 — style.css 의 세계(불 꺼진 갤러리)와 같은 계열 */
 const COL = {
@@ -417,15 +449,92 @@ export async function mountCrimeScene(
       scene.add(m)
     }
 
-    /* 현장 받침대 연출 — 테이프 윤곽 + 흩어진 서류 (시신 없음, 골든 케이스 §4) */
+    /* ── 사망 지점 — **조각상 아래** (사용자 결정 3, 현장 보존 연출) ──
+     * fallscene 실모델(30KB)을 잿빛으로 눌러 놓는다 — 유혈·시신 직접 묘사 금지
+     * (골든 케이스 §4). 단일 메시라 부분 숨김이 불가하므로 틴트가 그 대비책이다.
+     * 에셋이 없으면 기존 테이프 윤곽이 폴백으로 선다. 흩어진 서류는 항상 남는다. */
+    if (FALLSCENE_URL) {
+      try {
+        const g = await loader.loadAsync(FALLSCENE_URL)
+        const size = new THREE.Vector3()
+        new THREE.Box3().setFromObject(g.scene).getSize(size)
+        const maxD = Math.max(size.x, size.z)
+        g.scene.scale.setScalar(maxD > 0 ? FALL_TARGET / maxD : 1)
+        const tint = new THREE.Color(FALL_TINT)
+        g.scene.traverse((o) => {
+          const mm = o as THREE.Mesh
+          if (!mm.isMesh) return
+          mm.castShadow = true
+          mm.receiveShadow = true
+          for (const x of (Array.isArray(mm.material) ? mm.material : [mm.material]) as THREE.MeshStandardMaterial[]) {
+            x?.color?.lerp(tint, FALL_TINT_K)
+          }
+        })
+        groundIt(g.scene, 0.02)
+        g.scene.position.x = DEATH_AT[0]
+        g.scene.position.z = DEATH_AT[1]
+        scene.add(g.scene)
+      } catch { /* 폴백 연출(테이프 윤곽)이 받는다 */ }
+    }
+
+    /**
+     * 현장 테이프 라인 — crimetape 의 Plane 노드에서 리본 지오메트리를 분리해
+     * 사망 구역(DEATH_ZONE) 둘레 네 변에 허리 높이로 두른다. 원본 리본의 실측
+     * (긴 축 z ≈1.74m · 세로 y ≈2.37m)을 변 길이·TAPE_RIBBON_H 로 눕히는 것이라
+     * 텍스처가 다소 늘어나는데, 폴리스라인 무늬라 오히려 자연스럽다.
+     * **실패하면 생략한다** (과제 명세) — 그때는 아래 링 테이프가 폴백으로 선다.
+     */
+    let tapeOk = false
+    if (CRIMETAPE_URL) {
+      try {
+        const g = await loader.loadAsync(CRIMETAPE_URL)
+        const planes: THREE.Mesh[] = []
+        g.scene.traverse((o) => {
+          const mm = o as THREE.Mesh
+          if (mm.isMesh && /plane/i.test(mm.name)) planes.push(mm)
+        })
+        if (planes.length) {
+          const sides: { x: number; z: number; len: number; rotY: number }[] = [
+            { x: DEATH_ZONE.x, z: DEATH_ZONE.z - DEATH_ZONE.hz, len: DEATH_ZONE.hx * 2, rotY: Math.PI / 2 },
+            { x: DEATH_ZONE.x, z: DEATH_ZONE.z + DEATH_ZONE.hz, len: DEATH_ZONE.hx * 2, rotY: Math.PI / 2 },
+            { x: DEATH_ZONE.x - DEATH_ZONE.hx, z: DEATH_ZONE.z, len: DEATH_ZONE.hz * 2, rotY: 0 },
+            { x: DEATH_ZONE.x + DEATH_ZONE.hx, z: DEATH_ZONE.z, len: DEATH_ZONE.hz * 2, rotY: 0 },
+          ]
+          const c = new THREE.Vector3()
+          sides.forEach((s, i) => {
+            const src = planes[i % planes.length]!
+            src.geometry.computeBoundingBox()
+            const bb = src.geometry.boundingBox!
+            bb.getCenter(c)
+            const h0 = bb.max.y - bb.min.y
+            const l0 = bb.max.z - bb.min.z
+            const sy = h0 > 0 ? TAPE_RIBBON_H / h0 : 1
+            const sz = l0 > 0 ? s.len / l0 : 1
+            const rib = new THREE.Mesh(src.geometry, src.material)   // 연출 전용 — 재질 공유로 충분하다
+            rib.scale.set(0.12, sy, sz)
+            rib.position.set(-c.x * 0.12, -c.y * sy, -c.z * sz)      // 지오메트리 중심을 변의 축선에 맞춘다
+            const seg = new THREE.Group()
+            seg.add(rib)
+            seg.rotation.y = s.rotY
+            seg.position.set(s.x, TAPE_RIBBON_Y, s.z)
+            scene.add(seg)
+          })
+          tapeOk = true
+        }
+      } catch { /* 생략 가능 — 링 테이프 폴백 */ }
+    }
+
+    /* 발견 지점 바닥 연출 — 링 테이프(실테이프 실패 시 폴백) + 흩어진 서류 (시신 없음) */
     {
-      const tape = new THREE.Mesh(
-        new THREE.RingGeometry(0.95, 1.05, 4),
-        new THREE.MeshBasicMaterial({ color: COL.tape, transparent: true, opacity: 0.7, side: THREE.DoubleSide }))
-      tape.rotation.x = -Math.PI / 2
-      tape.rotation.z = Math.PI / 4
-      tape.position.set(PEDESTAL_AT[0], 0.02, PEDESTAL_AT[1] + 0.1)
-      scene.add(tape)
+      if (!tapeOk) {
+        const tape = new THREE.Mesh(
+          new THREE.RingGeometry(0.95, 1.05, 4),
+          new THREE.MeshBasicMaterial({ color: COL.tape, transparent: true, opacity: 0.7, side: THREE.DoubleSide }))
+        tape.rotation.x = -Math.PI / 2
+        tape.rotation.z = Math.PI / 4
+        tape.position.set(DEATH_AT[0], 0.02, DEATH_AT[1] + 0.1)
+        scene.add(tape)
+      }
       const paperG = new THREE.PlaneGeometry(0.24, 0.32)
       const paperM = new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 1, side: THREE.DoubleSide })
       const sheets: [number, number, number][] = [[-0.5, -0.4, 0.4], [0.4, -0.8, 1.8], [0.7, 0.3, 0.9], [-0.2, 0.8, 2.6]]
@@ -433,7 +542,7 @@ export async function mountCrimeScene(
         const p = new THREE.Mesh(paperG, paperM)
         p.rotation.x = -Math.PI / 2
         p.rotation.z = rot
-        p.position.set(PEDESTAL_AT[0] + dx, 0.03, PEDESTAL_AT[1] + 0.9 + dz)
+        p.position.set(DEATH_AT[0] + dx, 0.03, DEATH_AT[1] - 0.9 + dz)
         scene.add(p)
       }
     }
@@ -468,87 +577,136 @@ export async function mountCrimeScene(
      * 리그는 키가 0.3m 로 재져 배율이 6배가 되고, 방에 드러누운 거인이 나온다 —
      * run 클립 첫 배선에서 실제로 그랬다. 키 1.2~2.5m 밖이면 그 후보를 버린다.
      */
-    const runUrl = RUN_BY_SLUG.get(slug) ?? [...RUN_BY_SLUG.values()][0]
-    const walkOnly = WALK_BY_SLUG.get(slug) ?? [...WALK_BY_SLUG.values()][0]
-    const candidates = [...new Set([runUrl, walkOnly].filter((u): u is string => Boolean(u)))]
+    /**
+     * 액터 후보 서열 — **Joe(Mixamo 네이티브 베이크) 우선, 기존 슬러그는 폴백**
+     * (사용자 결정 1). 같은 액터 안에서는 달리기 파일 먼저다. 리그 가드(키 1.2~2.5m)는
+     * 전 후보가 지난다 — run 첫 배선의 31m 거인(ADR 026 §7)이 이 가드의 존재 이유다.
+     * 네이티브 액터가 걷기 몸으로 잡히면 run **클립만** 얹는 2단 폴백이 아래에 있다.
+     */
+    const prefSlugs = [...new Set([...ACTOR_PREFERENCE, slug])]
+    const candidates: { url: string; slug: string; run: boolean }[] = []
+    for (const s of prefSlugs) {
+      const r = RUN_BY_SLUG.get(s)
+      if (r) candidates.push({ url: r, slug: s, run: true })
+      const wk = WALK_BY_SLUG.get(s)
+      if (wk) candidates.push({ url: wk, slug: s, run: false })
+    }
+    for (const [s, u] of RUN_BY_SLUG) {
+      if (!prefSlugs.includes(s)) { candidates.push({ url: u, slug: s, run: true }); break }
+    }
+    for (const [s, u] of WALK_BY_SLUG) {
+      if (!prefSlugs.includes(s)) { candidates.push({ url: u, slug: s, run: false }); break }
+    }
     let moveSpeed: number = SCENE_FX.speed
-    if (candidates.length) {
-      for (const url of candidates) {
-        const gltf = await loader.loadAsync(url)
-        const mh = measuredHeight(gltf.scene)
-        if (mh < 1.2 || mh > 2.5) {
+    let actorSlug = slug
+    let native = false
+    for (const cand of candidates) {
+      const gltf = await loader.loadAsync(cand.url)
+      const mh = measuredHeight(gltf.scene)
+      if (mh < 1.2 || mh > 2.5) {
+        if (import.meta.env.DEV) {
+          console.warn(`[현장] ${cand.url} 리그가 이상하다 — 키 ${mh.toFixed(2)}m. 다음 후보로 넘어간다.`)
+        }
+        continue
+      }
+      picked = gltf.scene
+      actorSlug = cand.slug
+      native = NATIVE_SLUGS.has(cand.slug)
+      picked.scale.setScalar(ACTOR_HEIGHT / mh)
+      moveSpeed = cand.run ? SCENE_FX.runSpeed : SCENE_FX.speed
+      picked.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (!m.isMesh) return
+        m.castShadow = true
+        for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
+          if (!mm) continue
+          mm.emissive?.setScalar(0)
+          mm.emissiveMap = null
+        }
+      })
+      mixer = new THREE.AnimationMixer(picked)
+      const clip = gltf.animations[0]
+      if (clip) {
+        // Joe(네이티브)에는 다리 축 보정을 걸지 않는다 — 리그 결함 0 (사용자 결정 1)
+        if (!native) unrollLegs(clip, picked)
+        walk = mixer.clipAction(clip)
+        walk.play()
+        walk.paused = true
+      }
+      break
+    }
+
+    if (picked && mixer) {
+      /**
+       * 같은 리그의 다른 파일에서 클립만 뽑는다. rest 는 그 파일 자신의 씬이다.
+       * 네이티브 리그는 가드도 보정도 건너뛴다 — 키 가드는 리타게팅 파이프라인의
+       * 잔여물(Beta_Surface 등)을 잡는 장치라, 본 이름 바인딩만 하는 클립 인출에는
+       * 네이티브에서 오탐(메시 겉껍데기 크기)만 낸다.
+       */
+      const extraClip = async (url: string | undefined, what: string): Promise<THREE.AnimationClip | null> => {
+        if (!url) return null
+        try {
+          const g2 = await loader.loadAsync(url)
+          const clip2 = g2.animations[0]
+          if (!clip2) return null
+          if (native) return clip2
+          const mh2 = measuredHeight(g2.scene)
+          if (mh2 >= 1.2 && mh2 <= 2.5) {
+            unrollLegs(clip2, g2.scene)
+            return clip2
+          }
           if (import.meta.env.DEV) {
-            console.warn(`[현장] ${url} 리그가 이상하다 — 키 ${mh.toFixed(2)}m. 다음 후보로 넘어간다.`)
+            console.warn(`[현장] ${url} ${what} 리그가 이상하다 — 키 ${mh2.toFixed(2)}m. ${what} 없이 간다.`)
           }
-          continue
-        }
-        picked = gltf.scene
-        picked.scale.setScalar(ACTOR_HEIGHT / mh)
-        moveSpeed = url === runUrl ? SCENE_FX.runSpeed : SCENE_FX.speed
-        picked.traverse((o) => {
-          const m = o as THREE.Mesh
-          if (!m.isMesh) return
-          m.castShadow = true
-          for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
-            if (!mm) continue
-            mm.emissive?.setScalar(0)
-            mm.emissiveMap = null
-          }
-        })
-        mixer = new THREE.AnimationMixer(picked)
-        const clip = gltf.animations[0]
-        if (clip) {
-          unrollLegs(clip, picked)
-          walk = mixer.clipAction(clip)
-          walk.play()
-          walk.paused = true
-        }
-        break
+        } catch { /* 없이 간다 — 규칙은 그대로다 */ }
+        return null
       }
 
-      /* 집기·대기 클립 — 액터가 섰을 때만 의미가 있다. 리그 가드는 동일하게 지난다. */
-      if (picked && mixer) {
-        /** 같은 리그의 다른 파일에서 클립만 뽑는다. rest 는 그 파일 자신의 씬이다. */
-        const extraClip = async (url: string | undefined, what: string): Promise<THREE.AnimationClip | null> => {
-          if (!url) return null
-          try {
-            const g2 = await loader.loadAsync(url)
-            const mh2 = measuredHeight(g2.scene)
-            const clip2 = g2.animations[0]
-            if (mh2 >= 1.2 && mh2 <= 2.5 && clip2) {
-              unrollLegs(clip2, g2.scene)
-              return clip2
-            }
-            if (import.meta.env.DEV) {
-              console.warn(`[현장] ${url} ${what} 리그가 이상하다 — 키 ${mh2.toFixed(2)}m. ${what} 없이 간다.`)
-            }
-          } catch { /* 없이 간다 — 규칙은 그대로다 */ }
-          return null
+      /**
+       * 달리기 2단 폴백 — 네이티브 액터가 걷기 몸으로 잡혔다면(run 파일이 키 가드에
+       * 걸린 경우) run **클립만** 뽑아 걷기 자리를 통째로 잇는다. 속도와 클립은 한 몸.
+       * 클립은 다른 리그에 얹으면 조용히 무효라(본 이름 불일치) 네이티브끼리만 잇는다.
+       */
+      if (native && moveSpeed !== SCENE_FX.runSpeed) {
+        const rClip = await extraClip(RUN_BY_SLUG.get(actorSlug), '달리기')
+        if (rClip) {
+          walk?.stop()
+          walk = mixer.clipAction(rClip)
+          walk.play()
+          walk.paused = true
+          moveSpeed = SCENE_FX.runSpeed
         }
+      }
 
-        const pClip = await extraClip(PICKUP_BY_SLUG.get(slug) ?? [...PICKUP_BY_SLUG.values()][0], '집기')
-        if (pClip) {
-          pickupAction = mixer.clipAction(pClip)
-          pickupAction.setLoop(THREE.LoopOnce, 1)
-          /**
-           * 잠금 0.45s 안에 클립 앞 55%가 보이도록 재생 속도를 맞춘다 —
-           * 클립을 자르는 대신 시간을 접는다 (subclip 은 프레임 수를 알아야 한다).
-           */
-          const want = pClip.duration * SCENE_FX.pickupPortion
-          pickupAction.timeScale = Math.min(3, Math.max(0.8, want / (SCENE_FX.pickupLockMs / 1000)))
-        }
+      /* 집기·대기 클립 — 클립의 주인은 **잡힌 액터**(actorSlug)다. 남의 리그 클립은
+       * 본 이름이 달라 조용히 무효가 되므로, 네이티브는 자기 것만 쓴다. */
+      const pickupUrl = PICKUP_BY_SLUG.get(actorSlug)
+        ?? (native ? undefined : PICKUP_BY_SLUG.get(slug) ?? [...PICKUP_BY_SLUG.values()][0])
+      const pClip = await extraClip(pickupUrl, '집기')
+      if (pClip) {
+        pickupAction = mixer.clipAction(pClip)
+        pickupAction.setLoop(THREE.LoopOnce, 1)
+        /**
+         * 잠금 0.45s 안에 클립 앞 55%가 보이도록 재생 속도를 맞춘다 —
+         * 클립을 자르는 대신 시간을 접는다 (subclip 은 프레임 수를 알아야 한다).
+         */
+        const want = pClip.duration * SCENE_FX.pickupPortion
+        pickupAction.timeScale = Math.min(3, Math.max(0.8, want / (SCENE_FX.pickupLockMs / 1000)))
+      }
 
-        const iClip = await extraClip(IDLE_BY_SLUG.get(slug) ?? [...IDLE_BY_SLUG.values()][0], '대기')
-        if (iClip) {
-          idleAction = mixer.clipAction(iClip)
-          idleAction.play()                    // 대기가 기본이다 — 숨쉬는 몸이 A포즈를 지운다
-          if (walk) { walk.paused = false; walk.setEffectiveWeight(0) }
-        }
+      const idleUrl = IDLE_BY_SLUG.get(actorSlug)
+        ?? (native ? undefined : IDLE_BY_SLUG.get(slug) ?? [...IDLE_BY_SLUG.values()][0])
+      const iClip = await extraClip(idleUrl, '대기')
+      if (iClip) {
+        idleAction = mixer.clipAction(iClip)
+        idleAction.play()                    // 대기가 기본이다 — 숨쉬는 몸이 A포즈를 지운다
+        if (walk) { walk.paused = false; walk.setEffectiveWeight(0) }
       }
     }
     if (import.meta.env.DEV) {
-      console.info(`[현장] 액터 ${slug} — 이동 ${moveSpeed === SCENE_FX.runSpeed ? '달리기' : '걷기'} ` +
-        `${moveSpeed}m/s · 대기 ${idleAction ? '있음' : '없음(0프레임 폴백)'} · 집기 ${pickupAction ? '있음' : '없음'}`)
+      console.info(`[현장] 액터 ${actorSlug}${native ? '(네이티브)' : ''} — ` +
+        `이동 ${moveSpeed === SCENE_FX.runSpeed ? '달리기' : '걷기'} ${moveSpeed}m/s · ` +
+        `대기 ${idleAction ? '있음' : '없음(0프레임 폴백)'} · 집기 ${pickupAction ? '있음' : '없음'}`)
     }
     // 모든 후보가 없거나 리그가 깨졌다 — 캡슐 실루엣. 게임은 멈추지 않는다.
     const actor: THREE.Object3D = picked ?? (() => {
@@ -570,6 +728,8 @@ export async function mountCrimeScene(
         }
       }
     }
+    // 1인칭 기본이라 첫 프레임 시선이 곧 첫인상이다 — 벽(+z 출입문)이 아니라 홀 중심을 보고 선다
+    actor.rotation.y = Math.atan2(CX - actor.position.x, CZ - actor.position.z)
     groundIt(actor)
     scene.add(actor)
 
@@ -639,7 +799,8 @@ export async function mountCrimeScene(
     }
 
     const setMarkers = (list: SceneMarker[]): void => {
-      markers = list.map((m) => ({ ...m, at: spotFor(m.at) }))
+      // 부착 마커(벽 cctv·데스크 위)는 재배치하지 않는다 — 설 수 없는 자리가 정상이다
+      markers = list.map((m) => (m.mounted ? { ...m } : { ...m, at: spotFor(m.at) }))
       list = markers
       for (const c of markerRoot.children) {
         const m = c as THREE.Mesh
@@ -657,10 +818,12 @@ export async function mountCrimeScene(
         const proto = propProto.get(m.kind)
         const tex = iconFor(m.kind)
         const baseEm = m.sealed ? 0x241f1a : m.crime ? 0x5a1a14 : 0x4a3410
+        const my = m.y ?? MARK_Y
         let g: THREE.Object3D
         if (proto) {
           /* 실모델 — 재질은 인스턴스마다 복제한다: 근접 흰 윤곽빛이 이웃에게 새면 안 된다 */
           g = proto.obj.clone()
+          const kcTint = new THREE.Color(KEYCARD_TINT)
           const mats: THREE.MeshStandardMaterial[] = []
           g.traverse((o) => {
             const mm = o as THREE.Mesh
@@ -669,6 +832,8 @@ export async function mountCrimeScene(
               ? mm.material.map((x) => (x as THREE.Material).clone())
               : (mm.material as THREE.Material).clone()
             for (const x of (Array.isArray(mm.material) ? mm.material : [mm.material]) as THREE.MeshStandardMaterial[]) {
+              // keycard 메탈 박스 — futuristic 색을 잿빛으로 눌러 무대 톤에 맞춘다 (사용자 결정 3)
+              if (m.kind === 'keycard' && x.color) x.color.lerp(kcTint, KEYCARD_TINT_K)
               if (m.sealed && x.color) x.color.multiplyScalar(0.55)   // 봉인 — 잿빛으로 눌러 둔다
               mats.push(x)
             }
@@ -693,7 +858,7 @@ export async function mountCrimeScene(
             }))
           g.userData.em = baseEm               // 근접 하이라이트가 되돌릴 기준값
         }
-        g.position.set(m.at[0], MARK_Y, m.at[1])
+        g.position.set(m.at[0], my, m.at[1])   // 서사 앵커의 높이 — 벽 cctv 2.2~2.6·데스크 위 1.35
         g.userData.id = m.id
         markerRoot.add(g)
 
@@ -714,7 +879,7 @@ export async function mountCrimeScene(
           const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: lockTex, transparent: true, depthTest: false }))
           sp.userData.baseScale = 0.42         // 펄스 루프가 배율을 덮으므로 기준값을 남긴다
           sp.scale.setScalar(0.42)
-          sp.position.set(m.at[0], MARK_Y + 0.55, m.at[1])
+          sp.position.set(m.at[0], my + 0.55, m.at[1])
           sp.userData.id = m.id
           markerRoot.add(sp)
         }
@@ -820,7 +985,7 @@ export async function mountCrimeScene(
       const m = markers.find((x) => x.id === id)
       if (!m) return
       const cam = firstPerson ? eye : camera
-      const v = new THREE.Vector3(m.at[0], MARK_Y, m.at[1]).project(cam)
+      const v = new THREE.Vector3(m.at[0], m.y ?? MARK_Y, m.at[1]).project(cam)
       const hw2 = host.clientWidth
       const hh2 = host.clientHeight
       const x0 = (v.x / 2 + 0.5) * hw2
@@ -892,7 +1057,11 @@ export async function mountCrimeScene(
     }
 
     /* ── 입력 — explore3d 와 같은 규약(e.code · 입력창 가드 · blur 청소) ── */
-    let firstPerson = false
+    /**
+     * **1인칭이 기본이다** (사용자 결정 2) — 현장을 "밟는" 감각은 눈높이에서 온다.
+     * V 는 탑다운 조감 토글로 남는다. 조망성은 훑기 5초 오빗이 보완한다.
+     */
+    let firstPerson = true
     const keys = new Set<string>()
     const MOVE_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'])
     let near: string | null = null
@@ -1052,6 +1221,8 @@ export async function mountCrimeScene(
         placeCam(camAngle0)
         caption.classList.remove('on')
         for (const g of markerRoot.children) g.scale.setScalar((g.userData.baseScale as number) ?? 1)
+        // 훑기가 끝나는 순간이 조작의 첫 순간이다 — 시점 문법을 여기서 한 번만 말한다
+        note('1인칭 시점 — V 조감 · WASD/클릭 이동 · E 수거')
       }
 
       /* 이동 — collect 중에만. 화면 축 기준(정사영) / 몸 기준(1인칭) */
@@ -1097,7 +1268,12 @@ export async function mountCrimeScene(
             if (dir.x !== 0 && !blockedAt(nx, actor.position.z)) actor.position.x = nx
             if (dir.z !== 0 && !blockedAt(actor.position.x, nz)) actor.position.z = nz
           }
-          const want = firstPerson ? actor.rotation.y : Math.atan2(dir.x, dir.z)
+          /**
+           * 1인칭에서 **키 이동은 몸이 기준**(A/D 가 조향)이지만, **클릭 이동은 목표가
+           * 기준**이다 — 몸을 돌리지 않으면 시선은 그대로인 채 옆걸음으로 미끄러진다.
+           */
+          const byKeys = fwd !== 0 || side !== 0
+          const want = firstPerson && byKeys ? actor.rotation.y : Math.atan2(dir.x, dir.z)
           let d = want - actor.rotation.y
           while (d > Math.PI) d -= Math.PI * 2
           while (d < -Math.PI) d += Math.PI * 2
@@ -1140,14 +1316,14 @@ export async function mountCrimeScene(
             ? m.sealed
               ? `${m.label} — E 로 수거 (봉인 — 열람은 심문에서 열쇠를 얻은 뒤)`
               : `${m.label} — E 또는 Space 로 수거`
-            : nearestWithin([{ id: 'p', at: PEDESTAL_AT as [number, number] }],
+            : nearestWithin([{ id: 'p', at: DEATH_AT as [number, number] }],
                 actor.position.x, actor.position.z, 1.7)
               ? pedestalLine
               : ''
           hintEl.classList.toggle('on', hintEl.textContent !== '')
         } else if (!near) {
           // 받침대 접근 서술 — 마커가 아니므로 매 프레임 갱신해도 싸다
-          const onPed = nearestWithin([{ id: 'p', at: PEDESTAL_AT as [number, number] }],
+          const onPed = nearestWithin([{ id: 'p', at: DEATH_AT as [number, number] }],
             actor.position.x, actor.position.z, 1.7)
           const want = onPed ? pedestalLine : ''
           if (hintEl.textContent !== want) {
@@ -1217,7 +1393,8 @@ export async function mountCrimeScene(
         }
       }
 
-      if (firstPerson && phase === 'collect') {
+      // 훑기만 조감이다 — 종료 국면(화이트아웃 뒤)에도 시점이 튀지 않아야 한다
+      if (firstPerson && phase !== 'survey') {
         eye.position.set(actor.position.x, EYE_HEIGHT, actor.position.z)
         const f = new THREE.Vector3(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y))
         eye.lookAt(eye.position.clone().add(f).setY(EYE_HEIGHT))

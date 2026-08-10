@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   SCENE_FX, phaseAt, remainMs, pulseAt, vignetteAt, timeUp, swapField, bagIds,
-  sceneBlocked, spawnFor, SCENE_START, SCENE_PLACE_AT,
+  sceneBlocked, spawnFor, spawnAnchored, DEATH_AT, SCENE_START, SCENE_PLACE_AT,
 } from '../src/ui/sceneRules'
 import { generateValidCase } from '../src/engine/validate'
 import { availableEvidence, createGame, fieldDone, lookupEvidence } from '../src/engine/game'
@@ -151,6 +151,61 @@ describe('현장 배치 — 못 닿는 기록은 없는 기록이다', () => {
     for (let i = 0; i < spots.length; i++) {
       for (let j = i + 1; j < spots.length; j++) {
         const d = Math.hypot(spots[i]![0] - spots[j]![0], spots[i]![1] - spots[j]![1])
+        expect(d).toBeGreaterThan(0.6)
+      }
+    }
+  })
+})
+
+describe('개연성 배치 — kind 서사 앵커 (개편 라운드, 사용자 결정 3)', () => {
+  type EvKind = 'keycard' | 'cctv' | 'call' | 'receipt' | 'autopsy'
+  const mk = (kinds: EvKind[]) => kinds.map((k, i) => ({ id: `E${i}`, kind: k }))
+
+  it('cctv 는 벽 상단 부착이다 — 1인칭 시야에서 올려다보이는 2.2~2.6m', () => {
+    for (const [, sp] of spawnAnchored(mk(['cctv', 'cctv', 'cctv']))) {
+      expect(sp.mounted).toBe(true)
+      expect(sp.y!).toBeGreaterThanOrEqual(2.2)
+      expect(sp.y!).toBeLessThanOrEqual(2.6)
+    }
+  })
+
+  it('같은 kind 복수는 서로 다른 앵커로 흩어진다', () => {
+    for (const kinds of [['cctv', 'cctv', 'cctv'], ['receipt', 'receipt', 'receipt'], ['call', 'call']] as EvKind[][]) {
+      const spots = [...spawnAnchored(mk(kinds)).values()]
+      for (let i = 0; i < spots.length; i++) {
+        for (let j = i + 1; j < spots.length; j++) {
+          const d = Math.hypot(spots[i]!.at[0] - spots[j]!.at[0], spots[i]!.at[1] - spots[j]!.at[1])
+          expect(d).toBeGreaterThan(0.8)
+        }
+      }
+    }
+  })
+
+  it('바닥 스폰은 전부 설 수 있는 자리다 — 못 닿는 기록은 없는 기록이다', () => {
+    for (const c of [CASE, generateValidCase(7).case, gc001Case()]) {
+      const spots = spawnAnchored(c.evidence.map((e) => ({ id: e.id, kind: e.kind })))
+      expect(spots.size).toBe(c.evidence.length)
+      for (const [, sp] of spots) {
+        if (!sp.mounted) expect(sceneBlocked(sp.at[0], sp.at[1])).toBe(false)
+      }
+    }
+  })
+
+  it('autopsy 는 사망 지점(조각상 아래) 곁이다', () => {
+    const sp = spawnAnchored(mk(['autopsy'])).get('E0')!
+    expect(Math.hypot(sp.at[0] - DEATH_AT[0], sp.at[1] - DEATH_AT[1])).toBeLessThan(2.5)
+  })
+
+  it('같은 입력은 같은 배치다 — Math.random 이 없다', () => {
+    const list = CASE.evidence.map((e) => ({ id: e.id, kind: e.kind }))
+    expect(spawnAnchored(list)).toEqual(spawnAnchored(list))
+  })
+
+  it('앵커가 소진돼도 겹치지 않고 선다', () => {
+    const spots = [...spawnAnchored(mk(Array(6).fill('receipt') as EvKind[])).values()]
+    for (let i = 0; i < spots.length; i++) {
+      for (let j = i + 1; j < spots.length; j++) {
+        const d = Math.hypot(spots[i]!.at[0] - spots[j]!.at[0], spots[i]!.at[1] - spots[j]!.at[1])
         expect(d).toBeGreaterThan(0.6)
       }
     }

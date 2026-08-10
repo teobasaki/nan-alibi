@@ -13,7 +13,9 @@
  */
 
 import { lookupEvidence, type GameState } from '../engine/game'
-import type { PlaceId } from '../types'
+import type { Evidence, PlaceId } from '../types'
+
+type EvKind = Evidence['kind']
 
 /** 연출·밸런스 상수 — **체감 조정은 전부 여기서** (RESULT_FX/TYPE_FX 와 같은 규약) */
 export const SCENE_FX = {
@@ -174,8 +176,19 @@ export const SCENE_BOXES: readonly Box[] = [
   { x: 6.6, z: 5.2, hx: 0.95, hz: 0.4, h: 1.05, kind: 'desk' },
 ] as const
 
-/** 현장 받침대(발견 지점) 위치 — 접근하면 서술 1줄이 뜬다. 줍는 물건이 아니다. */
+/** 전시 받침대(분석 상자) 위치 — 지금은 가구다. 발견 지점 서사는 DEATH_AT 이 가져갔다. */
 export const PEDESTAL_AT: readonly [number, number] = [-0.6, -4.2]
+
+/**
+ * **사망 지점 — 조각상 아래.** 갤러리 실측(Statue_low t=(7.90,·,-0.14) ·
+ * stand t=(8.11,·,-0.02)) + GALLERY_OFFSET(+1.5) = 조각상이 씬 (9.4, -0.1) 에 선다.
+ * 그 서남쪽 발치가 발견 지점이다 — fallscene 실모델·테이프 라인·autopsy 앵커·
+ * 접근 서술이 전부 이 좌표를 본다 (유혈·시신 직접 묘사 금지, 골든 케이스 §4).
+ */
+export const DEATH_AT: readonly [number, number] = [8.0, 1.0]
+
+/** 현장 테이프 구역 — 사망 지점 둘레. 연출 전용이라 통행은 막지 않는다. */
+export const DEATH_ZONE = { x: 8.0, z: 1.0, hx: 1.5, hz: 1.3 } as const
 
 /** 플레이어 시작 위치 — 출입문(+z 벽) 쪽 */
 export const SCENE_START: readonly [number, number] = [2.0, 5.6]
@@ -210,6 +223,10 @@ export function sceneBlocked(x: number, z: number): boolean {
  * 같은 사건은 언제나 같은 현장이다. 막힌 자리는 나선 탐색으로 곁의 빈 칸에 옮긴다 —
  * explore3d 의 `placeReachable` 과 같은 이유다 (못 닿는 기록은 없는 기록이다).
  */
+/**
+ * (레거시 — 장소 축 배치) 개편 라운드부터 본선은 kind 서사 앵커(`spawnAnchored`)다.
+ * 이 함수는 ⑥-⑧ 계약 테스트와 "장소 축으로도 펼 수 있다"의 증거로 남는다.
+ */
 export function spawnFor(list: readonly { id: string; place: PlaceId }[]): Map<string, [number, number]> {
   const out = new Map<string, [number, number]>()
   const countAt = new Map<PlaceId, number>()
@@ -241,6 +258,102 @@ export function spawnFor(list: readonly { id: string; place: PlaceId }[]): Map<s
     }
     taken.push([x, z])
     out.set(it.id, [x, z])
+  }
+  return out
+}
+
+/* ─────────── 개연성 배치 — kind 서사 앵커 (개편 라운드, 사용자 결정 3) ───────────
+ * "한곳에 뭉치거나 무작위" 라는 실플레이 불만의 수리다. 증거는 **있을 법한 자리**에 있다:
+ * cctv 는 벽 상단, 통화 기록은 데스크·벤치 위, 영수증은 데스크·수장고 곁,
+ * 검시 소견은 사망 지점 옆, 봉인(keycard)은 수장고 구석. 라벨은 여전히 월드 소유다.
+ */
+
+export interface SpawnSpot {
+  at: [number, number]
+  /** 부양 높이(m) — 없으면 바닥 기본(씬의 MARK_Y). cctv 는 1인칭 시야(1.6m)에서 올려다보이는 2.2~2.6 */
+  y?: number
+  /** 벽·가구 부착 — 서 있을 수 없는 자리가 정상이므로 씬의 도달성 재배치(spotFor)를 건너뛴다 */
+  mounted?: boolean
+}
+
+/**
+ * kind → 서사 앵커 서열. 같은 kind 복수는 순번대로 **서로 다른 앵커**를 받는다.
+ * 좌표는 갤러리 서관 홀 실측(SCENE_ROOM·SCENE_BOXES·GLB 노드 t)에서 골랐다.
+ */
+export const KIND_SPOTS: Record<EvKind, readonly SpawnSpot[]> = {
+  cctv: [
+    { at: [2.0, 6.9], y: 2.45, mounted: true },    // 출입구(+z 벽, 시작점 곁) 위
+    { at: [-8.0, -6.6], y: 2.5, mounted: true },   // 북서 벽 상단 코너
+    { at: [10.3, -6.6], y: 2.3, mounted: true },   // 북동 벽 상단 코너
+  ],
+  call: [
+    { at: [6.5, 5.1], y: 1.35, mounted: true },    // 큐레이터 데스크(h 1.05) 위
+    { at: [5.9, 0.5], y: 0.95, mounted: true },    // 관람 벤치 위 (갤러리 chairs t=(4.53,·,-0.04)+오프셋)
+  ],
+  receipt: [
+    { at: [5.2, 4.4] },                            // 데스크 곁 바닥
+    { at: [-5.6, -4.2] },                          // 서쪽 수장고(상자 더미) 곁
+    { at: [8.2, -3.4] },                           // 동쪽 상자 곁
+  ],
+  autopsy: [
+    { at: [6.8, 0.9] },                            // 사망 지점 서편 — 테이프 밖
+    { at: [8.2, 3.0] },                            // 사망 지점 남편
+  ],
+  keycard: [
+    { at: [-7.2, -5.6] },                          // 서쪽 수장고 구석
+    { at: [10.1, 6.4] },                           // 남동 구석
+  ],
+}
+
+/** 앵커 초과분을 흩을 때의 kind 별 위상 — 결정론 (Math.random 금지) */
+const KIND_PHASE: Record<EvKind, number> = { cctv: 0, call: 0.7, receipt: 1.4, autopsy: 2.1, keycard: 2.8 }
+
+/**
+ * kind 서사 앵커 배치. 부착(mounted) 앵커는 좌표 그대로, 바닥 앵커는 겹침 회피
+ * (0.85m)와 설 자리 검사(sceneBlocked)를 지나며, 앵커가 소진되면 마지막 앵커
+ * 둘레 고리로 흩는다 — 전부 순번만으로 정해져 같은 사건은 언제나 같은 현장이다.
+ */
+export function spawnAnchored(list: readonly { id: string; kind: EvKind }[]): Map<string, SpawnSpot> {
+  const out = new Map<string, SpawnSpot>()
+  const countByKind = new Map<EvKind, number>()
+  const taken: [number, number][] = []
+
+  const free = (x: number, z: number): boolean =>
+    !sceneBlocked(x, z) && taken.every(([tx, tz]) => Math.hypot(x - tx, z - tz) > 0.85)
+
+  for (const it of list) {
+    const k = countByKind.get(it.kind) ?? 0
+    countByKind.set(it.kind, k + 1)
+    const spots = KIND_SPOTS[it.kind]
+    const anchor = spots[Math.min(k, spots.length - 1)]!
+
+    if (anchor.mounted && k < spots.length) {
+      // 부착 — 벽·가구 위라 서 있을 수 없어도 된다. 줍기는 발치(XZ 반경)로 판정된다.
+      taken.push([anchor.at[0], anchor.at[1]])
+      out.set(it.id, { at: [anchor.at[0], anchor.at[1]], y: anchor.y, mounted: true })
+      continue
+    }
+
+    const over = k - (spots.length - 1)
+    let x = anchor.at[0]
+    let z = anchor.at[1]
+    if (over > 0) {
+      const ang = over * (Math.PI / 2.6) + KIND_PHASE[it.kind]
+      const rad = 1.0 + 0.4 * Math.floor(over / 5)
+      x += Math.cos(ang) * rad
+      z += Math.sin(ang) * rad
+    }
+    if (!free(x, z)) {
+      outer: for (let r = 0.3; r < 4; r += 0.3) {
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+          const px = x + Math.cos(a) * r
+          const pz = z + Math.sin(a) * r
+          if (free(px, pz)) { x = px; z = pz; break outer }
+        }
+      }
+    }
+    taken.push([x, z])
+    out.set(it.id, { at: [x, z], y: over > 0 ? undefined : anchor.y })
   }
   return out
 }

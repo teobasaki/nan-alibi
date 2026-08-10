@@ -33,7 +33,7 @@ import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
 import { hasStation, hasWalkModel, mountExplore, type Explore3D, type Marker, type Seat } from './ui/explore3d'
 import { mountCrimeScene, type CrimeScene, type SceneMarker } from './ui/crimescene3d'
-import { SCENE_FX, bagIds, spawnFor, swapField, timeUp } from './ui/sceneRules'
+import { SCENE_FX, bagIds, spawnAnchored, swapField, timeUp } from './ui/sceneRules'
 import { renderWall, wallData } from './ui/cardwall'
 import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
@@ -618,6 +618,8 @@ function exploreMarkers(): Marker[] {
  * 예산이 0 이 되어도 게이트는 호루라기 뒤에 한 번만 열려야 한다.
  */
 let csHandle: CrimeScene | null = null
+/** 씬이 서는 중 — 브리핑 버튼 연타로 두 번 열리는 것을 막는다 (openCrimeScene 가드) */
+let csOpening = false
 
 /** 새 효과음 키(pickup·snap 등)는 메인 세션이 sound.ts 에 배선한다 — 이름만 부른다 */
 const playAny = (k: string): void => play(k as Parameters<typeof play>[0])
@@ -625,21 +627,28 @@ const playAny = (k: string): void => play(k as Parameters<typeof play>[0])
 /**
  * 현장의 증거품 — **아직 안 주운 것 전부.** 봉인(requires 미충족)도 보인다:
  * 자물쇠가 보여야 "열쇠가 어딘가 있다" 는 사슬의 존재가 현장에서 읽힌다 (ADR 010 과
- * 같은 원칙 — 자물쇠는 보여주고 열쇠의 주인만 감춘다). 배치는 spawnFor 가 결정론으로 정한다.
+ * 같은 원칙 — 자물쇠는 보여주고 열쇠의 주인만 감춘다). 배치는 spawnAnchored 가
+ * kind 서사 앵커로 결정론으로 정한다 — cctv 는 벽 상단, 통화는 데스크·벤치 위,
+ * 검시는 사망 지점 옆 (개연성 배치, 사용자 결정 3).
  */
 function sceneMarkersNow(): SceneMarker[] {
   const avail = new Set(availableEvidence(ui.game).map((e) => e.id))
-  const spots = spawnFor(CASE.evidence.map((e) => ({ id: e.id, place: e.place })))
+  const spots = spawnAnchored(CASE.evidence.map((e) => ({ id: e.id, kind: e.kind })))
   return CASE.evidence
     .filter((e) => !ui.game.cards.includes(e.id))
-    .map((e) => ({
-      id: e.id,
-      label: `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}`,
-      kind: e.kind,
-      crime: e.slot === CRIME_SLOT,
-      sealed: !avail.has(e.id),
-      at: spots.get(e.id) ?? [0, 0],
-    }))
+    .map((e) => {
+      const sp = spots.get(e.id)
+      return {
+        id: e.id,
+        label: `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}`,
+        kind: e.kind,
+        crime: e.slot === CRIME_SLOT,
+        sealed: !avail.has(e.id),
+        at: sp?.at ?? [0, 0],
+        y: sp?.y,
+        mounted: sp?.mounted,
+      }
+    })
 }
 
 function syncSceneState(): void {
@@ -700,6 +709,13 @@ function onScenePick(id: string): void {
  * 이 프로젝트가 사진 폴백에서 지켜 온 원칙과 같다.
  */
 function openCrimeScene(fallback: () => void): void {
+  /**
+   * **재진입 가드** — 브리핑의 [수사를 시작한다] 는 페이드(0.4s) 동안 한 번 더
+   * 눌릴 수 있다. 두 번 열리면 첫 호스트가 고아가 되어 검은 캔버스로 보드를 덮는다
+   * (실측 — 연타 재현). explore3d 의 mounting 가드와 같은 이유, 같은 문법.
+   */
+  if (csOpening || csHandle) return
+  csOpening = true
   const host = h('div', 'cscene')
   const loading = h('div', 'cs-loading', '현장으로 이동 중 — 통제선을 넘는다…')
   host.appendChild(loading)
@@ -709,7 +725,7 @@ function openCrimeScene(fallback: () => void): void {
   const slug = SUSPECTS.map((s) => SLUG_BY_JOB[CASE.suspects[s].job] ?? '')
     .find((x) => hasWalkModel(x)) ?? 'security'
   // 발견 지점 서술 1줄 — 수단·시신 묘사 금지 (골든 케이스 §4). 라벨은 월드 소유.
-  const pedLine = `${PLACE_L(CRIME_PLACE)} 발견 지점 — 테이프 안쪽에 서류가 흩어져 있다. 감식반의 표식만 남았다.`
+  const pedLine = `${PLACE_L(CRIME_PLACE)} 발견 지점 — 조각상 아래, 테이프 안쪽에 서류가 흩어져 있다. 감식반의 표식만 남았다.`
 
   void mountCrimeScene(host, slug, CALM, pedLine, {
     onPick: onScenePick,
@@ -723,6 +739,7 @@ function openCrimeScene(fallback: () => void): void {
       render()
     },
   }).then((hd) => {
+    csOpening = false
     loading.remove()
     if (!hd) {
       host.remove()
