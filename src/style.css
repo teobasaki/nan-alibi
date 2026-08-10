@@ -105,20 +105,28 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .portrait .hint { color: var(--amber); font-size: 11px; margin-top: 4px; }
 
 .log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
-.bubble { max-width: 86%; padding: 8px 11px; border-radius: 8px; font-size: 13px; line-height: 1.55; }
+/* 대화는 읽는 물건이다 — 시연 화면에서 13px 은 안 읽힌다 (사용자 지적) */
+.bubble { max-width: 84%; padding: 11px 14px; border-radius: 8px; font-size: 15px; line-height: 1.62; }
+.log .bubble + .bubble { margin-top: 8px; }   /* 서로 딱 붙어 한 덩어리로 보이던 것 */
 .bubble.q { align-self: flex-end; background: var(--panel-2); border: 1px solid var(--line); }
 .bubble.a { align-self: flex-start; background: var(--panel); border-left: 2px solid var(--amber); }
 .bubble.a.fallback { border-left-color: var(--muted); color: var(--muted); }
-.bubble .tell { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.bubble .tell { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
 
-.ask { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
-.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
-.chip { font-size: 11px; padding: 4px 8px; background: transparent; color: var(--muted); }
+.ask { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+/* 행동 버튼 — 레퍼런스의 NEXT ACTION. 누르면 바로 묻는 버튼이라 버튼처럼 보여야 한다 */
+.chip {
+  font-size: 13px; padding: 9px 12px; background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 5px;
+}
+.chip:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
+.chip:disabled { opacity: .4; }
 .chip:hover { color: var(--ink); }
 .askrow { display: flex; gap: 7px; }
 .askrow input {
   flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
-  padding: 8px 10px; color: var(--ink); font: inherit; font-size: 13px;
+  padding: 10px 12px; color: var(--ink); font: inherit; font-size: 14px;
 }
 .askrow input:focus { outline: none; border-color: var(--amber); }
 .cost { color: var(--amber); font-size: 11px; align-self: center; white-space: nowrap; }
@@ -711,10 +719,10 @@ body::after {
 /* ══ 질문 칩 — 문장 아래 목적을 적는다 (QA 5.2) ══
    질문이 적절한지 알 수 없으면 추리가 아니라 프롬프트 작성 능력이 시험대에 오른다. */
 .chip { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
-.chip-q { font-size: 12.5px; }
+.chip-q { font-size: 13px; }
 .chip-why {
-  font-family: var(--mono); font-size: 10px; letter-spacing: .03em;
-  color: rgba(233,225,211,.42);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .03em;
+  color: rgba(233,225,211,.5);
 }
 .chip:hover .chip-why { color: var(--amber); }
 
@@ -1775,13 +1783,13 @@ body::after {
 /* ═══════════ 프로필 카드 월 (기획서 §C — 신규 블록) ═══════════ */
 .cwallpage { display: flex; flex-direction: column; overflow-y: auto; }
 .cwall { flex: 1; padding: 14px 16px 6px; }
-.cwall-cap { font-family: var(--serif); font-size: 17px; letter-spacing: .5px; }
-.cwall-sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 12px; line-height: 1.6; }
+.cwall-cap { font-family: var(--serif); font-size: 21px; letter-spacing: .5px; }
+.cwall-sub { color: var(--muted); font-size: 14px; margin: 5px 0 14px; line-height: 1.65; }
 
 /* 코르크 보드 — 색은 세계(불 꺼진 갤러리 사무동)에서 뽑는다 */
 .cwall-board {
-  display: flex; flex-wrap: wrap; gap: 16px; justify-content: center;
-  padding: 22px 14px; border-radius: 8px;
+  display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;
+  padding: 26px 16px; border-radius: 8px;
   background:
     radial-gradient(circle at 20% 30%, rgba(0, 0, 0, .18) 0 2px, transparent 3px),
     radial-gradient(circle at 72% 64%, rgba(0, 0, 0, .14) 0 2px, transparent 3px),
@@ -1790,7 +1798,7 @@ body::after {
 }
 
 .pcard {
-  position: relative; width: 168px; height: 238px; cursor: pointer;
+  position: relative; width: 208px; height: 292px; cursor: pointer;
   transform: rotate(var(--tilt, 0deg));
   perspective: 700px; outline-offset: 3px;
 }
@@ -1833,16 +1841,16 @@ body::after {
   display: grid; place-items: center; font-family: var(--serif); font-size: 44px;
   color: #6d5f4c; background: linear-gradient(150deg, #cfc3ae, #b0a28a);
 }
-.pcard-name { font-family: var(--serif); font-size: 16.5px; margin-top: 7px; }
-.pcard-job { font-size: 11.5px; color: #5c4f42; margin-top: 1px; }
+.pcard-name { font-family: var(--serif); font-size: 20px; margin-top: 9px; }
+.pcard-job { font-size: 13.5px; color: #5c4f42; margin-top: 2px; }
 .pcard-talk {
-  margin-top: auto; font-family: var(--mono); font-size: 11px; color: #4a6b52;
+  margin-top: auto; font-family: var(--mono); font-size: 13px; color: #4a6b52;
 }
 .pcard-talk.off { color: #8a4438; }
-.pcard-stamps { font-size: 11px; color: #8a2f24; }
+.pcard-stamps { font-size: 13px; color: #8a2f24; }
 
-.pcard-bk { font-size: 10px; color: #7a6a55; letter-spacing: .5px; margin-top: 5px; }
-.pcard-bv { font-size: 11.5px; line-height: 1.45; }
+.pcard-bk { font-size: 11.5px; color: #7a6a55; letter-spacing: .5px; margin-top: 6px; }
+.pcard-bv { font-size: 13px; line-height: 1.5; }
 
 /* 소거 — 붉은 대각선 + 인장 (기획서 §C). 인장은 처음 한 번만 쾅 */
 .pcard.out .pcard-face { filter: grayscale(.55) brightness(.82); }

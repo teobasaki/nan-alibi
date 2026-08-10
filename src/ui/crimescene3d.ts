@@ -237,6 +237,19 @@ const FALL_TINT_K = 0.55
 /** keycard 메탈 박스의 잿빛 틴트 — futuristic 톤을 무대(불 꺼진 갤러리)에 맞춰 누른다 */
 const KEYCARD_TINT = 0x8a8478
 const KEYCARD_TINT_K = 0.6
+
+/**
+ * 증거 깃발의 종류별 색조 — **똑같이 생긴 물건이 둘 이상 서지 않게** 하는 장치.
+ * 무대 팔레트 안의 낮은 채도만 쓴다(감식 표식이지 네온이 아니다).
+ * 이 색은 중요도를 뜻하지 않는다 — 어느 색이 결정적인지는 어디에도 적혀 있지 않다.
+ */
+const FLAG_TINT: Record<string, number> = {
+  cctv: 0x7f8f96,      // 차가운 회청 — 기계 기록
+  call: 0x9a8f6a,      // 바랜 황토 — 통화 기록
+  receipt: 0xc8b03a,   // 기본 감식 노랑 — 서류
+  autopsy: 0x8f7f86,   // 흐린 자회색 — 현장 판정
+  keycard: 0x8a8478,   // 잿빛 금속 — 라벨 기록
+}
 /**
  * 1인칭 수거 시선 하강(m) — 몸이 안 보이는 시점에서는 카메라가 "숙인다"를 진다.
  * pickup 잠금(0.45s) 동안 사인 곡선으로 내려갔다 돌아온다. 모션 축소면 없다.
@@ -1026,6 +1039,14 @@ export async function mountCrimeScene(
             for (const x of (Array.isArray(mm.material) ? mm.material : [mm.material]) as THREE.MeshStandardMaterial[]) {
               // keycard 메탈 박스 — futuristic 색을 잿빛으로 눌러 무대 톤에 맞춘다 (사용자 결정 3)
               if (m.kind === 'keycard' && x.color) x.color.lerp(kcTint, KEYCARD_TINT_K)
+              /**
+               * **증거 깃발은 종류마다 다른 색을 입는다.**
+               * 실모델 카탈로그를 다 쓰면 남는 것은 깃발인데, 깃발은 프리미티브라
+               * 전부 똑같이 생겼다 — 화면에서는 그게 곧 "같은 물건 두 개" 다
+               * (사용자가 반복해서 신고한 증상). 종류별 색조를 얹어 서로 다르게 만든다.
+               * 색은 정보를 **주지 않는다** — 어느 색이 중요한지는 어디에도 안 적혀 있다.
+               */
+              if (m.model === FLAG_KEY && x.color) x.color.lerp(new THREE.Color(FLAG_TINT[m.kind] ?? 0xc8b03a), 0.7)
               if (m.sealed && x.color) x.color.multiplyScalar(0.55)   // 봉인 — 잿빛으로 눌러 둔다
               mats.push(x)
             }
@@ -1679,12 +1700,17 @@ export async function mountCrimeScene(
            * 기준**이다 — 몸을 돌리지 않으면 시선은 그대로인 채 옆걸음으로 미끄러진다.
            */
           /**
-           * **1인칭에서 몸의 방향은 마우스만 정한다.** 이동 방향으로 몸을 돌리면
-           * 게걸음(A/D)에 시선이 끌려가 화면이 저절로 돌아간다. 클릭 이동일 때만
-           * 목표 쪽으로 몸을 돌린다 — 그때는 플레이어가 그리로 가겠다고 말한 것이다.
+           * **1인칭에서 몸의 방향은 마우스와 클릭 목표만 정한다.**
+           *
+           * 이동 방향으로 몸을 돌리면 게걸음(A/D)에 시선이 끌려가 화면이 저절로 돌아간다.
+           * 처음엔 "키를 누르는 동안" 만 막았는데, **키를 떼는 순간** 감속 활강 구간에서
+           * `byKeys` 가 false 가 되어 몸이 마지막 이동 방향(=옆)으로 홱 돌았다 —
+           * 사용자가 본 "A 누르면 옆으로 가다가 갑자기 훅 반대로 도는" 증상이 이것이다.
+           * 그래서 조건을 **클릭 목표가 있을 때로** 좁힌다. 키 이동 중에도, 키를 뗀
+           * 뒤에도 시선은 마우스가 둔 자리에 그대로 있는다.
            */
           const byKeys = fwd !== 0 || side !== 0
-          if (!(firstPerson && byKeys)) {
+          if (!firstPerson || (goal !== null && !byKeys)) {
             const want = Math.atan2(lastDir.x, lastDir.z)
             let d = want - actor.rotation.y
             while (d > Math.PI) d -= Math.PI * 2

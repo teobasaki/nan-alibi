@@ -906,10 +906,11 @@ function deskOrRoom(): HTMLElement {
 function cueRail(): HTMLElement {
   const rail = h('div', 'nb-page nb-cue')
 
+  // 문은 하나다 — 아이콘과 버튼이 **같은 창**을 여는데 둘 다 두면 다른 것인 줄 안다
   const book = h('button', 'cue-book') as HTMLButtonElement
-  book.setAttribute('aria-label', '수사일지 펼치기')
+  book.setAttribute('aria-label', '수사일지 펼치기 (I)')
   book.appendChild(h('span', 'cue-ico', '▤'))
-  book.appendChild(h('span', 'cue-ico-t', '수사일지'))
+  book.appendChild(h('span', 'cue-ico-t', '수사일지  I'))
   book.onclick = () => { play('page'); openBook() }
   rail.appendChild(book)
 
@@ -926,10 +927,6 @@ function cueRail(): HTMLElement {
   rail.appendChild(num('new', '새 기록', owned))
   rail.appendChild(num('chg', '어긋난 진술', contra))
   rail.appendChild(h('div', 'cue-sub', pend > 0 ? `안 맞춰본 조합 ${pend}` : '맞출 조합 없음'))
-
-  const open = h('button', 'cue-open', '수첩 열기  I') as HTMLButtonElement
-  open.onclick = () => { play('page'); openBook() }
-  rail.appendChild(open)
 
   // 우하단 진행 카운터 — 레퍼런스의 두 줄. 우리 수치로 채운다
   const cands = candidatesFrom(CASE, new Set(ui.game.cards))
@@ -2108,8 +2105,15 @@ function unlockNote(before: GameState, after: GameState, reveal: PresentReveal):
   return '\n\n▸ 새로운 진술이 열렸다.'
 }
 
+/**
+ * 마지막 답변에 타자기 연출을 건다.
+ *
+ * **`.stagechip` 을 반드시 제외한다.** 파이프라인 칩도 `bubble a` 클래스를 쓰는데,
+ * 음성 합성이 도는 동안 답변 **뒤에** 붙는다. 그래서 "마지막 `.bubble.a`" 를 그냥 집으면
+ * 칩 안에 답변이 한 번 더 타이핑되어 **같은 말이 두 번 보였다** (사용자 신고).
+ */
 function animateLast(text: string): void {
-  const bubbles = document.querySelectorAll('.bubble.a')
+  const bubbles = Array.from(document.querySelectorAll('.bubble.a:not(.stagechip)'))
   const node = bubbles[bubbles.length - 1]?.firstElementChild
   if (node instanceof HTMLElement) typeInto(node, text)
 }
@@ -2919,7 +2923,12 @@ function render(): void {
   const scrolls = Array.from(app.querySelectorAll('.col')).map((c) => c.scrollTop)
   app.replaceChildren()
   app.appendChild(topbar())
-  app.appendChild(h('div', 'coach', coachLine()))
+  /**
+   * 상단 안내줄. **카드 월에서는 걷어낸다** — 카드 다섯 장이 곧 안내이고,
+   * 그 위에 "③ 기록 한 장과 진술 한 칸을 맞대 본다" 가 걸려 있으면
+   * 다음에 할 일과 지금 보는 화면이 어긋나 읽는 사람을 헷갈리게 한다 (사용자 지적).
+   */
+  if (!(ui.wall && ui.chapter2 && !ui.active)) app.appendChild(h('div', 'coach', coachLine()))
   // 챕터 게이트에 막힌 순간의 안내 — 코치와 별개다. 코치는 다음 행동을, 이건 방금 막힌 이유를 말한다.
   if (ui.gateMsg) app.appendChild(h('div', 'gatenote', ui.gateMsg))
   if (ui.dash) app.appendChild(dashboard(() => render()))
