@@ -50,7 +50,7 @@ export interface Explore3D {
 export interface Seat {
   /** 용의자 id */
   id: string
-  /** 착석 모델 slug — 심문 씬이 쓰는 것과 같은 표(roleSlug)에서 온다 */
+  /** 착석 배역 태그 — 심문 씬이 쓰는 것과 같은 배역표(ui/cast.ts)에서 온다 */
   slug: string
   /** 방 안 위치 (미터). 벽 안이면 씬이 빈 칸으로 옮기고 이 값을 갱신한다. */
   at: [number, number]
@@ -81,7 +81,15 @@ export interface ExploreHandlers {
   onTake(id: string): void
 }
 
-const CHAR = import.meta.glob('/public/characters/*.walk.opt.glb', {
+/**
+ * 걷는 몸은 **주인공 후보만** — joe(Mixamo 네이티브)와 pi(리타게팅 예비).
+ * 용의자 배우 5종은 앉아만 있고, 걷어낸 Meshy 8종의 걷기까지 와일드카드로 실으면
+ * 안 쓰는 2MB급 GLB 8개가 dist 에 복제된다.
+ */
+const CHAR = import.meta.glob([
+  '/public/characters/joe.walk.opt.glb',
+  '/public/characters/pi.walk.opt.glb',
+], {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 
@@ -91,17 +99,29 @@ for (const [p, url] of Object.entries(CHAR)) {
   if (slug) WALK_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
 }
 
-/** 앉아 있는 사람들은 **심문 씬이 쓰는 착석 모델**을 그대로 쓴다 — 같은 사람이어야 한다 */
-const SEATED = import.meta.glob('/public/characters/*.opt.glb', {
+/**
+ * 앉아 있는 사람들은 **심문 씬이 쓰는 착석 모델**을 그대로 쓴다 — 같은 사람이어야 한다.
+ * 이제 `<tag>.sit.opt.glb` 의 **실제 클립**이다. rest 는 A포즈이므로 복제본마다
+ * 클립 첫 프레임을 한 번 구워 앉힌다(아래 `poseSeated`) — 여기 사람들은 정지 상태라
+ * 프레임마다 도는 mixer 가 필요 없다. 취조실(stage3d)만 클립을 계속 재생한다.
+ *
+ * 글롭은 채택 배역 5종만 짚는다 — stage3d 의 MODELS 와 같은 이유·같은 목록
+ * (와일드카드는 걷어낸 Meshy 8종·35~48MB 예비까지 dist 에 복제한다).
+ */
+const SEATED = import.meta.glob([
+  '/public/characters/carla.sit.opt.glb',
+  '/public/characters/wong.sit.opt.glb',
+  '/public/characters/m1.sit.opt.glb',
+  '/public/characters/f3.sit.opt.glb',
+  '/public/characters/f1.sit.opt.glb',
+], {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 
 const SEAT_BY_SLUG = new Map<string, string>()
 for (const [p, url] of Object.entries(SEATED)) {
-  const f = p.split('/').pop() ?? ''
-  if (f.includes('.walk.')) continue          // 걷기 모델은 여기서 제외
-  const slug = f.replace('.opt.glb', '')
-  SEAT_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
+  const tag = (p.split('/').pop() ?? '').replace('.sit.opt.glb', '')
+  if (tag) SEAT_BY_SLUG.set(tag, (url as string).replace(/^\/public/, ''))
 }
 
 /**
@@ -118,6 +138,10 @@ const STATION_URL = (Object.values(
 )[0] as string | undefined)?.replace(/^\/public/, '')
 
 export const hasWalkModel = (slug: string): boolean => WALK_BY_SLUG.has(slug)
+/** 걷기 클립을 가진 아무 배역 하나 — 주인공 에셋이 빠졌을 때의 최후 폴백 */
+export const anyWalkSlug = (): string | null => [...WALK_BY_SLUG.keys()][0] ?? null
+/** 이 배역의 착석 에셋이 실려 있는가 — 배역표↔글롭 어긋남을 테스트가 잠근다 */
+export const hasSeatModel = (slug: string): boolean => SEAT_BY_SLUG.has(slug)
 export const hasStation = (): boolean => Boolean(STATION_URL)
 
 /**
@@ -900,6 +924,8 @@ export async function mountExplore(
     let seats: Seat[] = []
     /** 같은 모델을 두 번 받지 않는다 — 다섯 명이 같은 직업이면 한 번만 받는다 */
     const seatCache = new Map<string, THREE.Object3D>()
+    /** 착석 클립 — 복제본마다 첫 프레임을 굽는 데 쓴다 (프로토와 같은 수명) */
+    const seatClip = new Map<string, THREE.AnimationClip>()
 
     /** 인물 위에 뜨는 이름표 — 캔버스로 그려 스프라이트로 붙인다 (웹폰트 0) */
     const makeLabel = (st: Seat): THREE.Sprite => {
@@ -991,9 +1017,22 @@ export async function mountExplore(
           proto = g.scene
           dressUp(proto)
           seatCache.set(st.slug, proto)
+          if (g.animations[0]) seatClip.set(st.slug, g.animations[0])
         }
         if (epoch !== seatEpoch) return
         const o = cloneSkinned(proto)
+        /**
+         * **앉힌 다음에 잰다.** 클립을 적용하기 전에는 A포즈라 키가 1.7m 로 재지고,
+         * 그 값으로 배율을 잡으면 앉은 사람이 작아진다. 복제본에 클립 첫 프레임을
+         * 굽고(update(0)) 월드 행렬을 갱신한 뒤에 아래 측정이 돈다.
+         */
+        const clip = seatClip.get(st.slug)
+        if (clip) {
+          const mx = new THREE.AnimationMixer(o)
+          mx.clipAction(clip).play()
+          mx.update(0)
+          o.updateMatrixWorld(true)
+        }
         // 착석 모델은 rest pose 가 앉은 자세라 그대로 놓으면 된다.
         // 크기는 사람 키(1.7m)에 맞춘다 — 모델마다 원본 스케일이 다르다.
         const hgt = measuredHeight(o)
@@ -1004,17 +1043,17 @@ export async function mountExplore(
          * 사실적 비례를 버리고 **읽히는 크기**를 택한다.
          */
         /**
-         * **말이 안 되는 배율은 거부한다.**
-         * 착석 모델 세 개가 포즈가 안 먹은 채(리그가 달라서) 배포된 적이 있다.
-         * 그중 하나는 **누워 있었고**(가장 긴 축이 깊이), 키가 0.34m 로 재져서
-         * 배율이 **4.03배**가 됐다 — 책상 위에 뻗은 거인이 나왔다.
-         * 정상적으로 앉은 사람은 1.30~1.40m 로 재지고 배율이 0.96~1.04 다.
-         * 그 밖이면 **키우지 않고 그대로 둔다** — 작게 나오는 게 괴물보다 낫다.
+         * **말이 안 되는 "확대"만 거부한다.**
+         * 위험한 방향은 확대다: 포즈가 안 먹어 누운 채 0.34m 로 재진 모델을 4배로
+         * 키우면 책상 위에 뻗은 거인이 나온다(실제 사고). 반대로 **축소는 언제나
+         * 안전하다** — cm 단위 리그(carla, CC_Base 규약)는 클립을 구우면 147m 로
+         * 재지는데, 여기서 배율을 거부하면 147m 거인이 씬을 삼킨다(실측).
+         * 취조실(stage3d)도 같은 이유로 h0 가 크면 무조건 눌러 내린다.
          */
         const scale = hgt > 0 ? SEAT_HEIGHT / hgt : 1
-        if (scale > 0.6 && scale < 1.8) o.scale.setScalar(scale)
+        if (scale < 1.8) o.scale.setScalar(scale)
         else if (import.meta.env.DEV) {
-          console.warn(`[탐색] ${st.slug} 착석 모델이 이상하다 — 키 ${hgt.toFixed(2)}m, 배율 ${scale.toFixed(2)}. 배율을 적용하지 않는다.`)
+          console.warn(`[탐색] ${st.slug} 착석 모델이 이상하다 — 키 ${hgt.toFixed(2)}m, 배율 ${scale.toFixed(2)}. 확대는 하지 않는다.`)
         }
         groundIt(o)
         /**

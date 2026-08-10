@@ -11,7 +11,7 @@
  * 같은 seed + 같은 world = 항상 같은 사건. 월드별 salt 를 섞은 파생 rng 만 쓰므로
  * 주 스트림(caseGen)은 건드리지 않는다 — `?seed=` 만 있는 기존 URL 은 바이트 단위로 그대로다.
  *
- * ⚠️ 새 월드를 추가하면: ① jobs 5종 전부 SLUG_BY_JOB 에 매핑 (tests/worlds.test.ts 가 잠금)
+ * ⚠️ 새 월드를 추가해도 3D 배역은 손댈 게 없다 — 배역은 슬롯 고정(ui/cast.ts, tests/worlds.test.ts 가 잠금)
  * ② placeLabels[2] = 현장 = venue.room ③ 이 파일의 WORLD_IDS 에 등록.
  */
 
@@ -28,7 +28,7 @@ export interface WorldPack {
   /** 장소명 풀 — room 은 placeLabels[2](현장)와 같아야 한다 */
   venues: readonly { name: string; room: string }[]
   victimTitles: readonly string[]
-  /** 정확히 5종 — 전부 SLUG_BY_JOB 에 매핑이 있어야 한다 */
+  /** 정확히 5종 — 라벨만 소유한다. 몸(3D·사진)은 슬롯이 정한다 (ui/cast.ts) */
   jobs: readonly { job: string; relation: string }[]
   /** index 2 가 범행 현장 */
   placeLabels: readonly [string, string, string, string, string]

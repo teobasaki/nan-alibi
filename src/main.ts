@@ -31,11 +31,11 @@ import type { Statement } from './engine/prompt'
 import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
-import { hasStation, hasWalkModel, mountExplore, type Explore3D, type Marker, type Seat } from './ui/explore3d'
+import { anyWalkSlug, hasStation, hasWalkModel, mountExplore, type Explore3D, type Marker, type Seat } from './ui/explore3d'
 import { mountCrimeScene, type CrimeScene, type SceneMarker } from './ui/crimescene3d'
 import { SCENE_FX, bagIds, spawnAnchored, swapField, timeUp } from './ui/sceneRules'
 import { renderWall, wallData } from './ui/cardwall'
-import { SLUG_BY_JOB } from './ui/roleSlug'
+import { castTagFor } from './ui/cast'
 import { personaById } from './data/personas'
 import { confessionFor } from './data/confessions'
 import { pickPoolSeed } from './data/pool'
@@ -167,6 +167,17 @@ const WORLD_ID = IS_GC001 ? null : new URLSearchParams(location.search).get('wor
  * 시계만 없다 — 난이도 옵션이 아니라 접근성 옵션이라 다른 무엇도 바꾸지 않는다.
  */
 const CALM = new URLSearchParams(location.search).get('calm') === '1'
+
+/**
+ * 배역 배정에 쓰는 사건 식별자 — 성별이 대본에 박힌 사건만 배역표가 갈아 끼운다.
+ * 시드 사건은 이름 풀이 중성이라 슬롯 고정 배정으로 충분하다 (ui/cast.ts).
+ */
+const CASE_TAG = IS_GC001 ? 'gc001' : null
+
+/** 주인공(형사)의 몸 — 현장·경찰서 모두 이 사람이다. 용의자 배우와 섞지 않는다. */
+const HERO_SLUG = 'joe'
+/** joe 에셋이 빠진 배포에서의 최후 폴백 (걷기 클립이 있는 아무나) */
+const WALKABLE_SLUG = anyWalkSlug()
 
 const seed = IS_GC001 ? 1 : Number(new URLSearchParams(location.search).get('seed')) || (() => {
   const buf = new Uint32Array(1)
@@ -460,7 +471,7 @@ function exploreSeats(): Seat[] {
   const cands = candidatesFrom(CASE, new Set(ui.game.cards))
   return SUSPECTS.map((s, i) => ({
     id: s,
-    slug: SLUG_BY_JOB[CASE.suspects[s].job] ?? 'security',
+    slug: castTagFor(s, CASE_TAG),
     at: SEAT_AT[i] ?? [0, 0],
     label: `${CASE.suspects[s].name} · ${CASE.suspects[s].job}`,
     // 이미 말을 걸어본 사람인가 — 발치 표식 색이 갈린다
@@ -537,9 +548,9 @@ function exploreRoom(): HTMLElement {
   // **로딩 중에도 한 번뿐이다** — `handle` 은 로드가 끝나야 채워지므로 그것만 보면 못 막는다.
   if (ui.explore && !ui.explore.handle && !ui.explore.mounting) {
     ui.explore.mounting = true
-    // 내가 조종하는 형사의 몸. 걷기 모델이 있는 것 중 아무거나 — 없는 걸 고르면 씬이 안 뜬다.
-    const slug = SUSPECTS.map((s) => SLUG_BY_JOB[CASE.suspects[s].job] ?? '')
-      .find((x) => hasWalkModel(x)) ?? 'security'
+    // 내가 조종하는 형사의 몸 — **주인공은 joe 다.** 용의자 배우 5종에는 걷기 클립이
+    // 없고, 있을 이유도 없다(그들은 앉아 있다). 없으면 걷기가 있는 아무나로 떨어진다.
+    const slug = hasWalkModel(HERO_SLUG) ? HERO_SLUG : (WALKABLE_SLUG ?? HERO_SLUG)
     void mountExplore(host, slug, {
       onNear: (id) => {
         if (!ui.explore || ui.explore.near === id) return
@@ -730,9 +741,8 @@ function openCrimeScene(fallback: () => void): void {
   host.appendChild(loading)
   document.body.appendChild(host)
 
-  // 내 몸 — 걷기 모델이 있는 것 중 아무거나 (explore3d 와 같은 선택)
-  const slug = SUSPECTS.map((s) => SLUG_BY_JOB[CASE.suspects[s].job] ?? '')
-    .find((x) => hasWalkModel(x)) ?? 'security'
+  // 내 몸 — 주인공 joe (씬 안에서도 ACTOR_PREFERENCE 가 joe 를 먼저 본다)
+  const slug = hasWalkModel(HERO_SLUG) ? HERO_SLUG : (WALKABLE_SLUG ?? HERO_SLUG)
   // 발견 지점 서술 1줄 — 수단·시신 묘사 금지 (골든 케이스 §4). 라벨은 월드 소유.
   const pedLine = `${PLACE_L(CRIME_PLACE)} 발견 지점 — 조각상 아래, 테이프 안쪽에 서류가 흩어져 있다. 감식반의 표식만 남았다.`
 
@@ -773,7 +783,8 @@ function cardWallPage(): HTMLElement {
   const freshOut = cards.some((c) => c.cleared && !ui.wallStamped.has(c.id))
 
   page.appendChild(renderWall(cards, {
-    portrait: portraitFor,
+    // 사진 열쇠는 **배역 태그**다 — 슬롯 id 를 그대로 넘기면 조용히 전원 명패가 된다
+    portrait: (id) => portraitFor(castTagFor(id, CASE_TAG)),
     personaLine: (s) => {
       const p = personaById(CASE.suspects[s].personaId)
       return `${p.label} — ${p.hint}`
@@ -796,7 +807,7 @@ function cardWallPage(): HTMLElement {
   const desk = focusKey(h('button', 'cwall-go', '수첩을 편다 — 알리바이 대조표'), 'wall:desk') as HTMLButtonElement
   desk.onclick = () => { play('paper'); ui.wall = false; render() }
   acts.appendChild(desk)
-  const walkable = SUSPECTS.some((s) => hasWalkModel(SLUG_BY_JOB[CASE.suspects[s].job] ?? ''))
+  const walkable = hasWalkModel(HERO_SLUG) || Boolean(WALKABLE_SLUG)
   if (walkable && hasStation()) {
     const st = focusKey(h('button', 'cwall-go', '경찰서를 걸어서 간다'), 'wall:station') as HTMLButtonElement
     st.onclick = () => {
@@ -963,7 +974,7 @@ function indexTabs(): HTMLElement {
     tabs.appendChild(wall)
   }
 
-  const walkable = SUSPECTS.some((s) => hasWalkModel(SLUG_BY_JOB[CASE.suspects[s].job] ?? ''))
+  const walkable = hasWalkModel(HERO_SLUG) || Boolean(WALKABLE_SLUG)
   if (walkable && hasStation()) {
     const go = h('button', 'nb-tab exgo') as HTMLButtonElement
     go.appendChild(h('span', 'nbt-l', '경찰서'))
@@ -986,8 +997,8 @@ function stage(): HTMLElement {
   // 압박이 높으면 방이 좁아진다 — 조명이 붉게 조여든다 (분위기 층 ④)
   if (tense) box.classList.add('tense')
 
-  const slug = SLUG_BY_JOB[sus.job]
-  const use3d = !!slug && hasModel(slug)
+  const slug = castTagFor(s, CASE_TAG)
+  const use3d = hasModel(slug)
 
   // 3D 는 **장면**이지 인물 썸네일이 아니다. 취조실을 132px 상자에 담으면
   // 테이블도 갓등도 안 보이고 그냥 어두운 흉상이 된다. 가로로 통째로 쓴다.
@@ -998,7 +1009,7 @@ function stage(): HTMLElement {
   }
 
   const p = h('div', 'portrait')
-  const shot = portraitFor(sus.job)
+  const shot = portraitFor(slug)
   if (!use3d) {
     big = h('div', `big ${shot ? 'photo' : 'plate'}${tense ? ' tense' : ''}`, shot ? '' : sus.name[0]!)
     if (shot) big.style.backgroundImage = `url(${shot})`

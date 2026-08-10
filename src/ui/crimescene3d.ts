@@ -23,7 +23,7 @@ import { groundIt, measuredHeight } from './skinBounds'
 import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
-  DEATH_AT, DEATH_ZONE, FLAG_KEY, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
+  DEATH_AT, FLAG_KEY, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
   clipRateFor, moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, variantFor, vignetteAt,
   VARIANT, type ScenePhase,
 } from './sceneRules'
@@ -51,7 +51,8 @@ export interface SceneMarker {
   mounted?: boolean
   /**
    * 입을 실모델 키 (`props/ev-<키>.opt.glb`). 없으면 kind 이름으로 떨어진다.
-   * 같은 kind 라도 순번대로 다른 모델을 입는다 — cctv 는 카메라 ↔ 필름 릴.
+   * 같은 kind 라도 순번대로 다른 모델을 입는다 — cctv 는 카메라 ↔ 필름 릴,
+   * 풀을 소진하면 증거 깃발(FLAG_KEY)이다.
    */
   model?: string
 }
@@ -98,7 +99,11 @@ export interface CrimeScene {
   openSwap(items: { id: string; label: string }[], pickLabel: string, choose: (dropId: string | null) => void): void
 }
 
-const CHAR = import.meta.glob('/public/characters/*.walk.opt.glb', {
+/** 액터 후보(joe·pi)의 클립만 싣는다 — explore3d 의 CHAR 와 같은 이유(dist 복제 방지) */
+const CHAR = import.meta.glob([
+  '/public/characters/joe.walk.opt.glb',
+  '/public/characters/pi.walk.opt.glb',
+], {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 
@@ -113,7 +118,10 @@ for (const [p, url] of Object.entries(CHAR)) {
  * 없으면(manager 등) 걷기로 떨어진다 — 속도도 클립에 맞춰 함께 떨어진다.
  * run 도 walk 와 같은 리그 결함(다리 본 8개 180° 롤)이라 unrollLegs 를 그대로 지난다.
  */
-const RUN = import.meta.glob('/public/characters/*.run.opt.glb', {
+const RUN = import.meta.glob([
+  '/public/characters/joe.run.opt.glb',
+  '/public/characters/pi.run.opt.glb',
+], {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 
@@ -132,7 +140,10 @@ for (const [p, url] of Object.entries(RUN)) {
  * 클릭 이동마다 방향이 수시로 뒤집히고, 급반전 원샷이 그때마다 걸리면 달리기가
  * 덜컥거린다. 코디네이터가 생략을 허용한 항목이다 (판단 기록: ADR 026).
  */
-const PICKUP = import.meta.glob('/public/characters/*.pickup.opt.glb', {
+const PICKUP = import.meta.glob([
+  '/public/characters/joe.pickup.opt.glb',
+  '/public/characters/pi.pickup.opt.glb',
+], {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 
@@ -169,7 +180,10 @@ const GALLERY_URL = (Object.values(
  * 대기 클립(`<slug>.idle.opt.glb`) — 정지 상태의 기본. 걷기 0프레임 A포즈가
  * "리깅 안 돼 있다" 로 읽히던 것의 수리다. pickup 과 같은 방식으로 클립만 얹는다.
  */
-const IDLE = import.meta.glob('/public/characters/*.idle.opt.glb', {
+const IDLE = import.meta.glob([
+  '/public/characters/joe.idle.opt.glb',
+  '/public/characters/pi.idle.opt.glb',
+], {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>
 
@@ -203,11 +217,6 @@ const FALLSCENE_URL = (Object.values(
   import.meta.glob('/public/props/fallscene.opt.glb', { eager: true, query: '?url', import: 'default' }),
 )[0] as string | undefined)?.replace(/^\/public/, '')
 
-/** 현장 테이프 — Plane 리본을 분리해 사망 구역 둘레에 두른다. 실패 시 생략 가능(과제 명세) */
-const CRIMETAPE_URL = (Object.values(
-  import.meta.glob('/public/props/crimetape.opt.glb', { eager: true, query: '?url', import: 'default' }),
-)[0] as string | undefined)?.replace(/^\/public/, '')
-
 const ACTOR_HEIGHT = 1.78
 const EYE_HEIGHT = 1.64
 const MARK_Y = 0.8
@@ -226,9 +235,6 @@ const FALL_TARGET = 2.2
 /** fallscene 잿빛 틴트 — 유혈 요소가 있어도 톤이 죽는다 (골든 케이스 §4, 부분 숨김 불가한 단일 메시) */
 const FALL_TINT = 0x77716a
 const FALL_TINT_K = 0.55
-/** 현장 테이프 리본 — 중심 높이·세로 폭(m). 실물 폴리스라인의 허리 높이다 */
-const TAPE_RIBBON_Y = 0.78
-const TAPE_RIBBON_H = 0.3
 /** keycard 메탈 박스의 잿빛 틴트 — futuristic 톤을 무대(불 꺼진 갤러리)에 맞춰 누른다 */
 const KEYCARD_TINT = 0x8a8478
 const KEYCARD_TINT_K = 0.6
@@ -552,63 +558,18 @@ export async function mountCrimeScene(
     }
 
     /**
-     * 현장 테이프 라인 — crimetape 의 Plane 노드에서 리본 지오메트리를 분리해
-     * 사망 구역(DEATH_ZONE) 둘레 네 변에 허리 높이로 두른다. 원본 리본의 실측
-     * (긴 축 z ≈1.74m · 세로 y ≈2.37m)을 변 길이·TAPE_RIBBON_H 로 눕히는 것이라
-     * 텍스처가 다소 늘어나는데, 폴리스라인 무늬라 오히려 자연스럽다.
-     * **실패하면 생략한다** (과제 명세) — 그때는 아래 링 테이프가 폴백으로 선다.
+     * 발견 지점 바닥 연출 — 링 테이프 + 흩어진 서류 (시신 없음).
+     * 실물 폴리스라인 에셋(crimetape)은 2026-08-10 미사용 결정으로 저장소에서
+     * 제거했다 — 프리미티브 링이 본선이다 (에셋 0 원칙).
      */
-    let tapeOk = false
-    if (CRIMETAPE_URL) {
-      try {
-        const g = await loader.loadAsync(CRIMETAPE_URL)
-        const planes: THREE.Mesh[] = []
-        g.scene.traverse((o) => {
-          const mm = o as THREE.Mesh
-          if (mm.isMesh && /plane/i.test(mm.name)) planes.push(mm)
-        })
-        if (planes.length) {
-          const sides: { x: number; z: number; len: number; rotY: number }[] = [
-            { x: DEATH_ZONE.x, z: DEATH_ZONE.z - DEATH_ZONE.hz, len: DEATH_ZONE.hx * 2, rotY: Math.PI / 2 },
-            { x: DEATH_ZONE.x, z: DEATH_ZONE.z + DEATH_ZONE.hz, len: DEATH_ZONE.hx * 2, rotY: Math.PI / 2 },
-            { x: DEATH_ZONE.x - DEATH_ZONE.hx, z: DEATH_ZONE.z, len: DEATH_ZONE.hz * 2, rotY: 0 },
-            { x: DEATH_ZONE.x + DEATH_ZONE.hx, z: DEATH_ZONE.z, len: DEATH_ZONE.hz * 2, rotY: 0 },
-          ]
-          const c = new THREE.Vector3()
-          sides.forEach((s, i) => {
-            const src = planes[i % planes.length]!
-            src.geometry.computeBoundingBox()
-            const bb = src.geometry.boundingBox!
-            bb.getCenter(c)
-            const h0 = bb.max.y - bb.min.y
-            const l0 = bb.max.z - bb.min.z
-            const sy = h0 > 0 ? TAPE_RIBBON_H / h0 : 1
-            const sz = l0 > 0 ? s.len / l0 : 1
-            const rib = new THREE.Mesh(src.geometry, src.material)   // 연출 전용 — 재질 공유로 충분하다
-            rib.scale.set(0.12, sy, sz)
-            rib.position.set(-c.x * 0.12, -c.y * sy, -c.z * sz)      // 지오메트리 중심을 변의 축선에 맞춘다
-            const seg = new THREE.Group()
-            seg.add(rib)
-            seg.rotation.y = s.rotY
-            seg.position.set(s.x, TAPE_RIBBON_Y, s.z)
-            scene.add(seg)
-          })
-          tapeOk = true
-        }
-      } catch { /* 생략 가능 — 링 테이프 폴백 */ }
-    }
-
-    /* 발견 지점 바닥 연출 — 링 테이프(실테이프 실패 시 폴백) + 흩어진 서류 (시신 없음) */
     {
-      if (!tapeOk) {
-        const tape = new THREE.Mesh(
-          new THREE.RingGeometry(0.95, 1.05, 4),
-          new THREE.MeshBasicMaterial({ color: COL.tape, transparent: true, opacity: 0.7, side: THREE.DoubleSide }))
-        tape.rotation.x = -Math.PI / 2
-        tape.rotation.z = Math.PI / 4
-        tape.position.set(DEATH_AT[0], 0.02, DEATH_AT[1] + 0.1)
-        scene.add(tape)
-      }
+      const tape = new THREE.Mesh(
+        new THREE.RingGeometry(0.95, 1.05, 4),
+        new THREE.MeshBasicMaterial({ color: COL.tape, transparent: true, opacity: 0.7, side: THREE.DoubleSide }))
+      tape.rotation.x = -Math.PI / 2
+      tape.rotation.z = Math.PI / 4
+      tape.position.set(DEATH_AT[0], 0.02, DEATH_AT[1] + 0.1)
+      scene.add(tape)
       const paperG = new THREE.PlaneGeometry(0.24, 0.32)
       const paperM = new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 1, side: THREE.DoubleSide })
       const sheets: [number, number, number][] = [[-0.5, -0.4, 0.4], [0.4, -0.8, 1.8], [0.7, 0.3, 0.9], [-0.2, 0.8, 2.6]]

@@ -44,7 +44,24 @@ export function canRender3D(): boolean {
   }
 }
 
-const MODELS = import.meta.glob('/public/characters/*.opt.glb', {
+/**
+ * **착석은 이제 실제 Mixamo 클립이다** (`<tag>.sit.opt.glb`).
+ * 예전에는 정적 포즈를 블렌더로 구워(`scripts/pose-seated.py`) 팔 관통을 탐색으로
+ * 보정했다 — 그 노동 전체가 클립 재생으로 사라졌다. rest 가 A포즈이므로
+ * **로드 직후 클립을 한 번 적용한 뒤에** 좌면 맞춤을 재야 한다(순서가 중요하다).
+ *
+ * 글롭은 **채택 배역 5종만** 정확히 짚는다 (`ui/cast.ts` 의 CAST 와 같은 목록 —
+ * tests/worlds.test.ts 가 어긋남을 잠근다). `*.sit` 와일드카드로 돌리면 걷어낸
+ * Meshy 8종과 예비(alina 35MB·f2 48MB)까지 dist/assets 에 복제돼 배포가 무거워지고,
+ * Cloudflare Pages 의 파일당 25MB 상한에도 걸린다.
+ */
+const MODELS = import.meta.glob([
+  '/public/characters/carla.sit.opt.glb',
+  '/public/characters/wong.sit.opt.glb',
+  '/public/characters/m1.sit.opt.glb',
+  '/public/characters/f3.sit.opt.glb',
+  '/public/characters/f1.sit.opt.glb',
+], {
   eager: true,
   query: '?url',
   import: 'default',
@@ -66,15 +83,11 @@ const ROOM_URL = (Object.values(
  * 리깅(앉은 자세·팔 제스처)을 포기하고 **얼굴 해상도 7배**(84px→580px)를 택했다.
  */
 const BY_SLUG = new Map<string, string>()
+/** 흉상 경로는 배우 교체와 함께 사라졌다 — 신규 5종은 전부 전신 리깅이다 */
 const IS_BUST = new Set<string>()
 for (const [path, url] of Object.entries(MODELS)) {
-  const file = path.split('/').pop() ?? ''
-  const bust = /\.bust\.opt\.glb$/.test(file)
-  const name = file.replace(/\.(bust\.)?opt\.glb$/, '')
-  if (!name) continue
-  // 흉상이 있으면 그것을 쓴다 — 얼굴이 주인공이다
-  if (bust || !BY_SLUG.has(name)) BY_SLUG.set(name, (url as string).replace(/^\/public/, ''))
-  if (bust) IS_BUST.add(name)
+  const tag = (path.split('/').pop() ?? '').replace('.sit.opt.glb', '')
+  if (tag) BY_SLUG.set(tag, (url as string).replace(/^\/public/, ''))
 }
 
 export const hasModel = (slug: string): boolean => BY_SLUG.has(slug)
@@ -229,6 +242,19 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
 
     const gltf = await loader.loadAsync(url)
     const model = gltf.scene
+    /**
+     * **클립을 먼저 입히고 나서 잰다.** 착석 GLB 의 rest 는 A포즈라, 클립을 적용하기
+     * 전에 좌면 맞춤(hips 실측)을 하면 서 있는 몸을 기준으로 재게 된다.
+     * `update(0)` 으로 첫 프레임을 굽고 월드 행렬을 갱신한 뒤에 아래 측정이 돈다.
+     */
+    let mixer: import('three').AnimationMixer | null = null
+    const sitClip = gltf.animations[0]
+    if (sitClip) {
+      mixer = new THREE.AnimationMixer(model)
+      mixer.clipAction(sitClip).play()
+      mixer.update(0)
+      model.updateMatrixWorld(true)
+    }
     model.traverse((o) => {
       const m = o as import('three').Mesh
       if (m.isMesh) {
@@ -362,8 +388,17 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     /**
      * 흉상은 머리+어깨+가슴 윗부분이라 실제 세로가 약 0.66m 다.
      * 전신 정규화(1.72m)를 적용하면 머리가 거대해진다 — 실제로 그렇게 만든 적이 있다.
+     *
+     * **착석 클립 모델은 "앉은 키" 로 정규화한다** (실측 1.36m — 좌면 실측과 같은 근거).
+     * 신규 배우 5종은 리그 단위가 제각각이라 클립을 구운 뒤의 키가 0.98m(wong)부터
+     * 147m(carla, cm 단위 리그)까지 흩어진다 — 옛 규칙(h0>1.55 만 정규화)은 wong 을
+     * 그대로 둬서 **머리가 테이블 밑으로 잠겼다**(실측 head y 0.55 < 상판 0.76).
+     * 축소는 언제나 안전하고, 확대는 1.8배까지만 — explore3d 좌석 배율과 같은 가드.
      */
-    const scale = bust ? 0.66 / (h0 || 1) : (h0 > 1.55 ? 1.72 / h0 : 1)
+    const SIT_H = 1.36
+    const scale = bust ? 0.66 / (h0 || 1)
+      : sitClip && h0 > 0 && SIT_H / h0 < 1.8 ? SIT_H / h0
+      : (h0 > 1.55 ? 1.72 / h0 : 1)
     model.scale.setScalar(scale)
     if (bust) {
       const { hi } = measureY(model)
@@ -532,8 +567,24 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
 
     const tick = (): void => {
       raf = requestAnimationFrame(tick)
+      const prevFrame = lastFrame
       lastFrame = performance.now()
       const t = (lastFrame - t0) / 1000
+      /**
+       * **클립이 먼저, 제스처는 그 위에.**
+       * 착석 클립과 아래의 호흡·제스처는 같은 뼈를 만진다 — 순서를 안 정하면 서로를
+       * 덮어써 몸이 떤다. 클립을 먼저 적용하고, **그 결과를 기준 자세(rest)로 갱신**해
+       * 제스처가 그 위에 얹히게 한다. 그러면 두 층이 싸우지 않는다.
+       * 압박은 클립 재생 속도로도 나타난다 — 굳은 사람은 잔동작이 빨라진다.
+       */
+      if (mixer) {
+        const dtSec = Math.min(0.1, Math.max(0, (lastFrame - prevFrame) / 1000))
+        mixer.timeScale = 1 + (pressure / 100) * 0.5
+        mixer.update(dtSec)
+        for (const b of [head, spine, ...gestureBones]) {
+          if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
+        }
+      }
       // 압박이 오르면 호흡이 빨라지고 얕아진다 — 굳는 것이지 커지는 게 아니다
       const rate = 1.0 + (pressure / 100) * 1.6
       const depth = 0.022 * (1 - (pressure / 100) * 0.45)
@@ -710,6 +761,31 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       camera.updateProjectionMatrix()
     }
     addEventListener('resize', onResize)
+
+    // 개발 중에만 씬을 밖에서 들여다본다 — 3D 는 콘솔 없이는 원인을 못 찾는다 (__cs·__ex 와 같은 이유)
+    if (import.meta.env.DEV) {
+      ;(window as unknown as Record<string, unknown>).__st = {
+        scene, model, camera, mixer,
+        info: () => {
+          const hp = new THREE.Vector3()
+          if (head) (head as import('three').Object3D).getWorldPosition(hp)
+          const mb2 = measureBox(model)
+          let hips2: import('three').Object3D | null = null
+          model.traverse((o) => { if (!hips2 && /^Hips$/.test(o.name)) hips2 = o })
+          const hv2 = new THREE.Vector3()
+          if (hips2) (hips2 as import('three').Object3D).getWorldPosition(hv2)
+          return {
+            slug, h0: +h0.toFixed(3), scale: +scale.toFixed(4),
+            hipsY: +hv2.y.toFixed(3),
+            face: face.toArray().map((n) => +n.toFixed(2)),
+            headNow: hp.toArray().map((n) => +n.toFixed(2)),
+            modelPos: model.position.toArray().map((n) => +n.toFixed(2)),
+            boxNow: { lo: +mb2.min.y.toFixed(2), hi: +mb2.max.y.toFixed(2) },
+            clip: sitClip ? { name: sitClip.name, dur: +sitClip.duration.toFixed(2) } : null,
+          }
+        },
+      }
+    }
 
     return {
       setPressure: (v) => { pressure = Math.max(0, Math.min(100, v)) },

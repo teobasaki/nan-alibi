@@ -434,6 +434,10 @@ export function rampTo(cur: number, target: number, dtSec: number, tauSec = SCEN
  * 예전의 call: ['call','receipt'] 는 receipt kind 의 모델과 충돌해 서류가 두 번 섰다.
  * 풀을 소진한 초과분은 증거 깃발(FLAG_KEY, 감식 번호판)로 선다 — "무엇인지"는
  * 훑기 라벨과 근접 힌트가 말하므로 판독은 깨지지 않는다 (ADR 028 §10 보류 근거 소멸).
+ *
+ * 필름 릴(ev-reel)은 구 에셋이 CC BY-NC-SA 로 확인돼 제거됐고(2026-08-10),
+ * CC-BY 확인 모델로 같은 경로에 교체된다 — 파일이 잠시 없어도 에셋 0 원칙이라
+ * 그 자리는 빌보드/프리미티브가 받을 뿐 코드는 안 죽는다.
  */
 export const KIND_MODELS: Record<EvKind, readonly string[]> = {
   cctv: ['cctv', 'reel'],

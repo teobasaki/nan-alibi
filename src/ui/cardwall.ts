@@ -60,8 +60,8 @@ export function wallData(c: CaseFile, g: GameState): WallCard[] {
 }
 
 export interface WallOpts {
-  /** 초상 URL — 없으면 이니셜 실루엣 (main 이 portraitFor 로 계산) */
-  portrait(job: string): string | null
+  /** 초상 URL — 없으면 이니셜 실루엣. 배역은 **슬롯**이 정한다 (main 이 배역표로 계산) */
+  portrait(id: SuspectId): string | null
   /** 읽힌 성향 한 줄 — persona 표는 main 이 안다 */
   personaLine(s: SuspectId): string
   /** 인장 연출을 이미 찍은 카드 — 재렌더마다 쾅쾅대지 않기 위해 (ui.stamped 와 같은 이유) */
@@ -105,7 +105,7 @@ export function renderWall(cards: WallCard[], opts: WallOpts): HTMLElement {
     /* 앞면 */
     const front = el('div', 'pcard-face pcard-front')
     front.appendChild(el('i', 'pcard-pin'))
-    const shot = opts.portrait(c.job)
+    const shot = opts.portrait(c.id)
     const face = el('div', `pcard-photo${shot ? '' : ' plate'}`, shot ? '' : c.name[0]!)
     if (shot) face.style.backgroundImage = `url(${shot})`
     front.appendChild(face)
