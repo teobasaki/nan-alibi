@@ -23,9 +23,19 @@ NAN 2026 제출 규정에 따라 외부 에셋의 출처와 라이선스를 명�
 **CC BY 인 다른 릴 모델로 교체했다**(아래 "확인 완료" 표의 Film Reel) — 경로·코드는 그대로다.
 **범죄 현장 테이프** 묶음 에셋(`crimetape.opt.glb`)은 사용하지 않기로 결정해 같은 날 제거했다.
 
-**용의자 배우 `f1`** 도 같은 사례다: 원본이 ["Beautiful Young Woman Wearing a floral Dress"](https://sketchfab.com/3d-models/beautiful-young-woman-wearing-a-floral-dress-63a4f41ef8b4493aa1296bd1adbc03ee)
-(florah, **CC BY-NC**) 로 확인되었다 — 텍스처의 꽃무늬 원단으로 대조 판정.
-**비상업 조건이므로 배포 전 교체가 필요하다** (아래 "출처 확인 필요" 표 참조).
+**용의자 배우 `f1`** 도 같은 사례이고, **이미 교체를 마쳤다.** 원본이
+["Beautiful Young Woman Wearing a floral Dress"](https://sketchfab.com/3d-models/beautiful-young-woman-wearing-a-floral-dress-63a4f41ef8b4493aa1296bd1adbc03ee)
+(florah, **CC BY-NC**) 로 확인되어 — 텍스처의 꽃무늬 원단으로 대조 판정 — 같은 날
+**CC BY 인 "Alina Ip" 으로 갈아끼웠다**(아래 "확인 완료" 표). 슬러그 `f1` 은 그대로 두고
+에셋 파일만 교체했다.
+
+**왕진 가방**도 같은 이유로 교체했다. 첫 모델(["Doctor's bag"](https://sketchfab.com/3d-models/doctors-bag-9cb08f68851e4edb9d0e0c5604f0eba6), Dishido)은
+라이선스는 CC BY 로 문제없었으나 **톱과 붉은 액체 약병이 함께 모델링돼 있어**
+골든 케이스 정본 §4(수단·신체·유혈 묘사 금지)에 걸렸다. 카메라 각도로 가릴 수 없고
+머티리얼 병합본이라 부분 삭제도 불가능해, **금칙에 걸리지 않는 "The Medical Bag" 으로 교체**했다.
+
+> **라이선스가 아니라 우리 콘텐츠 규칙 때문에 에셋을 바꾼 첫 사례다.**
+> 출처만 맞으면 되는 게 아니라, 화면에 무엇이 보이는지도 우리가 책임진다.
 
 ## 확인 완료 — 3D 에셋
 
@@ -37,7 +47,7 @@ NAN 2026 제출 규정에 따라 외부 에셋의 출처와 라이선스를 명�
 | 1970s 보안 카메라 | `public/props/ev-cctv.opt.glb` | ["Glowbox 1970s Security Camera"](https://sketchfab.com/3d-models/glowbox-1970s-security-camera-796be67fab614a729ea53d107de81cd0) | **Glowbox 3D** | **CC BY 4.0** |
 | 앤티크 다이얼 전화기 | `public/props/ev-call.opt.glb` | ["Antique Rotary Phone"](https://sketchfab.com/3d-models/antique-rotary-phone-ad34704b79774788887a5c78ffc445b2) | **alelivaca** | **CC BY 4.0** |
 | 서류 뭉치 | `public/props/ev-receipt.opt.glb` | ["Low Poly Stack of Papers"](https://sketchfab.com/3d-models/low-poly-stack-of-papers-d298c37be37c47a3be9c6f0e93bdf774) | **ZAKAT** | **CC BY 4.0** |
-| 왕진 가방 | `public/props/ev-autopsy.opt.glb` | ["Doctor's bag"](https://sketchfab.com/3d-models/doctors-bag-9cb08f68851e4edb9d0e0c5604f0eba6) | **Dishido** | **CC BY 4.0** |
+| 구급 가방 | `public/props/ev-autopsy.opt.glb` | ["The Medical Bag"](https://sketchfab.com/3d-models/the-medical-bag-7ff695d5041640b9a6aedb88016af31e) | **ezgi bakim** | **CC BY 4.0** |
 | 나무 운송 상자 | `public/props/crate.opt.glb` | ["A Wooden Crate"](https://sketchfab.com/3d-models/a-wooden-crate-4ae035ea89ea40bbaa82403b9c36afab) | **Krystian Zem** | **CC BY 4.0** |
 | 금속 상자 | `public/props/ev-keycard.opt.glb` | ["Metal Box"](https://sketchfab.com/3d-models/metal-box-c7e4c17e948b42ed9bfdd6b8b7663890) | **LordCinn** | **CC BY 4.0** |
 | 사망 위치 표시(현장 감식) | `public/props/fallscene.opt.glb` | ["Fall investigation scene"](https://sketchfab.com/3d-models/fall-investigation-scene-06a325ab494b4fa88a69c3d48a4ca68b) | **mira9** | **CC BY 4.0** |
