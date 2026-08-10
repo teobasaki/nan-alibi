@@ -889,7 +889,61 @@ function deskOrRoom(): HTMLElement {
  * 기록철을 탭 뒤로 내리지 않는 것도 의도다 — 격자 마지막 행 `확보 기록` 은
  * 조회 목록으로 손을 넘기려고 존재하는데, 목록이 탭 뒤에 있으면 그 인계가 끊긴다.
  */
+/**
+ * **수첩 큐 레일 — 심문 중에는 우면이 좁은 띠가 된다** (UI 레퍼런스 ②).
+ *
+ * 심문 화면의 우면은 수사 일지·조회 목록·잠긴 기록으로 화면 절반을 글로 채우고 있었다.
+ * 시연에서 아무것도 읽히지 않는다는 판정을 받았고, 맞는 말이었다 —
+ * **심문과 수첩은 서로 다른 두 모드인데 한 화면에서 서로를 약하게 만들고 있었다.**
+ *
+ * 이제 심문 중에는 띠만 남는다: 새 기록 n(파랑) · 어긋난 진술 n(주황) · [수첩 열기].
+ * 내용은 `I` 키로 펼치는 책 모달이 전부 들고 간다.
+ *
+ * **주황은 "어긋남"에만 쓴다.** 우리 엔진에는 진술 번복이 없다(claim 은 시드에 고정된다) —
+ * 대신 기록과 진술이 어긋나는 순간이 있고, 그게 이 게임에서 가장 비싼 정보다.
+ * 없는 데이터를 뱃지로 지어내지 않는다.
+ */
+function cueRail(): HTMLElement {
+  const rail = h('div', 'nb-page nb-cue')
+
+  const book = h('button', 'cue-book') as HTMLButtonElement
+  book.setAttribute('aria-label', '수사일지 펼치기')
+  book.appendChild(h('span', 'cue-ico', '▤'))
+  book.appendChild(h('span', 'cue-ico-t', '수사일지'))
+  book.onclick = () => { play('page'); openBook() }
+  rail.appendChild(book)
+
+  const owned = CASE.evidence.filter((e) => ui.game.cards.includes(e.id)).length
+  const contra = ui.game.foundContradictions.length
+  const pend = pendingPairs(ui.game).length
+
+  const num = (cls: string, label: string, v: number): HTMLElement => {
+    const b = h('div', `cue-num ${cls}${v > 0 ? ' has' : ''}`)
+    b.appendChild(h('span', 'cue-k', label))
+    b.appendChild(h('span', 'cue-v', String(v)))
+    return b
+  }
+  rail.appendChild(num('new', '새 기록', owned))
+  rail.appendChild(num('chg', '어긋난 진술', contra))
+  rail.appendChild(h('div', 'cue-sub', pend > 0 ? `안 맞춰본 조합 ${pend}` : '맞출 조합 없음'))
+
+  const open = h('button', 'cue-open', '수첩 열기  I') as HTMLButtonElement
+  open.onclick = () => { play('page'); openBook() }
+  rail.appendChild(open)
+
+  // 우하단 진행 카운터 — 레퍼런스의 두 줄. 우리 수치로 채운다
+  const cands = candidatesFrom(CASE, new Set(ui.game.cards))
+  const foot = h('div', 'cue-foot')
+  foot.appendChild(h('div', undefined, `남은 후보 ${cands.length}/5`))
+  if (ui.active) foot.appendChild(h('div', undefined, `대화 ${TALK_CAP - talksLeft(ui.game, ui.active)}/${TALK_CAP}`))
+  rail.appendChild(foot)
+  return rail
+}
+
 function rightPage(): HTMLElement {
+  // 심문 중에는 좁은 큐 레일. 그 밖(격자·조서·카드월)에서는 원래의 우면 그대로.
+  if (ui.active) return cueRail()
+
   const page = h('div', 'nb-page nb-right')
 
   page.appendChild(journalBlock())
