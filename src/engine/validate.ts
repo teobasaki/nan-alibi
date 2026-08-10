@@ -83,14 +83,17 @@ export function validateCase(c: CaseFile): ValidationResult {
     }
   }
 
-  // V3 — 결정적 증거가 실제로 범인을 가리킨다
+  // V3 — 결정적 증거가 실제로 범인을 가리킨다.
+  // "범행 시각·현장이어야 한다" 는 조건은 뺐다 (GC001 계약 §2) — 그건 호텔 생성기의
+  // 습관이지 사건의 법칙이 아니다. gc001 은 은폐 시각(slot3)의 기록이 범인을 가리킨다.
+  // 생성 사건의 그 습관은 tests/caseGen.test.ts 가 따로 잠근다.
   const dec = c.evidence.filter((e) => e.decisive)
   if (dec.length !== 1) {
     v.push({ code: 'V3', message: `결정적 증거가 ${dec.length}개 (1이어야 함)` })
   } else {
     const d = dec[0]!
-    if (d.subjects.length !== 1 || d.subjects[0] !== c.culprit || d.place !== CRIME_PLACE || d.slot !== CRIME_SLOT) {
-      v.push({ code: 'V3', message: '결정적 증거가 범인을 범행 시각·현장으로 특정하지 못함' })
+    if (d.subjects.length !== 1 || d.subjects[0] !== c.culprit) {
+      v.push({ code: 'V3', message: '결정적 증거가 범인 한 사람을 특정하지 못함' })
     }
   }
 

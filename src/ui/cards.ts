@@ -7,8 +7,9 @@
  */
 
 import {
-  PLACE_LABEL,
-  SLOT_LABEL,
+  kindLabel,
+  placeLabel,
+  slotLabel,
   type CaseFile,
   type Evidence,
   type Slot,
@@ -51,26 +52,38 @@ export function renderEvidenceCard(c: CaseFile, e: Evidence): HTMLElement {
   card.dataset.cardId = e.id
 
   const head = el('div', 'head')
-  head.appendChild(el('span', undefined, KIND_LABEL[e.kind]))
+  head.appendChild(el('span', undefined, kindLabel(c, e.kind, KIND_LABEL[e.kind])))
   head.appendChild(el('span', undefined, e.id))
   card.appendChild(head)
 
   const who = e.subjects.map((s) => nameOf(c, s)).join(', ')
+  const sl = slotLabel(c, e.slot)
+  const pl = placeLabel(c, e.place)
   const rows: [string, string][] =
-    // 검시 소견은 인물이 아니라 **도구의 흔적**을 확정한다 — 소견 문장은 사건이 정한
-    // 도구(weapon)에서 1:1 로 온다. 여기 적힌 것이 곧 도구 축(15점)의 판독 근거다 (ADR 022).
+    // 검시 소견/현장 판정은 인물이 아니라 **수단의 흔적**을 확정한다 — 소견 본문은
+    // 월드가 있으면 그것(autopsyText), 없으면 도구와 1:1 인 WEAPON_TRACE 다 (ADR 022).
     e.kind === 'autopsy'
-      ? [['시각', SLOT_LABEL[e.slot]], ['현장', PLACE_LABEL[e.place]], ['소견', WEAPON_TRACE[c.weapon] ?? '판독 불가']]
+      ? [['시각', sl], ['현장', pl], ['소견', c.world?.autopsyText ?? WEAPON_TRACE[c.weapon] ?? '판독 불가']]
       : e.kind === 'cctv'
-      ? [['구역', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]], ['식별', who]]
+      ? [['구역', pl], ['시각', sl], ['식별', c.world ? (who || '식별 불가') : who]]
       : e.kind === 'keycard'
-        ? [['소지자', who], ['지점', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]], ['결과', '승인'],
-           ...(e.keyLabel ? [['발급 구분', e.keyLabel] as [string, string]] : []),
-           ...(e.decisive ? [['용도', '제출용 결정적 증거 — 다시 제시해도 열리는 것이 없다'] as [string, string]] : [])]
-        : e.kind === 'call'
-          ? [['가입자', who], ['기지국', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]]]
-          : [['결제자', who], ['매장', PLACE_LABEL[e.place]], ['시각', SLOT_LABEL[e.slot]]]
+        ? (c.world
+            // 월드 사건: '결과 승인' 같은 호텔 출입 어휘를 빼고 기록 자체를 보여준다
+            ? [['대상자', who], ['지점', pl], ['시각', sl],
+               ...(e.keyLabel ? [['발급 구분', e.keyLabel] as [string, string]] : []),
+               ...(e.decisive ? [['용도', '제출 근거가 되는 결정적 기록'] as [string, string]] : [])]
+            : [['소지자', who], ['지점', pl], ['시각', sl], ['결과', '승인'],
+               ...(e.keyLabel ? [['발급 구분', e.keyLabel] as [string, string]] : []),
+               ...(e.decisive ? [['용도', '제출용 결정적 증거 — 다시 제시해도 열리는 것이 없다'] as [string, string]] : [])])
+        // 통화·작업 기록의 세부 서식(기지국/매장)은 호텔 어휘라 월드 사건에서는 중립 서식으로
+        : c.world
+          ? [['시각', sl], ['장소', pl], ...(who ? [['확인', who] as [string, string]] : [])]
+          : e.kind === 'call'
+            ? [['가입자', who], ['기지국', pl], ['시각', sl]]
+            : [['결제자', who], ['매장', pl], ['시각', sl]]
 
+  // 사건 고유 비고 — 시각·장소·인물로 표현되지 않는 정보 (gc001 의 동기 정황 등)
+  if (e.note) rows.push(['비고', e.note])
   card.appendChild(defList(rows))
   return card
 }
@@ -82,11 +95,11 @@ export function renderClaimCard(c: CaseFile, s: SuspectId, slot: Slot): HTMLElem
 
   const head = el('div', 'head')
   head.appendChild(el('span', undefined, `${nameOf(c, s)}의 진술`))
-  head.appendChild(el('span', undefined, SLOT_LABEL[slot]))
+  head.appendChild(el('span', undefined, slotLabel(c, slot)))
   card.appendChild(head)
 
   card.appendChild(
-    el('div', undefined, `"${SLOT_LABEL[slot]}에는 ${PLACE_LABEL[c.suspects[s].claim[slot]!]}에 있었습니다."`),
+    el('div', undefined, `"${slotLabel(c, slot)}에는 ${placeLabel(c, c.suspects[s].claim[slot]!)}에 있었습니다."`),
   )
   return card
 }
@@ -117,14 +130,17 @@ export function renderCard(c: CaseFile, id: string): HTMLElement {
 export function cardSummary(c: CaseFile, id: string): string {
   const ev = c.evidence.find((e) => e.id === id)
   if (ev) {
-    // 검시 소견에는 인물이 없다 — 흔적 서술이 곧 요약이다
-    if (ev.kind === 'autopsy') return `검시 소견: ${WEAPON_TRACE[c.weapon] ?? '판독 불가'}`
+    // 검시 소견/현장 판정에는 인물이 없다 — 흔적 서술이 곧 요약이다
+    if (ev.kind === 'autopsy') {
+      return `${kindLabel(c, 'autopsy', '검시 소견')}: ${c.world?.autopsyText ?? WEAPON_TRACE[c.weapon] ?? '판독 불가'}`
+    }
     const who = ev.subjects.map((s) => nameOf(c, s)).join(', ')
-    return `${KIND_LABEL[ev.kind]}: ${SLOT_LABEL[ev.slot]} ${PLACE_LABEL[ev.place]}, ${who}`
+    const note = ev.note ? ` — ${ev.note}` : ''
+    return `${kindLabel(c, ev.kind, KIND_LABEL[ev.kind])}: ${slotLabel(c, ev.slot)} ${placeLabel(c, ev.place)}, ${who}${note}`
   }
   const claim = parseClaimCard(id)
   if (claim) {
-    return `${nameOf(c, claim.suspect)}의 진술: ${SLOT_LABEL[claim.slot]} ${PLACE_LABEL[c.suspects[claim.suspect].claim[claim.slot]!]}`
+    return `${nameOf(c, claim.suspect)}의 진술: ${slotLabel(c, claim.slot)} ${placeLabel(c, c.suspects[claim.suspect].claim[claim.slot]!)}`
   }
   return c.testimonies.find((t) => t.id === id)?.text ?? id
 }

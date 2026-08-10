@@ -23,7 +23,7 @@
 
 import type { Trace, TraceEvent } from '../engine/journey'
 import type { CaseFile, SuspectId } from '../types'
-import { SLOT_LABEL, PLACE_LABEL } from '../types'
+import { kindLabel, placeLabel, slotLabel } from '../types'
 
 export interface JournalLine {
   /** 조사를 소모한 줄인가 — 여백 눈금을 그릴지 정한다 */
@@ -41,8 +41,8 @@ export interface JournalLine {
 const evLabel = (c: CaseFile, id: string): string => {
   const e = c.evidence.find((x) => x.id === id)
   if (!e) return id
-  const kind = { keycard: '카드키', cctv: 'CCTV', call: '통화', receipt: '영수증', autopsy: '검시' }[e.kind] ?? e.kind
-  return `${kind} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}`
+  const short = { keycard: '카드키', cctv: 'CCTV', call: '통화', receipt: '영수증', autopsy: '검시' }[e.kind] ?? e.kind
+  return `${kindLabel(c, e.kind, short)} · ${slotLabel(c, e.slot)} ${placeLabel(c, e.place)}`
 }
 
 const name = (c: CaseFile, s: SuspectId): string => c.suspects[s].name

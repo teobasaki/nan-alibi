@@ -11,7 +11,7 @@
 
 import {
   CRIME_SLOT,
-  PLACE_LABEL,
+  placeLabel,
   SUSPECTS,
   type CaseFile,
   type Evidence,
@@ -146,7 +146,12 @@ export function lockedRecords(g: GameState): LockedRecord[] {
     .map((e) => {
       const missing = e.requires
         .filter((r) => !g.cards.includes(r))
-        .map((r) => (r === 'T-SLIP' ? '범인의 자백성 진술' : '관련자의 증언'))
+        // 자물쇠 종류: 증언 계열과 **다른 기록**(gc001 — 두 기록을 다 쥐어야 대조가 열린다).
+        // 열쇠의 주인은 끝까지 감춘다 (ADR 010).
+        .map((r) =>
+          r === 'T-SLIP' ? '범인의 자백성 진술'
+          : g.case.evidence.some((x) => x.id === r) ? '다른 기록의 확보'
+          : '관련자의 증언')
       return { evidence: e, met: e.requires.length - missing.length, total: e.requires.length, missing }
     })
 }
@@ -261,12 +266,12 @@ export function connect(g: GameState, a: string, b: string): ConnectResult {
   let why: string | null = null
   if (inRecord && claimed !== ev.place) {
     // ① 대면 모순 — 기록에 찍힌 장소와 본인 진술이 다르다
-    why = `기록에는 ${PLACE_LABEL[ev.place]}인데 본인은 ${josa(PLACE_LABEL[claimed], '이라/라')} 했다`
+    why = `기록에는 ${placeLabel(g.case, ev.place)}인데 본인은 ${josa(placeLabel(g.case, claimed), '이라/라')} 했다`
   } else if (!inRecord && claimed === ev.place && ev.exhaustive) {
     // ② 부재 모순 — 그 구역을 남김없이 담은 기록에 그 사람이 없다.
     //    사람이 가장 먼저 떠올리는 추리다. exhaustive 가 아닌 기록(영수증·카드키)에는
     //    적용하지 않는다 — 결제/출입을 안 했을 뿐일 수 있으므로 논리적으로 성립하지 않는다.
-    why = `${PLACE_LABEL[ev.place]} 구역 기록에 이 사람이 없다`
+    why = `${placeLabel(g.case, ev.place)} 구역 기록에 이 사람이 없다`
   }
 
   if (!why) {

@@ -12,6 +12,10 @@ import type { Statement } from './prompt'
 import { PLACE_LABEL, SLOT_LABEL, type CaseFile, type SuspectId } from '../types'
 import { allowedFactIds, type PersonaReply } from './prompt'
 
+/** 사건이 아는 시각·장소 라벨 — world 가 있으면 그것, 없으면 호텔 상수 (GC001 계약 §1) */
+const caseSlots = (c: CaseFile): readonly string[] => c.world?.slotLabels ?? SLOT_LABEL
+const casePlaces = (c: CaseFile): readonly string[] => c.world?.placeLabels ?? PLACE_LABEL
+
 export type RejectReason =
   | 'shape'          // JSON 모양이 틀림
   | 'unknown-fact'   // 지식 시트 밖 factId
@@ -48,11 +52,12 @@ export function extractTimes(text: string): string[] {
 }
 
 /** 12시간 표기를 24시간으로 — "10시 20분" 은 밤 10시를 뜻할 수 있다 */
-function timeMatchesCase(t: string): boolean {
-  if ((SLOT_LABEL as readonly string[]).includes(t)) return true
+function timeMatchesCase(c: CaseFile, t: string): boolean {
+  const slots = caseSlots(c)
+  if (slots.includes(t)) return true
   const [h, m] = t.split(':') as [string, string]
   const alt = `${String((Number(h) + 12) % 24).padStart(2, '0')}:${m}`
-  return (SLOT_LABEL as readonly string[]).includes(alt)
+  return slots.includes(alt)
 }
 
 export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResult {
@@ -103,7 +108,7 @@ export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResu
   }
 
   // ── 검사 2: 본문의 시각이 사건에 실재하는가 ──
-  const badTime = extractTimes(speech).find((t) => !timeMatchesCase(t))
+  const badTime = extractTimes(speech).find((t) => !timeMatchesCase(c, t))
   if (badTime) {
     return { ok: false, reason: 'phantom-time', detail: `사건에 없는 시각: ${badTime}` }
   }
@@ -119,7 +124,7 @@ export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResu
   // "1204호" 같은 방 번호 패턴만 검사한다 (일반 명사까지 막으면 오탐이 폭증한다)
   const badRoom = [...speech.matchAll(/(\d{3,4})호/g)]
     .map((m) => `${m[1]}호`)
-    .find((room) => !(PLACE_LABEL as readonly string[]).includes(room))
+    .find((room) => !casePlaces(c).includes(room))
   if (badRoom) {
     return { ok: false, reason: 'phantom-place', detail: `사건에 없는 장소: ${badRoom}` }
   }

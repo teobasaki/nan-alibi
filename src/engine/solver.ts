@@ -34,7 +34,15 @@ export function candidatesFrom(c: CaseFile, obtained: ReadonlySet<string>): Susp
   let pinned: SuspectId | null = null
 
   for (const e of c.evidence) {
-    if (!obtained.has(e.id) || e.slot !== CRIME_SLOT) continue
+    if (!obtained.has(e.id)) continue
+    /**
+     * 결정적 기록은 **슬롯과 무관하게** 그 인물을 못박는다 (GC001 계약 §2 주의).
+     * 호텔 생성 사건의 결정적 기록은 언제나 범행 시각·현장이라 아래 일반 규칙과 같지만,
+     * gc001 은 **은폐 시각(slot3)** 의 기록이 범인을 가리키는 사건이다 —
+     * "결정적 = 범행 시각" 은 엔진의 법칙이 아니라 호텔 생성기의 습관이었다.
+     */
+    if (e.decisive && e.subjects.length === 1) pinned = e.subjects[0]!
+    if (e.slot !== CRIME_SLOT) continue
     for (const s of e.subjects) {
       if (e.place === CRIME_PLACE) pinned = s
       else cleared.add(s)

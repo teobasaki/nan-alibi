@@ -12,8 +12,8 @@
  */
 
 import {
-  PLACE_LABEL,
-  SLOT_LABEL,
+  placeLabel,
+  slotLabel,
   type CaseFile,
   type Slot,
   type SuspectId,
@@ -46,12 +46,13 @@ export function buildPersonaPrefix(c: CaseFile, s: SuspectId, personaId: string)
 
   // 지식 시트: **진술(claim)** 만 넣는다. 진실(truth)은 절대 넣지 않는다 —
   // 범인이 자기 진짜 위치를 알면 프롬프트에서 새어나갈 경로가 생긴다.
+  // 라벨은 월드 헬퍼를 지난다 (GC001 계약 §2) — 갤러리 사건에 호텔 어휘가 새면 안 된다.
   const sheet = ([0, 1, 2, 3, 4] as Slot[])
-    .map((t) => `  ${factId(s, t)} = "${SLOT_LABEL[t]}에 ${PLACE_LABEL[sus.claim[t]!]}에 있었다"`)
+    .map((t) => `  ${factId(s, t)} = "${slotLabel(c, t)}에 ${placeLabel(c, sus.claim[t]!)}에 있었다"`)
     .join('\n')
 
   const lies = sus.lieSlots.length
-    ? sus.lieSlots.map((t) => `  ${SLOT_LABEL[t]} 항목은 사실이 아니다. 이유: ${sus.lieReason}`).join('\n')
+    ? sus.lieSlots.map((t) => `  ${slotLabel(c, t)} 항목은 사실이 아니다. 이유: ${sus.lieReason}`).join('\n')
     : '  없음 — 당신은 전부 사실대로 말하고 있다.'
 
   return [

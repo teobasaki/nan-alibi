@@ -17,8 +17,8 @@
 import {
   CRIME_PLACE,
   CRIME_SLOT,
-  PLACE_LABEL,
-  SLOT_LABEL,
+  placeLabel,
+  slotLabel,
   SUSPECTS,
   type CaseFile,
   type PlaceId,
@@ -43,7 +43,7 @@ export interface VisibleRecord {
 /** 기록 한 건을 사람이 읽는 한 줄로. **원시 id·숫자를 로그에 흘리지 않는다.** */
 const evLabel = (c: CaseFile, id: string): string => {
   const e = c.evidence.find((x) => x.id === id)
-  return e ? `${e.kind} · ${SLOT_LABEL[e.slot]} ${PLACE_LABEL[e.place]}` : id
+  return e ? `${e.kind} · ${slotLabel(c, e.slot)} ${placeLabel(c, e.place)}` : id
 }
 
 const visible = (g: GameState): VisibleRecord[] =>
@@ -65,7 +65,11 @@ function candidatesVisible(g: GameState): SuspectId[] {
   const cleared = new Set<SuspectId>()
   let pinned: SuspectId | null = null
   for (const e of g.case.evidence) {
-    if (!g.cards.includes(e.id) || e.slot !== CRIME_SLOT) continue
+    if (!g.cards.includes(e.id)) continue
+    // 결정적 기록은 슬롯 무관 못박기 — solver.candidatesFrom 과 같은 규칙 (GC001 계약 §2).
+    // decisive 플래그는 조회한 카드 앞면에 적혀 있으므로 봇이 읽어도 공정하다.
+    if (e.decisive && e.subjects.length === 1) pinned = e.subjects[0]!
+    if (e.slot !== CRIME_SLOT) continue
     for (const s of e.subjects) {
       if (e.place === CRIME_PLACE) pinned = s
       else cleared.add(s)

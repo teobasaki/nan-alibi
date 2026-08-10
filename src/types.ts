@@ -21,6 +21,11 @@ export interface Evidence {
   id: string
   /** 'autopsy'(검시 소견)는 인물이 아니라 **도구의 흔적**을 확정한다 — subjects 는 항상 빈다 (ADR 022) */
   kind: 'keycard' | 'cctv' | 'call' | 'receipt' | 'autopsy'
+  /**
+   * 카드에 실리는 한 줄 비고 — 시각·장소·인물로 표현되지 않는 사건 고유 정보
+   * (예: gc001 "해임 통지 출력 기록"). 생성 사건은 쓰지 않는다 — 없으면 행도 없다.
+   */
+  note?: string
   slot: Slot
   place: PlaceId
   /** 이 기록으로 위치가 확정되는 인물들 (CCTV는 여럿, 카드키는 1명) */
@@ -93,11 +98,32 @@ export interface PresentUnlock {
   yieldsTestimonyId: string
 }
 
+/**
+ * 월드 스킨 — 라벨·어휘를 사건이 소유한다 (GC001 어댑테이션 계약 §1).
+ *
+ * 구조(슬롯 5·장소 5·CRIME_SLOT=2·CRIME_PLACE=2)는 전역 불변이고, **이름만** 바뀐다.
+ * 없으면 기존 호텔 상수를 그대로 쓴다 — 시드 사건 400개가 바이트 하나 안 바뀌는 것이 게이트다.
+ */
+export interface WorldSkin {
+  slotLabels: readonly [string, string, string, string, string]
+  placeLabels: readonly [string, string, string, string, string]
+  /** 기록 종류 표시명 덮어쓰기 — 없는 키는 각 화면의 기본값 */
+  kindLabels?: Partial<Record<Evidence['kind'], string>>
+  /** 3축 셋째 축의 표시명 (기본 '살인 도구') */
+  weaponAxisLabel?: string
+  /** 셋째 축 선택지 (기본 WEAPONS) */
+  weaponOptions?: readonly string[]
+  /** autopsy 기록의 소견 본문 (기본 WEAPON_TRACE[weapon]) */
+  autopsyText?: string
+}
+
 export interface CaseFile {
   seed: number
   title: string
   victim: { name: string; title: string }
   venue: { name: string; room: string }
+  /** 없으면 호텔 월드 — 생성 사건 전부가 이 경로다 */
+  world?: WorldSkin
   culprit: SuspectId
   /** 사건의 동기 = 범인의 motive. 지목 시트의 정답 축 */
   motive: string
@@ -111,4 +137,27 @@ export interface CaseFile {
   presentUnlocks: PresentUnlock[]
   /** 결정적 증거 id */
   decisiveEvidenceId: string
+  /**
+   * 고정 사건 전용 결말 오버라이드 (GC001 계약 §2 자백 훅의 착지점).
+   * 자백 한 문단과 5단계 재구성(발단→…→결말)을 **사건이 직접 소유한다** — LLM 아님.
+   * 생성 사건은 없음 → 페르소나 자백 템플릿 + 호텔 5단계가 그대로 쓰인다.
+   */
+  ending?: {
+    confession: string
+    beats: readonly (readonly [string, string])[]
+  }
 }
+
+/* ─────────── 월드 라벨 헬퍼 (GC001 계약 §1) ───────────
+ * SLOT_LABEL/PLACE_LABEL 을 화면·프롬프트·봇이 직접 읽으면 라벨이 전역에 박제된다.
+ * 앞으로 모든 소비처는 이 헬퍼를 지나간다 — world 가 없으면 기존 상수 그대로라
+ * 생성 사건의 출력은 바이트 단위로 동일하다.
+ */
+export const slotLabel = (c: CaseFile, s: Slot): string => c.world?.slotLabels[s] ?? SLOT_LABEL[s]
+export const placeLabel = (c: CaseFile, p: PlaceId): string => c.world?.placeLabels[p] ?? PLACE_LABEL[p]
+/**
+ * 기록 종류 표시명. 화면마다 기본 어휘의 길이가 다르므로(카드는 "카드키 출입 기록",
+ * 일지는 "카드키") 기본값은 호출부가 낸다 — 월드 오버라이드만 여기서 가로챈다.
+ */
+export const kindLabel = (c: CaseFile, k: Evidence['kind'], fallback: string): string =>
+  c.world?.kindLabels?.[k] ?? fallback
