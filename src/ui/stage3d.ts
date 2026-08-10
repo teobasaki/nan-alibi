@@ -56,11 +56,11 @@ export function canRender3D(): boolean {
  * Cloudflare Pages 의 파일당 25MB 상한에도 걸린다.
  */
 const MODELS = import.meta.glob([
-  '/public/characters/carla.sit.opt.glb',
-  '/public/characters/wong.sit.opt.glb',
-  '/public/characters/m1.sit.opt.glb',
-  '/public/characters/f3.sit.opt.glb',
-  '/public/characters/f1.sit.opt.glb',
+  '/public/characters/secretary.sit.opt.glb',
+  '/public/characters/security.sit.opt.glb',
+  '/public/characters/housekeeping.sit.opt.glb',
+  '/public/characters/investor.sit.opt.glb',
+  '/public/characters/expartner.sit.opt.glb',
 ], {
   eager: true,
   query: '?url',

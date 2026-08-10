@@ -337,6 +337,27 @@ export function spawnAnchored(list: readonly { id: string; kind: EvKind }[]): Ma
   const out = new Map<string, SpawnSpot>()
   const countByKind = new Map<EvKind, number>()
   const taken: [number, number][] = []
+  /**
+   * **한 현장에 같은 모델은 하나뿐** — 사용자가 다섯 번 신고한 "똑같은 게 서너 개" 의 수리.
+   *
+   * 예전엔 모델을 **종류 안에서만** 셌다(`modelKeyFor(kind, k)`). 그래서 GC001 처럼
+   * 작업 기록이 4건이면 첫 하나만 서류 뭉치가 되고 **나머지 셋이 전부 같은 깃발**로
+   * 떨어졌다 — 화면에는 똑같은 노란 텐트 카드 세 개가 나란히 섰다.
+   * 종류별로는 유일했지만 **눈에는 복제**였다.
+   *
+   * 이제 현장 전체에서 하나의 장부를 쓴다: 제 종류의 실모델을 먼저 집고,
+   * 이미 쓴 모델이면 **다른 종류의 남은 실모델을 빌린다**(기록은 라벨이 말하지
+   * 모델이 말하지 않는다). 그마저 없을 때만 깃발이다.
+   */
+  const usedModels = new Set<string>()
+  const CATALOGUE: readonly string[] = [
+    ...new Set(Object.values(KIND_MODELS).flat()), 'crate',
+  ]
+  const pickModel = (kind: EvKind): string => {
+    for (const m of KIND_MODELS[kind]) if (!usedModels.has(m)) { usedModels.add(m); return m }
+    for (const m of CATALOGUE) if (!usedModels.has(m)) { usedModels.add(m); return m }
+    return FLAG_KEY
+  }
 
   const free = (x: number, z: number): boolean =>
     !sceneBlocked(x, z) && taken.every(([tx, tz]) => Math.hypot(x - tx, z - tz) > 0.85)
@@ -352,7 +373,7 @@ export function spawnAnchored(list: readonly { id: string; kind: EvKind }[]): Ma
       taken.push([anchor.at[0], anchor.at[1]])
       out.set(it.id, {
         at: [anchor.at[0], anchor.at[1]], y: anchor.y, mounted: true,
-        model: modelKeyFor(it.kind, k),
+        model: pickModel(it.kind),
       })
       continue
     }
@@ -376,7 +397,7 @@ export function spawnAnchored(list: readonly { id: string; kind: EvKind }[]): Ma
       }
     }
     taken.push([x, z])
-    out.set(it.id, { at: [x, z], y: over > 0 ? undefined : anchor.y, model: modelKeyFor(it.kind, k) })
+    out.set(it.id, { at: [x, z], y: over > 0 ? undefined : anchor.y, model: pickModel(it.kind) })
   }
   return out
 }

@@ -293,12 +293,26 @@ describe('증거품 유일성 — 같은 실모델은 한 현장에 한 번만 (
     expect(modelKeyFor('cctv', 7)).toBe(FLAG_KEY)
   })
 
-  it('seed 36 처럼 cctv 5장이면 카메라 1 · 릴 1 · 깃발 3 — 같은 모델 2대가 없다', () => {
+  /**
+   * 사용자가 **다섯 번** 신고한 증상: 현장에 똑같은 물건이 서너 개 서 있다.
+   * 종류 안에서만 세던 옛 규칙은 "cctv 5장 = 카메라1·릴1·깃발3" 을 유일성이라 불렀지만,
+   * 화면에서 깃발 셋은 **똑같은 물건 셋**이다. 이제 현장 전체에서 모델이 겹치지 않는다 —
+   * 제 종류가 동나면 다른 종류의 남은 실모델을 빌리고, 카탈로그를 다 쓴 뒤에야 깃발이다.
+   */
+  it('cctv 5장이어도 화면에 같은 모델이 둘 없다 — 남은 실모델을 빌려 쓴다', () => {
     const spots = [...spawnAnchored(mk(['cctv','cctv','cctv','cctv','cctv'])).values()]
-    const models = spots.map((s) => s.model)
-    expect(models.filter((m) => m === 'cctv')).toHaveLength(1)
-    expect(models.filter((m) => m === 'reel')).toHaveLength(1)
-    expect(models.filter((m) => m === FLAG_KEY)).toHaveLength(3)
+    const real = spots.map((s) => s.model).filter((m) => m !== FLAG_KEY)
+    expect(new Set(real).size).toBe(real.length)
+    // 카탈로그가 5개 이상이므로 다섯 장 전부 실모델이어야 한다 (깃발 0)
+    expect(real).toHaveLength(5)
+  })
+
+  it('카탈로그를 다 쓰면 그때부터 깃발이다', () => {
+    const many = mk(Array(12).fill('cctv') as EvKind[])
+    const models = [...spawnAnchored(many).values()].map((s) => s.model)
+    const real = models.filter((m) => m !== FLAG_KEY)
+    expect(new Set(real).size).toBe(real.length)
+    expect(models.filter((m) => m === FLAG_KEY).length).toBeGreaterThan(0)
   })
 
   it('풀 밖 순번은 전부 깃발이다 — 전화기 2대·서류 2장을 없앤다', () => {

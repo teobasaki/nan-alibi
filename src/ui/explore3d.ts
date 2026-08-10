@@ -109,11 +109,11 @@ for (const [p, url] of Object.entries(CHAR)) {
  * (와일드카드는 걷어낸 Meshy 8종·35~48MB 예비까지 dist 에 복제한다).
  */
 const SEATED = import.meta.glob([
-  '/public/characters/carla.sit.opt.glb',
-  '/public/characters/wong.sit.opt.glb',
-  '/public/characters/m1.sit.opt.glb',
-  '/public/characters/f3.sit.opt.glb',
-  '/public/characters/f1.sit.opt.glb',
+  '/public/characters/secretary.sit.opt.glb',
+  '/public/characters/security.sit.opt.glb',
+  '/public/characters/housekeeping.sit.opt.glb',
+  '/public/characters/investor.sit.opt.glb',
+  '/public/characters/expartner.sit.opt.glb',
 ], {
   eager: true, query: '?url', import: 'default',
 }) as Record<string, string>

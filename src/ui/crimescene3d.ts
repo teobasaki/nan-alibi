@@ -386,9 +386,21 @@ export async function mountCrimeScene(
           const lo = Math.min(v0.y, v1.y, v2.y)
           const hi = Math.max(v0.y, v1.y, v2.y)
           if (hi < WALL_LO || lo > WALL_HI) continue
-          a.copy(v0); b.copy(v1); stamp()
-          a.copy(v1); b.copy(v2); stamp()
-          a.copy(v2); b.copy(v0); stamp()
+          /**
+           * **면을 굽는다 — 모서리 3개만 찍으면 로우폴리 벽이 뚫린다** (실플레이로 잡은 구멍).
+           * 갤러리의 흰 파티션은 삼각형 2개짜리 8m 벽이라, 모서리만 찍으면 아래변(띠 밖)·
+           * 윗변(띠 밖)·대각선 일부만 남고 **중간이 통째로 비어** 그대로 걸어 나갈 수 있었다.
+           * 경찰서가 멀쩡했던 건 그 GLB 가 잘게 쪼개져 모서리만으로도 덮였기 때문 — 운이었다.
+           * v2 를 향해 v0→v1 현을 좁혀 가며 스탬프해 삼각형 내부를 전부 칠한다.
+           */
+          const sweeps = Math.max(1, Math.ceil(
+            Math.max(v0.distanceTo(v2), v1.distanceTo(v2)) / (CELL * 0.5)))
+          for (let s = 0; s <= sweeps; s++) {
+            const u = s / sweeps
+            a.copy(v0).lerp(v2, u)
+            b.copy(v1).lerp(v2, u)
+            stamp()
+          }
         }
       })
       let n = 0
@@ -1319,7 +1331,16 @@ export async function mountCrimeScene(
      * **1인칭이 기본이다** (사용자 결정 2) — 현장을 "밟는" 감각은 눈높이에서 온다.
      * V 는 탑다운 조감 토글로 남는다. 조망성은 훑기 5초 오빗이 보완한다.
      */
-    let firstPerson = true
+    /**
+     * **1인칭 고정 — 조감(V)은 제거했다** (2026-08-10 사용자 결정, 마감 판단).
+     *
+     * 조감은 3인칭 몸을 화면에 세우는 순간 온갖 것을 요구했다: 걷는 면 실측, 루트 모션,
+     * 벽 격자의 촘촘함, 카메라 상대 이동축, 클립 속도 동기화. 하나가 어긋나면
+     * "혼자 달려나갔다 돌아오고 벽을 뚫는" 그림이 되는데, 1인칭에서는 그 어느 것도
+     * 화면에 나타나지 않는다 — 몸이 안 보이기 때문이다.
+     * 남은 시간을 3D 인체에 쓰지 않고 UI·UX 에 쓰기로 했다. `const` 인 것이 그 결정이다.
+     */
+    const firstPerson = true
     const keys = new Set<string>()
     const MOVE_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'])
     let near: string | null = null
@@ -1352,7 +1373,7 @@ export async function mountCrimeScene(
         if (near) { handlers.onPick(near); e.preventDefault() }
         return
       }
-      if (e.code === 'KeyV') { firstPerson = !firstPerson; e.preventDefault(); return }
+      // V(조감) 는 제거했다 — 위 firstPerson 주석 참조. 눌러도 아무 일도 없어야 한다.
       if (MOVE_CODES.has(e.code)) { keys.add(e.code); e.preventDefault() }
     }
     const onUp = (e: KeyboardEvent): void => { keys.delete(e.code) }
@@ -1531,7 +1552,7 @@ export async function mountCrimeScene(
         clearHintLabels()
         for (const g of markerRoot.children) g.scale.setScalar((g.userData.baseScale as number) ?? 1)
         // 훑기가 끝나는 순간이 조작의 첫 순간이다 — 시점 문법을 여기서 한 번만 말한다
-        note('1인칭 시점 — V 조감 · WASD/클릭 이동 · E 수거')
+        note('WASD · 클릭으로 이동 · E 로 수거')
       }
 
       /* 이동 — collect 중에만. 화면 축 기준(정사영) / 몸 기준(1인칭) */

@@ -35,27 +35,34 @@ export interface CastMember {
 }
 
 /**
- * 채택 5종. 전부 **실제 Mixamo 착석 클립**(`<tag>.sit.opt.glb`)을 가진다 —
- * 정적 포즈를 구워 팔 관통을 손으로 보정하던 노동(`scripts/pose-seated.py`)이
- * 이 경로에서 사라진 것이 이번 교체의 핵심 이득이다.
+ * 채택 5종 — **자체 생성본(Meshy)으로 되돌렸다** (2026-08-10 사용자 결정).
  *
- * 예비(alina 35MB · f2 48MB)는 무거워 채택하지 않았다. 파일은 남아 있다.
+ * 기성 리깅 배우 5종(wong·carla·m1·f3·f1)은 Mixamo 착석 클립을 그대로 먹어
+ * 이론상 더 나았지만, 실제 취조실에서 **팔이 머리 위로 뻗고 몸이 의자를 벗어나** 앉았다.
+ * 원인은 CC_Base 계열 리그의 상완 본이 glTF 임포트에서 길이 13913 으로 깨져 들어오는
+ * 것이었고(초상 굽기에서 실측), 이걸 마감 안에 고칠 수 없다고 판단했다.
+ *
+ * Meshy 본은 **정적 착석 포즈가 통째로 구워진 메시**라 리그가 무엇이든 상관없다 —
+ * 재생할 클립이 없으니 어긋날 것도 없다. 화풍은 덜 사실적이지만 **앉아 있는다.**
+ * 남은 시간을 3D 인체가 아니라 UI·UX 에 쓴다는 결정이 이 표다.
+ *
+ * 기성 배우 5종의 파일과 초상은 남아 있다 — 되돌리려면 이 표만 바꾸면 된다.
  */
 export const CAST: readonly CastMember[] = [
-  { tag: 'wong', gender: 'm', note: '남 · 정장' },
-  { tag: 'carla', gender: 'f', note: '여 · 정장' },
-  { tag: 'm1', gender: 'm', note: '남' },
-  { tag: 'f3', gender: 'f', note: '여' },
-  { tag: 'f1', gender: 'f', note: '여' },
+  { tag: 'secretary', gender: 'f', note: '여 · 사무' },
+  { tag: 'security', gender: 'm', note: '남 · 경비' },
+  { tag: 'housekeeping', gender: 'f', note: '여 · 관리' },
+  { tag: 'investor', gender: 'm', note: '남 · 정장' },
+  { tag: 'expartner', gender: 'f', note: '여' },
 ] as const
 
-/** 기본 배정 — 슬롯 고정. 한 판 안에서 다섯이 서로 다른 몸을 입는다. */
+/** 기본 배정 — 슬롯 고정. gc001 대본 성별(여/남/여/남/여)을 그대로 따른다. */
 export const CAST_BY_SLOT: Record<SuspectId, string> = {
-  S1: 'wong',
-  S2: 'carla',
-  S3: 'm1',
-  S4: 'f3',
-  S5: 'f1',
+  S1: 'secretary',
+  S2: 'security',
+  S3: 'housekeeping',
+  S4: 'investor',
+  S5: 'expartner',
 }
 
 /**
@@ -65,7 +72,7 @@ export const CAST_BY_SLOT: Record<SuspectId, string> = {
  * 배우 풀이 남 2 · 여 3 이라 이 배분과 정확히 맞아떨어진다.
  */
 export const CAST_OVERRIDE: Record<string, Record<SuspectId, string>> = {
-  gc001: { S1: 'carla', S2: 'm1', S3: 'f3', S4: 'wong', S5: 'f1' },
+  gc001: { S1: 'secretary', S2: 'security', S3: 'housekeeping', S4: 'investor', S5: 'expartner' },
 }
 
 /** 이 슬롯이 입을 몸. 사건 id 가 배역을 지정했으면 그것이 이긴다. */
