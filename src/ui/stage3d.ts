@@ -93,6 +93,220 @@ for (const [path, url] of Object.entries(MODELS)) {
 export const hasModel = (slug: string): boolean => BY_SLUG.has(slug)
 
 /**
+ * 방에서 실측한 **수평면 하나** — 바닥이거나 상판이거나 좌면이다.
+ * 좌표는 방 GLB 의 **원본 단위**다 (배율을 정하기 전에 재야 하므로).
+ */
+interface Flat {
+  y: number
+  area: number
+  x0: number; x1: number
+  z0: number; z1: number
+}
+
+/**
+ * ## 가구를 **눈으로 찾지 말고 삼각형에서 찾는다**
+ *
+ * 이 파일은 좌석 좌표를 세 번 하드코딩했고 세 번 다 틀렸다. 마지막 값
+ * `SEAT=(0.06,-0.66) · 좌면 0.538` 은 **지금 배포되는 room.opt.glb 와 맞지 않는다** —
+ * 실측하면 그 자리는 의자가 아니라 **상판의 끝**이고, 진짜 의자는 그보다 0.5m 옆
+ * (월드 x≈0.79) 에 좌면 높이 0.45m 로 있다. 주석에 적힌 "상판 0.76m" 도 틀렸다:
+ * 배율 1.9 에서 상판은 **0.571m** 라 사람(앉은키 1.36m)이 인형 가구에 앉은 꼴이 됐다.
+ *
+ * 그래서 상수를 또 고치는 대신 **매번 잰다.** 위를 보는 수평 삼각형만 모아
+ * 높이별로 묶고, 같은 높이 안에서 XZ 로 붙어 있는 것끼리 다시 묶는다.
+ * 뭉치 하나가 가구 한 면이다 — 바닥(가장 넓다)·상판(그 다음)·좌면들.
+ *
+ * 삼각형 중심이 아니라 **삼각형의 XZ 바운딩박스가 겹치는지**로 잇는다.
+ * 상판은 큰 사각형 두 장이라 중심끼리는 멀다 — 중심으로 이으면 한 상판이 둘로 쪼개진다.
+ */
+function flatSurfaces(THREE: typeof import('three'), root: import('three').Object3D): Flat[] {
+  root.updateMatrixWorld(true)
+  const a = new THREE.Vector3(); const b = new THREE.Vector3(); const c = new THREE.Vector3()
+  const u = new THREE.Vector3(); const v = new THREE.Vector3(); const n = new THREE.Vector3()
+  const tris: Flat[] = []
+  root.traverse((o) => {
+    const m = o as import('three').Mesh
+    if (!m.isMesh) return
+    const pos = m.geometry?.getAttribute('position')
+    if (!pos) return
+    const idx = m.geometry.getIndex()
+    const count = idx ? idx.count : pos.count
+    for (let i = 0; i + 2 < count; i += 3) {
+      const i0 = idx ? idx.getX(i) : i
+      const i1 = idx ? idx.getX(i + 1) : i + 1
+      const i2 = idx ? idx.getX(i + 2) : i + 2
+      a.fromBufferAttribute(pos, i0).applyMatrix4(m.matrixWorld)
+      b.fromBufferAttribute(pos, i1).applyMatrix4(m.matrixWorld)
+      c.fromBufferAttribute(pos, i2).applyMatrix4(m.matrixWorld)
+      u.subVectors(b, a); v.subVectors(c, a); n.crossVectors(u, v)
+      const len = n.length()
+      // 위를 보는 거의 완전한 수평면만. 0.98 이면 기울기 11° 이내다.
+      if (len < 1e-12 || n.y / len < 0.98) continue
+      tris.push({
+        y: (a.y + b.y + c.y) / 3, area: len / 2,
+        x0: Math.min(a.x, b.x, c.x), x1: Math.max(a.x, b.x, c.x),
+        z0: Math.min(a.z, b.z, c.z), z1: Math.max(a.z, b.z, c.z),
+      })
+    }
+  })
+  if (!tris.length) return []
+
+  const bb = new THREE.Box3().setFromObject(root)
+  const yTol = Math.max((bb.max.y - bb.min.y) * 0.01, 1e-6)
+  const gap = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.03
+
+  tris.sort((p, q) => p.y - q.y)
+  const out: Flat[] = []
+  let i = 0
+  while (i < tris.length) {
+    // ① 같은 높이대로 자른다
+    let j = i + 1
+    const y0 = tris[i]!.y
+    while (j < tris.length && tris[j]!.y - y0 < yTol) j++
+    const level = tris.slice(i, j)
+    i = j
+    // ② 그 안에서 XZ 로 붙은 것끼리 잇는다
+    const used = new Array<boolean>(level.length).fill(false)
+    for (let k = 0; k < level.length; k++) {
+      if (used[k]) continue
+      used[k] = true
+      const bag = [level[k]!]
+      const stack = [level[k]!]
+      while (stack.length) {
+        const t = stack.pop()!
+        for (let q = 0; q < level.length; q++) {
+          if (used[q]) continue
+          const s = level[q]!
+          if (s.x0 - t.x1 > gap || t.x0 - s.x1 > gap) continue
+          if (s.z0 - t.z1 > gap || t.z0 - s.z1 > gap) continue
+          used[q] = true; bag.push(s); stack.push(s)
+        }
+      }
+      out.push({
+        y: bag.reduce((s, t) => s + t.y * t.area, 0) / bag.reduce((s, t) => s + t.area, 0),
+        area: bag.reduce((s, t) => s + t.area, 0),
+        x0: Math.min(...bag.map((t) => t.x0)), x1: Math.max(...bag.map((t) => t.x1)),
+        z0: Math.min(...bag.map((t) => t.z0)), z1: Math.max(...bag.map((t) => t.z1)),
+      })
+    }
+  }
+  return out
+}
+
+/** 취조실 가구 실측 결과 — 전부 **월드 미터**, 바닥이 y=0 이다. */
+export interface RoomFit {
+  /** 방 GLB 에 줘야 할 배율. 상판이 TABLE_H 에 오도록 역산한다. */
+  scale: number
+  /** 방 GLB 의 y 오프셋. 바닥을 0 으로 내린다. */
+  lift: number
+  table: { cx: number; cz: number; y: number }
+  /** 용의자를 앉힐 의자 좌면 중심 */
+  seat: { cx: number; cz: number; y: number }
+  /** 그 의자에 앉은 사람이 볼 방향(라디안). 가구는 축에 정렬돼 있으므로 90° 로 스냅한다. */
+  yaw: number
+  chairs: number
+}
+
+/**
+ * 실측한 수평면들에서 **상판 하나와 의자들**을 골라낸다.
+ *
+ * - 바닥 = 가장 넓은 면. 방에서 이보다 넓은 수평면은 없다.
+ * - 상판 = 바닥 위에서 가장 넓은 면.
+ * - 의자 = 그 밖의 면 중 **높이 0.30~0.62m · 폭과 깊이 0.15~0.80m** 인 것.
+ *   벽에 붙은 긴 선반(폭 2m 대)과 갓등(높이 2m 대)이 이 문에서 걸린다.
+ * - 용의자 의자 = **가장 외로운 의자**. 취조는 한 명이 여럿을 마주보는 그림이고,
+ *   이 방의 의자 셋 중 하나만 상판 반대편에 혼자 있다 (실측: 이웃까지 1.42m,
+ *   나머지 둘은 서로 0.84m). 형사는 남은 쪽에 선다.
+ */
+function fitRoom(flats: Flat[], tableH: number): RoomFit | null {
+  if (flats.length < 2) return null
+  const big = (arr: Flat[]): Flat | null =>
+    arr.reduce<Flat | null>((best, f) => (!best || f.area > best.area ? f : best), null)
+  const floor = big(flats)
+  if (!floor) return null
+  const above = flats.filter((f) => f !== floor && f.y > floor.y)
+  const table = big(above)
+  if (!table || table.y - floor.y < 1e-6) return null
+  const scale = tableH / (table.y - floor.y)
+  if (!Number.isFinite(scale) || scale < 0.3 || scale > 8) return null
+
+  const W = (f: Flat): { cx: number; cz: number; y: number; w: number; d: number } => ({
+    cx: ((f.x0 + f.x1) / 2) * scale, cz: ((f.z0 + f.z1) / 2) * scale,
+    y: (f.y - floor.y) * scale, w: (f.x1 - f.x0) * scale, d: (f.z1 - f.z0) * scale,
+  })
+  const chairs = above.filter((f) => f !== table).map(W).filter((f) =>
+    f.y > 0.30 && f.y < 0.62 && f.w > 0.15 && f.w < 0.80 && f.d > 0.15 && f.d < 0.80)
+  if (!chairs.length) return null
+
+  const t = W(table)
+  // 가장 외로운 의자 — 이웃까지의 거리가 가장 먼 것. 동점이면 상판에서 먼 쪽.
+  const lonely = (i: number): number => {
+    const me = chairs[i]!
+    let d = Infinity
+    for (let k = 0; k < chairs.length; k++) {
+      if (k === i) continue
+      const o = chairs[k]!
+      d = Math.min(d, Math.hypot(me.cx - o.cx, me.cz - o.cz))
+    }
+    return Number.isFinite(d) ? d : Math.hypot(me.cx - t.cx, me.cz - t.cz)
+  }
+  let pick = 0
+  for (let k = 1; k < chairs.length; k++) if (lonely(k) > lonely(pick)) pick = k
+  const seat = chairs[pick]!
+  // 상판 쪽을 본다. 가구는 축에 정렬돼 있으니 90° 로 스냅해야 비뚤게 앉지 않는다.
+  const dx = t.cx - seat.cx
+  const dz = t.cz - seat.cz
+  const yaw = Math.abs(dx) >= Math.abs(dz)
+    ? (dx >= 0 ? Math.PI / 2 : -Math.PI / 2)
+    : (dz >= 0 ? 0 : Math.PI)
+  return {
+    scale, lift: -floor.y * scale,
+    table: { cx: t.cx, cz: t.cz, y: t.y },
+    seat: { cx: seat.cx, cz: seat.cz, y: seat.y },
+    yaw, chairs: chairs.length,
+  }
+}
+
+/**
+ * ## 착석 클립에서 **이동 트랙을 얼린다** — 표류의 진짜 원인
+ *
+ * 실측(브라우저, 5초 300프레임): `m1` 의 `Hips` 가 **z 로 0.77m, y 로 0.33m** 를
+ * 왕복한다. 프레임당 최대 6.5cm 다. 머리는 0.99m 를 오간다 — 앉아 있는 사람이 아니라
+ * 몸부림이다. `wong` 도 머리가 0.23m 를 쓸고 다닌다.
+ *
+ * 원인은 리타게팅이다. 클립의 `Hips.position` 은 **원본 리그의 단위(cm 계열)** 그대로
+ * 구워졌는데 받는 리그의 rest 는 미터 단위다 — `m1` 의 rest 는 `[0, 1.001, 0.010]` 인데
+ * 클립이 매 프레임 `[-0.049, -43.612, 0.843]` 근처를 준다. 44배 어긋난 공간에서
+ * ±0.8 을 흔드니 월드에서 0.8m 가 된다. (`groundIt` 이 그 44m 를 되돌리느라
+ * `model.position.y` 가 **43.13** 이 돼 있는 것도 같은 원인이다.)
+ *
+ * **회전은 단위가 없다.** 자세는 회전이 만들고 뼈 길이는 rest 가 정하므로,
+ * 이동 트랙을 첫 키 값으로 얼려도 **t=0 의 자세는 그대로**이고 이후로 흐르지 않는다.
+ * 클립을 지우지 않고 얼리는 이유가 이것이다 — 지우면 리타게팅이 이동 트랙에 구워 둔
+ * 뼈 오프셋(carla 의 `spine_01_03=[11.84,0,0]` 같은 상수)까지 날아가 골격이 무너진다.
+ *
+ * 버린 대안: ① 매 프레임 루트 xz 를 되돌리기 — 루트가 아닌 뼈(f1 의 `RibsTwist` 는
+ * 두 키가 0.30 만큼 벌어져 15Hz 로 떤다)는 못 잡는다. ② 클립을 안 쓰고 정적 포즈로
+ * 굽기 — wong·m1 의 멀쩡한 호흡 연기까지 버린다.
+ */
+function freezeTranslation(clip: import('three').AnimationClip): number {
+  let frozen = 0
+  for (const tr of clip.tracks) {
+    if (!/\.position$/.test(tr.name)) continue
+    const v = tr.values
+    const n = tr.getValueSize()
+    if (v.length <= n) continue
+    let moved = false
+    for (let i = n; i < v.length; i++) {
+      if (v[i] !== v[i % n]) moved = true
+      v[i] = v[i % n]!
+    }
+    if (moved) frozen++
+  }
+  return frozen
+}
+
+/**
  * 취조실을 그린다. 실패하면 null.
  * @param host 캔버스를 넣을 요소. 크기는 호출부가 CSS 로 정한다.
  */
@@ -153,11 +367,29 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 실제 가구(0.74m / 0.45m = 1.64)와 일치(1.63)해서, 테이블을 0.74m 로 맞추는
      * 배율을 역산했다. 눈대중이 아니라 그 비율에서 나온 숫자다.
      */
-    const ROOM_SCALE = 1.9
+    /** 실제 취조실 탁자 높이(m). 방 배율은 상판이 이 높이에 오도록 **역산**한다. */
+    const TABLE_H = 0.74
     const roomGltf = await new GLTFLoader().setDRACOLoader(
       new DRACOLoader().setDecoderPath('/draco/'),
     ).loadAsync(ROOM_URL)
     const room = roomGltf.scene
+    /**
+     * **배율을 상수로 박지 않는다.** 1.9 는 "상판이 0.74m 가 되는 값" 이라고 적혀
+     * 있었지만 실측하면 **0.571m** 였다 — 에셋이 바뀌는 동안 아무도 다시 재지 않았다.
+     * 그 1.295배 차이가 "이상한 데 앉아 있다" 의 절반이다: 사람은 앉은키 1.36m 로
+     * 정규화되는데 탁자가 무릎 높이라 인형 가구에 앉은 거인이 된다.
+     * 이제 상판을 재서 배율을 역산한다 — 에셋이 또 바뀌어도 따라온다.
+     */
+    const fit = fitRoom(flatSurfaces(THREE, room), TABLE_H)
+    /** 실측이 실패하면 **마지막으로 실측한 값**으로 간다 (2026-08-10, room.opt.glb). */
+    const FALLBACK: RoomFit = {
+      scale: 2.462, lift: 1.301,
+      table: { cx: 0.05, cz: -0.05, y: TABLE_H },
+      seat: { cx: 0.785, cz: 0.051, y: 0.451 },
+      yaw: -Math.PI / 2, chairs: 3,
+    }
+    const R = fit ?? FALLBACK
+    const ROOM_SCALE = R.scale
     room.scale.setScalar(ROOM_SCALE)
     room.traverse((o) => {
       const m = o as import('three').Mesh
@@ -178,11 +410,9 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
         }
       }
     })
-    // 원본 바닥이 z=-0.53 단위 → 월드 0 으로 내린다
-    room.position.y = 0.53 * ROOM_SCALE
+    // 실측한 바닥을 월드 0 으로 내린다 (원본 바닥은 약 -0.53 단위)
+    room.position.y = R.lift
     scene.add(room)
-
-    const TABLE_H = 0.74
 
     /**
      * 조명 — 방 에셋의 갓등 **아래에** 실제 광원을 매단다.
@@ -249,7 +479,19 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      */
     let mixer: import('three').AnimationMixer | null = null
     const sitClip = gltf.animations[0]
+    /**
+     * 클립이 **회전을 덮어써 주는 뼈**의 이름. 이게 필요한 이유는 `tick()` 에 있다 —
+     * 클립이 안 건드리는 뼈에까지 매 프레임 기준 자세를 다시 읽으면, 지난 프레임에
+     * 우리가 얹은 호흡·제스처를 기준으로 삼아 **같은 각도를 무한히 누적**한다.
+     */
+    const animated = new Set<string>()
+    let frozen = 0
     if (sitClip) {
+      frozen = freezeTranslation(sitClip)
+      for (const tr of sitClip.tracks) {
+        if (!/\.quaternion$|\.rotation$/.test(tr.name)) continue
+        animated.add(tr.name.slice(0, tr.name.lastIndexOf('.')).replace(/\.bones\[|\]$/g, ''))
+      }
       mixer = new THREE.AnimationMixer(model)
       mixer.clipAction(sitClip).play()
       mixer.update(0)
@@ -328,54 +570,40 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     scene.add(model)
 
     /**
-     * 인물을 **방의 실제 의자**에 앉힌다.
+     * ## 인물을 **방의 실제 의자**에 앉힌다 — 골반을 좌면에 얹는 방식으로
      *
-     * 좌표는 방 GLB 를 블렌더로 열어 좌면 높이(원본 z≈-0.36)의 버텍스를 XY 로 군집화해
-     * 뽑았다. 의자는 두 줄이다 — 원본 x≈-0.28 에 4개, x≈0.42 에 2개. 테이블의 긴 축이
-     * Y 이므로 두 줄이 테이블을 사이에 두고 마주본다. 용의자는 x≈0.42 쪽에 앉힌다.
+     * 좌표는 이제 상수가 아니라 `fitRoom()` 이 방 삼각형에서 뽑아 온다.
+     * 예전 상수(`SEAT=(0.06,-0.66)` · 좌면 `0.538`)는 지금 에셋에서 **의자가 아니라
+     * 상판의 끝**을 가리켰다 — 실제 의자는 거기서 0.5m 옆이다.
      *
-     * **축 변환**: 블렌더는 Z-up, three.js 는 Y-up 이다. glTF 의 (x,y,z) 는
-     * 블렌더에서 (x, -z, y) 로 들어온다. 그래서 블렌더 (x, y) → three (x, ·, -y).
-     * 여기에 방 배율 1.9 를 곱한다.
+     * 그리고 코드는 두 가지를 더 틀리고 있었다.
+     *
+     * ① **골반을 한 번도 못 찾았다.** 좌면 보정이 `/^Hips$/` 로 뼈를 찾는데 배포되는
+     *    다섯 리그의 골반 이름은 `hip_02`(carla) · `CC_Base_Hip_02`(wong·f1) ·
+     *    `Hips_51`(m1) · `mixamorigHips_01`(f3) 이다 — **하나도 안 맞는다.**
+     *    DEV 훅이 다섯 배역 모두에서 `hipsY: 0` 을 돌려주고 있던 것이 그 증거다.
+     *    즉 좌면 보정은 **한 번도 실행된 적이 없다.**
+     * ② **바운딩박스 중심을 좌석에 맞췄다.** 앉은 자세는 다리가 앞으로 뻗어 있어
+     *    박스 중심이 골반보다 한참 앞이다. 그만큼 사람이 의자에서 밀려난다.
+     *
+     * 고치기 전 실측(월드 m, 옛 좌면 0.538 기준):
+     *
+     * | 배역 | 골반 y | 좌면 대비 | 좌석 XZ 까지 |
+     * |---|---|---|---|
+     * | carla | 0.801 | **+0.26 (공중)** | 0.10 |
+     * | wong  | 0.098 | **-0.44 (바닥)** | 0.20 |
+     * | m1    | 0.504 | -0.03 | 0.27 |
+     * | f3    | 0.625 | +0.09 | 0.40 |
+     * | f1    | 0.383 | -0.16 | 0.36 |
+     *
+     * 이제 **골반의 월드 좌표를 재서 좌면 위로 옮긴다.** 리그가 제각각이어도
+     * 골반 하나만 찾으면 되고, 자세가 어떻든 사람이 의자에 닿는 지점은 골반이다.
      */
-    /**
-     * ## 좌표는 전부 **블렌더에서 실측한 월드 미터**다
-     *
-     * 방·인물·카메라를 각각 따로 추정하다가 계속 어긋났다 —
-     * 인물이 상판을 뚫고 서거나, 프레임 밖으로 밀리거나, 옆을 봤다.
-     * 원인은 측정이 **원본 단위와 월드를 섞고 있었던 것**이다:
-     * 방 에셋은 empty 계층으로 묶여 있어 부모에 scale 을 줘도
-     * 자식 메시의 `matrix_world` 는 원본 단위를 돌려준다.
-     * 블렌더에서 변환을 **굽고(transform_apply)** 다시 재서 얻은 값이 아래다.
-     *
-     * | 요소 | 높이 | 범위 |
-     * |---|---|---|
-     * | 바닥 | 0.06m | x[-1.71, 1.73] |
-     * | 테이블 상판 | **0.76m** | x[-0.65, 0.87] · z[-0.51, 0.43] |
-     * | 갓등 | 1.57~1.65m | 중심 (0.05, -0.02) |
-     *
-     * 좌석은 상판 안쪽 끝(three z=-0.51)에 **살짝 걸쳐야** 한다.
-     * z=-0.78 로 뒀더니 0.27m 떨어져 테이블과 인물 사이에 빈 공간이 생겼다 —
-     * 가려지는 게 아니라 그냥 뒤에 서 있는 그림이었다.
-     * -0.62 면 몸통 앞면(z=-0.43)이 상판과 겹쳐 **테이블이 실제로 가린다.**
-     */
-    /**
-     * 의자 좌면 — **눈대중이 아니라 실측이다** (`scripts/probe-chairs.mjs`).
-     * 방 지오메트리에서 좌면 높이(0.35~0.62m)의 수평면을 뭉쳐서 뽑았다:
-     * 용의자 의자는 (0.06, -0.66), 좌면 높이 **0.538m**.
-     * 예전 값 (0.10, -0.62) 는 4~6cm 어긋났고, 무엇보다 앉히는 높이가 없어서
-     * 발바닥을 바닥에 붙이면 엉덩이(0.455)가 좌면보다 8cm 아래로 꺼졌다.
-     */
-    const SEAT = new THREE.Vector3(0.06, 0, -0.66)
-    const SEAT_SURFACE_Y = 0.538
-    /**
-     * 용의자는 **+Z(테이블 이쪽)** 를 본다. 카메라도 거기서 들어온다.
-     * 흉상의 기본 정면이 +Z 라는 실측(블렌더 렌더로 확인)에 맞춘 값이다.
-     * -π/2 를 넣었더니 옆을 봤다 — 상수를 감으로 흔들지 말 것.
-     */
-    const FACE_YAW = 0
-    /** 갓등 실측 위치 (블렌더 1.57~1.65m, 중심 x=0.05 y=-0.02 → three z=+0.02) */
-    const LAMP = new THREE.Vector3(0.05, 1.55, 0.02)
+    const SEAT = new THREE.Vector3(R.seat.cx, R.seat.y, R.seat.cz)
+    /** 골반 뼈는 좌면보다 이만큼 위에 있다 — 뼈는 엉덩이 살의 중심이지 바닥면이 아니다. */
+    const HIP_ABOVE_SEAT = 0.09
+    /** 용의자는 **상판 쪽**을 본다. 형사(카메라)는 그 반대편에서 들어온다. */
+    const FACE_YAW = R.yaw
 
     const bust = IS_BUST.has(slug)
     /**
@@ -400,6 +628,21 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       : sitClip && h0 > 0 && SIT_H / h0 < 1.8 ? SIT_H / h0
       : (h0 > 1.55 ? 1.72 / h0 : 1)
     model.scale.setScalar(scale)
+    /**
+     * **돌린 다음에 잰다.** 회전은 모델 원점을 축으로 돌므로 뼈의 월드 좌표가 바뀐다.
+     * 예전 코드처럼 올린 뒤에 돌리면 맞춰 둔 좌표가 그 자리에서 어긋난다.
+     */
+    model.rotation.y = FACE_YAW
+    model.updateMatrixWorld(true)
+
+    /**
+     * 골반 뼈. **`/^Hips$/` 가 아니라 리그 표기 넷을 전부 받는다.**
+     * "hip(s)" 뒤에 구분자나 숫자가 오는 것만 잡아 다른 뼈에 잘못 걸리지 않게 한다.
+     */
+    let hips: import('three').Object3D | null = null
+    model.traverse((o) => {
+      if (!hips && (o as import('three').Bone).isBone && /hips?([:_.0-9]|$)/i.test(o.name)) hips = o
+    })
     if (bust) {
       const { hi } = measureY(model)
       /**
@@ -408,35 +651,26 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
        * **단면이 테이블에 가려진다.** 몸통이 없어도 성립하는 이유가 이것이다.
        */
       model.position.y += 1.36 - hi
+      const mb = measureBox(model)
+      model.position.x += SEAT.x - (mb.max.x + mb.min.x) / 2
+      model.position.z += SEAT.z - (mb.max.z + mb.min.z) / 2
+    } else if (hips) {
+      // **골반을 좌면 위로 옮긴다.** 세 축을 한꺼번에 — 높이만 맞추면 의자 옆에 앉는다.
+      const hv = new THREE.Vector3()
+      ;(hips as import('three').Object3D).getWorldPosition(hv)
+      model.position.x += SEAT.x - hv.x
+      model.position.y += SEAT.y + HIP_ABOVE_SEAT - hv.y
+      model.position.z += SEAT.z - hv.z
     } else {
-      /**
-       * **엉덩이를 좌면에 얹는다.** 발을 바닥에 붙이는 것(groundIt)만으로는
-       * 의자에 앉은 게 아니다 — 이 모델들은 엉덩이가 0.455m 로 구워져 있는데
-       * 이 방의 좌면은 0.538m 다. 그 차이만큼 들어올린다.
-       */
+      // 골반을 못 찾았을 때만 옛 경로 — 발을 바닥에 붙이고 박스 중심을 좌석에 맞춘다
       groundIt(model)
-      let hips: import('three').Object3D | null = null
-      model.traverse((o) => { if (!hips && /^Hips$/.test(o.name)) hips = o })
-      if (hips) {
-        const hv = new THREE.Vector3()
-        ;(hips as import('three').Object3D).getWorldPosition(hv)
-        const lift = SEAT_SURFACE_Y - hv.y
-        if (lift > -0.05 && lift < 0.25) model.position.y += lift
-      }
+      const mb = measureBox(model)
+      model.position.x += SEAT.x - (mb.max.x + mb.min.x) / 2
+      model.position.z += SEAT.z - (mb.max.z + mb.min.z) / 2
     }
-    /**
-     * 방향 — **상수 대신 계산한다.**
-     * 전신 모델은 블렌더를 거치며 축이 바뀌고, 흉상은 Meshy 원본 그대로라
-     * 둘의 기본 방향이 다르다. 상수 하나로 맞추려다 흉상이 옆을 봤다.
-     * 카메라가 앉을 방향(FACE_YAW)을 그대로 바라보게 하고, 흉상은 기본 정면이
-     * +Z 라는 실측(코 방향 측정)에 따라 같은 각을 준다.
-     */
-    model.rotation.y = FACE_YAW
     model.updateMatrixWorld(true)
-    // XZ 중심 잡기도 **뼈를 적용해** 잰다 — Box3 는 스킨드 메시에서 100배 틀린다 (skinBounds 참조)
-    const mb = measureBox(model)
-    model.position.x += SEAT.x - (mb.max.x + mb.min.x) / 2
-    model.position.z += SEAT.z - (mb.max.z + mb.min.z) / 2
+    /** 착석이 끝난 뒤의 기준 높이. 절대 누적하지 않기 위한 기준점이다. */
+    const baseY = model.position.y
 
     /** 뼈 이름은 리깅 도구마다 다르다. 패턴으로 찾고, 못 찾으면 모델 전체를 흔든다. */
     const findBone = (re: RegExp): import('three').Object3D | null => {
@@ -581,8 +815,15 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
         const dtSec = Math.min(0.1, Math.max(0, (lastFrame - prevFrame) / 1000))
         mixer.timeScale = 1 + (pressure / 100) * 0.5
         mixer.update(dtSec)
+        /**
+         * **클립이 덮어써 준 뼈만 기준 자세를 갱신한다.**
+         * 예전에는 무조건 갱신했다 — 클립에 트랙이 없는 뼈는 `mixer.update()` 가
+         * 손대지 않으므로, 지난 프레임에 우리가 얹은 호흡·제스처가 그대로 남아 있고
+         * 그걸 다시 기준으로 읽어 같은 각을 **매 프레임 누적**했다. 60fps 면 초당
+         * 수십 번 더해지니 몇 초 만에 몸이 접힌다. `animated` 가 그 고리를 끊는다.
+         */
         for (const b of [head, spine, ...gestureBones]) {
-          if (b) rest.set(b, (b as import('three').Object3D).rotation.clone())
+          if (b && animated.has(b.name)) rest.set(b, (b as import('three').Object3D).rotation.clone())
         }
       }
       // 압박이 오르면 호흡이 빨라지고 얕아진다 — 굳는 것이지 커지는 게 아니다
@@ -633,8 +874,13 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
         head.rotation.set(r.x + breath + talk + tremor, r.y + drift, r.z + tremor)
       }
       if (!head && !spine) {
-        model.rotation.y = Math.sin(t * 0.35) * 0.04
-        model.position.y += Math.sin(t * rate) * 0.0004
+        /**
+         * 뼈를 하나도 못 찾았을 때의 최후 수단. **`+=` 를 쓰지 않는다** —
+         * 매 프레임 더하면 사인파가 아니라 적분이 되어 사람이 의자에서 떠오른다.
+         * 기준값에서 다시 계산해 얹는다.
+         */
+        model.rotation.y = FACE_YAW + Math.sin(t * 0.35) * 0.04
+        model.position.y = baseY + Math.sin(t * rate) * 0.004
       }
 
       /**
@@ -770,18 +1016,45 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
           const hp = new THREE.Vector3()
           if (head) (head as import('three').Object3D).getWorldPosition(hp)
           const mb2 = measureBox(model)
-          let hips2: import('three').Object3D | null = null
-          model.traverse((o) => { if (!hips2 && /^Hips$/.test(o.name)) hips2 = o })
           const hv2 = new THREE.Vector3()
-          if (hips2) (hips2 as import('three').Object3D).getWorldPosition(hv2)
+          if (hips) (hips as import('three').Object3D).getWorldPosition(hv2)
           return {
             slug, h0: +h0.toFixed(3), scale: +scale.toFixed(4),
+            /** 골반 이름. `null` 이면 좌면 보정이 안 돈 것이다 — 그게 예전 버그였다. */
+            hipBone: hips ? (hips as import('three').Object3D).name : null,
             hipsY: +hv2.y.toFixed(3),
+            /** ★ 좌석 정렬 검증값 — 셋 다 0 에 가까워야 의자에 앉은 것이다 */
+            seatErr: {
+              x: +(hv2.x - SEAT.x).toFixed(3),
+              y: +(hv2.y - SEAT.y - HIP_ABOVE_SEAT).toFixed(3),
+              z: +(hv2.z - SEAT.z).toFixed(3),
+            },
+            /** 발끝 높이. 0 근처면 자세가 진짜 착석이다. 크게 벗어나면 클립 자체가 이상한 것 */
+            feetY: +mb2.min.y.toFixed(3),
+            room: {
+              measured: !!fit, scale: +ROOM_SCALE.toFixed(3), chairs: R.chairs,
+              tableY: +R.table.y.toFixed(3),
+              seat: [+SEAT.x.toFixed(3), +SEAT.y.toFixed(3), +SEAT.z.toFixed(3)],
+              yawDeg: Math.round((FACE_YAW * 180) / Math.PI),
+            },
             face: face.toArray().map((n) => +n.toFixed(2)),
             headNow: hp.toArray().map((n) => +n.toFixed(2)),
             modelPos: model.position.toArray().map((n) => +n.toFixed(2)),
             boxNow: { lo: +mb2.min.y.toFixed(2), hi: +mb2.max.y.toFixed(2) },
-            clip: sitClip ? { name: sitClip.name, dur: +sitClip.duration.toFixed(2) } : null,
+            clip: sitClip
+              ? { name: sitClip.name, dur: +sitClip.duration.toFixed(2), 얼린이동트랙: frozen }
+              : null,
+            /**
+             * ★ 누적 불변식 — **우리가 각도를 얹는 뼈는 전부 클립이 덮어써야 한다.**
+             * `false` 가 하나라도 있으면 그 뼈는 매 프레임 자기 자신 위에 다시 얹혀
+             * 무한히 누적된다. 예전에 몸이 접히던 경로가 이것이다.
+             */
+            restSafe: Object.fromEntries(
+              ([['head', head], ['spine', spine], ['neck', neck], ['armL', armL], ['armR', armR],
+                ['foreL', foreL], ['foreR', foreR], ['handL', handL], ['handR', handR]] as const)
+                .filter(([, b]) => !!b)
+                .map(([k, b]) => [k, animated.has((b as import('three').Object3D).name)]),
+            ),
           }
         },
       }
