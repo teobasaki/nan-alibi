@@ -31,8 +31,14 @@ export const SCENE_FX = {
   swapPenaltyMs: 1500,
   /** 호루라기 후 화이트아웃이 차오르는 시간. 이 뒤에 수사 정리가 열린다 */
   whiteoutMs: 900,
-  /** 이동 속도 m/s — explore3d 와 같은 빠른 걸음 */
+  /** 이동 속도 m/s — 걷기 클립일 때 (explore3d 와 같은 빠른 걸음) */
   speed: 2.2,
+  /**
+   * 달리기 클립일 때의 이동 속도 m/s. 30초 압박에 걷기는 태평하다 —
+   * 30초 × 3.4 ≈ 100m 주행이라 12×9m 방에서 가방 5칸이 유일한 상한이 된다.
+   * 클립이 없으면 걷기+2.2 로 떨어진다 (발이 미끄러지면 안 된다).
+   */
+  runSpeed: 3.4,
   /** 줍기 판정 반경 m — explore3d 의 PICK_RADIUS 와 같다 */
   pickRadius: 1.1,
 } as const

@@ -86,6 +86,21 @@ for (const [p, url] of Object.entries(CHAR)) {
 }
 
 /**
+ * 달리기 클립 — 30초 압박에 걷기는 태평하다. `<slug>.run.opt.glb` 이 있으면 그것,
+ * 없으면(manager 등) 걷기로 떨어진다 — 속도도 클립에 맞춰 함께 떨어진다.
+ * run 도 walk 와 같은 리그 결함(다리 본 8개 180° 롤)이라 unrollLegs 를 그대로 지난다.
+ */
+const RUN = import.meta.glob('/public/characters/*.run.opt.glb', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+
+const RUN_BY_SLUG = new Map<string, string>()
+for (const [p, url] of Object.entries(RUN)) {
+  const slug = p.split('/').pop()?.replace('.run.opt.glb', '')
+  if (slug) RUN_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
+}
+
+/**
  * 증거품 빌보드 아이콘 — `public/evidence/<kind>.webp` (연필 스케치 512px, 메인 세션 생성).
  * **없으면 기존 프리미티브 마커가 그대로 돈다** — 인물 사진·효과음과 같은 에셋 0 원칙.
  * import.meta.glob 은 빌드 타임에 실제 파일만 잡으므로 폴더가 비면 이 맵도 빈다.
@@ -230,46 +245,68 @@ export async function mountCrimeScene(
     scene.add(new THREE.HemisphereLight(0x8fa0bb, 0x241a17, 0.45))
 
     /* ── 내 몸 — 걷기 모델. 없으면 프리미티브 실루엣으로라도 선다 (에셋 0 원칙) ── */
-    let actor: THREE.Object3D
+    let picked: THREE.Object3D | null = null
     let mixer: THREE.AnimationMixer | null = null
     let walk: THREE.AnimationAction | null = null
-    const walkUrl = WALK_BY_SLUG.get(slug) ?? [...WALK_BY_SLUG.values()][0]
-    if (walkUrl) {
+    /**
+     * 달리기 우선 — 클립과 속도는 한 몸이다. run 이 없거나 **리그가 말이 안 되면**
+     * 걷기 클립 + 걷기 속도로 떨어진다.
+     *
+     * "말이 안 되는 배율은 거부한다" (explore3d 착석 모델의 그 함정): 누운 채 익스포트된
+     * 리그는 키가 0.3m 로 재져 배율이 6배가 되고, 방에 드러누운 거인이 나온다 —
+     * run 클립 첫 배선에서 실제로 그랬다. 키 1.2~2.5m 밖이면 그 후보를 버린다.
+     */
+    const runUrl = RUN_BY_SLUG.get(slug) ?? [...RUN_BY_SLUG.values()][0]
+    const walkOnly = WALK_BY_SLUG.get(slug) ?? [...WALK_BY_SLUG.values()][0]
+    const candidates = [...new Set([runUrl, walkOnly].filter((u): u is string => Boolean(u)))]
+    let moveSpeed: number = SCENE_FX.speed
+    if (candidates.length) {
       const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
       const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js')
       const draco = new DRACOLoader().setDecoderPath('/draco/')
       const loader = new GLTFLoader().setDRACOLoader(draco)
-      const gltf = await loader.loadAsync(walkUrl)
-      actor = gltf.scene
-      const mh = measuredHeight(actor)
-      actor.scale.setScalar(mh > 0 ? ACTOR_HEIGHT / mh : 1)
-      actor.traverse((o) => {
-        const m = o as THREE.Mesh
-        if (!m.isMesh) return
-        m.castShadow = true
-        for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
-          if (!mm) continue
-          mm.emissive?.setScalar(0)
-          mm.emissiveMap = null
+      for (const url of candidates) {
+        const gltf = await loader.loadAsync(url)
+        const mh = measuredHeight(gltf.scene)
+        if (mh < 1.2 || mh > 2.5) {
+          if (import.meta.env.DEV) {
+            console.warn(`[현장] ${url} 리그가 이상하다 — 키 ${mh.toFixed(2)}m. 다음 후보로 넘어간다.`)
+          }
+          continue
         }
-      })
-      mixer = new THREE.AnimationMixer(actor)
-      const clip = gltf.animations[0]
-      if (clip) {
-        unrollLegs(clip, actor)
-        walk = mixer.clipAction(clip)
-        walk.play()
-        walk.paused = true
+        picked = gltf.scene
+        picked.scale.setScalar(ACTOR_HEIGHT / mh)
+        moveSpeed = url === runUrl ? SCENE_FX.runSpeed : SCENE_FX.speed
+        picked.traverse((o) => {
+          const m = o as THREE.Mesh
+          if (!m.isMesh) return
+          m.castShadow = true
+          for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
+            if (!mm) continue
+            mm.emissive?.setScalar(0)
+            mm.emissiveMap = null
+          }
+        })
+        mixer = new THREE.AnimationMixer(picked)
+        const clip = gltf.animations[0]
+        if (clip) {
+          unrollLegs(clip, picked)
+          walk = mixer.clipAction(clip)
+          walk.play()
+          walk.paused = true
+        }
+        break
       }
-    } else {
-      // 걷기 모델이 없는 배포 — 캡슐 실루엣. 게임은 멈추지 않는다.
+    }
+    // 모든 후보가 없거나 리그가 깨졌다 — 캡슐 실루엣. 게임은 멈추지 않는다.
+    const actor: THREE.Object3D = picked ?? (() => {
       const g = new THREE.Group()
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 1.0, 4, 10), mat(0x6b5a4c, 0.6))
       body.position.y = 0.85
       body.castShadow = true
       g.add(body)
-      actor = g
-    }
+      return g
+    })()
     actor.position.set(SCENE_START[0], 0, SCENE_START[1])
     groundIt(actor)
     scene.add(actor)
@@ -720,7 +757,7 @@ export async function mountCrimeScene(
         const bz = actor.position.z
         const moving = dir.lengthSq() > 0
         if (moving) {
-          const step = SCENE_FX.speed * dt
+          const step = moveSpeed * dt
           const nx = actor.position.x + dir.x * step
           const nz = actor.position.z + dir.z * step
           // 축 분리 — 벽에 비스듬히 닿으면 미끄러진다 (explore3d 와 같은 이유)
@@ -734,7 +771,7 @@ export async function mountCrimeScene(
         }
         if (goal) {
           const moved = Math.hypot(actor.position.x - bx, actor.position.z - bz)
-          stuckT = moved < SCENE_FX.speed * dt * 0.5 ? stuckT + dt : 0
+          stuckT = moved < moveSpeed * dt * 0.5 ? stuckT + dt : 0
           if (stuckT > 0.4) { goal = null; stuckT = 0 }
         } else stuckT = 0
         if (walk) walk.paused = !moving
