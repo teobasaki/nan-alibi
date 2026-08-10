@@ -32,6 +32,9 @@ import { record, stats } from './ui/records'
 import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
 import { hasStation, hasWalkModel, mountExplore, type Explore3D, type Marker, type Seat } from './ui/explore3d'
+import { mountCrimeScene, type CrimeScene, type SceneMarker } from './ui/crimescene3d'
+import { SCENE_FX, bagIds, spawnFor, swapField, timeUp } from './ui/sceneRules'
+import { renderWall, wallData } from './ui/cardwall'
 import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
 import { confessionFor } from './data/confessions'
@@ -98,6 +101,15 @@ interface UI {
   chapter2: boolean
   /** 챕터 게이트에 막혔을 때 띄우는 한 줄 — 잠시 떠 있다 사라진다 */
   gateMsg: string | null
+  /**
+   * 프로필 카드 월이 좌면을 차지하는가 (기획서 §C — 심문 허브).
+   * active(취조실)·explore(경찰서)가 이보다 우선한다 — 카드 월은 "돌아오는 곳"이다.
+   */
+  wall: boolean
+  /** 카드 월 첫 진입이었나 — 꽂히는 스태거 연출은 한 번만 (ui.opening 과 같은 이유) */
+  wallSeen: boolean
+  /** 카드 월에서 이미 인장을 찍은 소거자 — 재렌더마다 쾅쾅대지 않는다 (ui.stamped 와 같은 이유) */
+  wallStamped: Set<string>
   /** 방금 맞대본 결과 한 줄 — 일치했을 때도 알려줘야 "아무 일도 안 일어났다" 로 안 읽힌다 */
   note: string | null
   /** 이미 화면에 찍힌 인장 — 재렌더 때 전부 다시 찍히는 걸 막는다 */
@@ -149,6 +161,13 @@ const IS_GC001 = new URLSearchParams(location.search).get('case') === 'gc001'
  */
 const WORLD_ID = IS_GC001 ? null : new URLSearchParams(location.search).get('world')
 
+/**
+ * 접근 모드 (기획서 §2) — `?calm=1` 이면 현장 씬에 타이머가 없다.
+ * reduced-motion 사용자·심사위원 데모용. 시드·월드·gc001 전부 같은 현장이고
+ * 시계만 없다 — 난이도 옵션이 아니라 접근성 옵션이라 다른 무엇도 바꾸지 않는다.
+ */
+const CALM = new URLSearchParams(location.search).get('calm') === '1'
+
 const seed = IS_GC001 ? 1 : Number(new URLSearchParams(location.search).get('seed')) || (() => {
   const buf = new Uint32Array(1)
   crypto.getRandomValues(buf)
@@ -189,6 +208,9 @@ const ui: UI = {
   flash: null,
   chapter2: false,
   gateMsg: null,
+  wall: false,
+  wallSeen: false,
+  wallStamped: new Set(),
   note: null,
   stamped: new Set(),
   dash: false,
@@ -588,6 +610,178 @@ function exploreMarkers(): Marker[] {
   }))
 }
 
+/* ─────────── 「30초의 현장」 (기획서 승인분) ─────────── */
+/**
+ * 현장 씬 핸들 — 씬은 **한 판에 한 번**, 브리핑 직후에만 선다.
+ * render() 와 무관한 body 오버레이라 재렌더 경쟁이 없다 (roomEl 이 겪은 그 문제를
+ * 구조로 피한다). 씬이 도는 동안 act()/render() 를 부르지 않는다 — 5번째 수거로
+ * 예산이 0 이 되어도 게이트는 호루라기 뒤에 한 번만 열려야 한다.
+ */
+let csHandle: CrimeScene | null = null
+
+/** 새 효과음 키(pickup·snap 등)는 메인 세션이 sound.ts 에 배선한다 — 이름만 부른다 */
+const playAny = (k: string): void => play(k as Parameters<typeof play>[0])
+
+/**
+ * 현장의 증거품 — **아직 안 주운 것 전부.** 봉인(requires 미충족)도 보인다:
+ * 자물쇠가 보여야 "열쇠가 어딘가 있다" 는 사슬의 존재가 현장에서 읽힌다 (ADR 010 과
+ * 같은 원칙 — 자물쇠는 보여주고 열쇠의 주인만 감춘다). 배치는 spawnFor 가 결정론으로 정한다.
+ */
+function sceneMarkersNow(): SceneMarker[] {
+  const avail = new Set(availableEvidence(ui.game).map((e) => e.id))
+  const spots = spawnFor(CASE.evidence.map((e) => ({ id: e.id, place: e.place })))
+  return CASE.evidence
+    .filter((e) => !ui.game.cards.includes(e.id))
+    .map((e) => ({
+      id: e.id,
+      label: `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}`,
+      kind: e.kind,
+      crime: e.slot === CRIME_SLOT,
+      sealed: !avail.has(e.id),
+      at: spots.get(e.id) ?? [0, 0],
+    }))
+}
+
+function syncSceneState(): void {
+  if (!csHandle) return
+  csHandle.setMarkers(sceneMarkersNow())
+  csHandle.setBag(
+    bagIds(ui.game).map((id) => {
+      const e = CASE.evidence.find((x) => x.id === id)!
+      return labelOfKind(e.kind)
+    }),
+    FIELD_BUDGET,
+  )
+}
+
+/**
+ * 현장에서 E — **규칙은 engine 이 정한다.** 수거 = `lookupEvidence`(기존 조회와
+ * 동일 효과, 기획서 ⑥-②). 가방이 가득하면 스왑(⑥-③) — 내려놓기+재조회의 순비용 0,
+ * 시간 1.5초는 씬의 시계가 진다.
+ */
+function onScenePick(id: string): void {
+  if (!csHandle || ui.busy) return
+  const ev = availableEvidence(ui.game).find((e) => e.id === id)
+  if (!ev) {
+    // 봉인 — 자리에 남는다. 수거해 봤자 지금은 못 여는데, 마커를 지우면
+    // 사슬이 열린 뒤(같은 씬 안에서도 gc001 은 기록→기록 해금이 있다) 되살릴 길이 없다.
+    play('deny')
+    csHandle.note('봉인된 기록 — 열쇠 없이는 열리지 않는다. 열쇠는 심문에서 나온다.')
+    return
+  }
+  if (ui.game.investigationsLeft <= 0) {
+    const items = bagIds(ui.game).map((bid) => {
+      const be = CASE.evidence.find((e) => e.id === bid)!
+      return { id: bid, label: `${labelOfKind(be.kind)} · ${SLOT_L(be.slot)} ${PLACE_L(be.place)}` }
+    })
+    csHandle.openSwap(items, `${labelOfKind(ev.kind)} · ${SLOT_L(ev.slot)} ${PLACE_L(ev.place)} 을 집으려면`, (dropId) => {
+      if (!dropId || !csHandle) return
+      ui.game = swapField(ui.game, dropId, id)
+      if (!CALM) csHandle.addPenalty(SCENE_FX.swapPenaltyMs)
+      mark({ k: 'lookup', ev: id })
+      playAny('pickup')
+      setTimeout(() => playAny('snap'), 220)
+      syncSceneState()
+    })
+    return
+  }
+  ui.game = lookupEvidence(ui.game, id)
+  mark({ k: 'lookup', ev: id })
+  playAny('pickup')
+  setTimeout(() => playAny('snap'), 220)   // 폴라로이드가 가방에 꽂힌다
+  syncSceneState()
+}
+
+/**
+ * 현장 씬을 연다 — 브리핑의 [수사를 시작한다] 가 부른다.
+ * 3D 가 못 서면(webgl·저사양) `fallback` 으로 기존 기록철 흐름이 그대로 산다 —
+ * 이 프로젝트가 사진 폴백에서 지켜 온 원칙과 같다.
+ */
+function openCrimeScene(fallback: () => void): void {
+  const host = h('div', 'cscene')
+  const loading = h('div', 'cs-loading', '현장으로 이동 중 — 통제선을 넘는다…')
+  host.appendChild(loading)
+  document.body.appendChild(host)
+
+  // 내 몸 — 걷기 모델이 있는 것 중 아무거나 (explore3d 와 같은 선택)
+  const slug = SUSPECTS.map((s) => SLUG_BY_JOB[CASE.suspects[s].job] ?? '')
+    .find((x) => hasWalkModel(x)) ?? 'security'
+  // 발견 지점 서술 1줄 — 수단·시신 묘사 금지 (골든 케이스 §4). 라벨은 월드 소유.
+  const pedLine = `${PLACE_L(CRIME_PLACE)} 발견 지점 — 테이프 안쪽에 서류가 흩어져 있다. 감식반의 표식만 남았다.`
+
+  void mountCrimeScene(host, slug, CALM, pedLine, {
+    onPick: onScenePick,
+    onDone: () => {
+      csHandle?.dispose()
+      csHandle = null
+      host.remove()
+      // 시간 종료 = 예산 소진과 동일 상태 (기획서 §2) — 기존 게이트가 수사 정리를 연다
+      ui.game = timeUp(ui.game)
+      syncChapter()
+      render()
+    },
+  }).then((hd) => {
+    loading.remove()
+    if (!hd) {
+      host.remove()
+      return fallback()
+    }
+    csHandle = hd
+    syncSceneState()
+  })
+}
+
+/**
+ * 프로필 카드 월 (기획서 §C) — 심문 챕터의 기본 좌면.
+ * 데이터(wallData)와 그림(renderWall)은 cardwall.ts 가, 소거 판정은 engine 이 소유한다.
+ */
+function cardWallPage(): HTMLElement {
+  const page = h('div', 'nb-page nb-left cwallpage')
+  const entering = !ui.wallSeen
+  ui.wallSeen = true
+
+  const cards = wallData(CASE, ui.game)
+  // 새로 소거된 사람이 있으면 인장이 찍힌다 — 소리는 한 번만 (renderWall 이 set 에 기록)
+  const freshOut = cards.some((c) => c.cleared && !ui.wallStamped.has(c.id))
+
+  page.appendChild(renderWall(cards, {
+    portrait: portraitFor,
+    personaLine: (s) => {
+      const p = personaById(CASE.suspects[s].personaId)
+      return `${p.label} — ${p.hint}`
+    },
+    stampedSeen: ui.wallStamped,
+    entering,
+    onPick: (s) => {
+      if (!gatePass()) return
+      play('doorOpen')
+      hush(); stopVoice()
+      mark({ k: 'open', who: s })
+      ui.active = s
+      render()
+    },
+  }))
+  if (freshOut) setTimeout(() => play('stamp'), entering ? 700 : 120)
+
+  // 보조 동선 (기획서 §C) — 수첩(대조표)과 경찰서 3D 는 그대로 산다
+  const acts = h('div', 'cwall-actions')
+  const desk = focusKey(h('button', 'cwall-go', '수첩을 편다 — 알리바이 대조표'), 'wall:desk') as HTMLButtonElement
+  desk.onclick = () => { play('paper'); ui.wall = false; render() }
+  acts.appendChild(desk)
+  const walkable = SUSPECTS.some((s) => hasWalkModel(SLUG_BY_JOB[CASE.suspects[s].job] ?? ''))
+  if (walkable && hasStation()) {
+    const st = focusKey(h('button', 'cwall-go', '경찰서를 걸어서 간다'), 'wall:station') as HTMLButtonElement
+    st.onclick = () => {
+      play('doorOpen')
+      ui.explore = { handle: null, mounting: false, near: null, nearSeat: null }
+      render()
+    }
+    acts.appendChild(st)
+  }
+  page.appendChild(acts)
+  return page
+}
+
 /**
  * 좌면 — **책상이거나 취조실이다.** 우면은 이 전환에 관여하지 않는다.
  *
@@ -598,6 +792,8 @@ function exploreMarkers(): Marker[] {
 function deskOrRoom(): HTMLElement {
   if (ui.active) return stage()
   if (ui.explore) return exploreRoom()
+  // 카드 월 (기획서 §C) — 심문 챕터의 기본 좌면. 대조표·경찰서는 여기서 갈아탄다.
+  if (ui.wall && ui.chapter2) return cardWallPage()
 
   const page = h('div', 'nb-page nb-left')
   page.appendChild(indexTabs())
@@ -729,6 +925,16 @@ function indexTabs(): HTMLElement {
    * 0번으로 뽑히는 판에서는 경찰서 탭이 통째로 사라졌다 — 8종 중 1종이므로
    * 시드의 일부에서 기능이 조용히 없어진다. 걸을 수 있는 사람이 하나라도 있으면 연다.
    */
+  // 카드 월로 돌아가는 탭 — 심문 챕터에서만 존재한다 (기획서 §C: 카드 월이 심문 허브다)
+  if (ui.chapter2) {
+    const wall = h('button', 'nb-tab exgo') as HTMLButtonElement
+    wall.appendChild(h('span', 'nbt-l', '카드 월'))
+    wall.title = '용의자 프로필 카드 — 눌러서 취조실로 데려온다'
+    focusKey(wall, 'view:wall')
+    wall.onclick = () => { play('paper'); ui.wall = true; render() }
+    tabs.appendChild(wall)
+  }
+
   const walkable = SUSPECTS.some((s) => hasWalkModel(SLUG_BY_JOB[CASE.suspects[s].job] ?? ''))
   if (walkable && hasStation()) {
     const go = h('button', 'nb-tab exgo') as HTMLButtonElement
@@ -816,7 +1022,7 @@ function stage(): HTMLElement {
   meta.appendChild(h('div', `talkchip${tl <= 0 ? ' off' : tl <= 3 ? ' low' : ''}`,
     tl > 0 ? `남은 대화 ${tl} / ${TALK_CAP}` : '이 사람과의 대화는 끝났다'))
   p.appendChild(meta)
-  const back = focusKey(h('button', 'backbtn', '← 대조표'), 'back') as HTMLButtonElement
+  const back = focusKey(h('button', 'backbtn', ui.wall ? '← 카드 월' : '← 대조표'), 'back') as HTMLButtonElement
   back.onclick = () => { hush(); stopVoice(); ui.active = null; render() }
   p.appendChild(back)
   box.appendChild(p)
@@ -1385,6 +1591,8 @@ function act(fn: () => GameState): void {
 function syncChapter(): void {
   if (ui.chapter2 || !fieldDone(ui.game)) return
   ui.chapter2 = true
+  // 심문 허브는 카드 월이다 (기획서 §C) — 정리 화면이 걷히면 벽이 서 있다
+  ui.wall = true
   play('doorOpen')
   openCaseReview()
 }
@@ -1444,7 +1652,7 @@ function openCaseReview(): void {
     `남은 후보 ${cands.length}명 · 찾아낸 인장 ${ui.game.foundContradictions.length}건 · ` +
     `아직 안 맞춰본 조합 ${pendingPairs(ui.game).length}건`))
   sheet.appendChild(h('p', undefined,
-    '이제 다섯 사람을 심문한다. 한 사람과의 대화는 10회가 상한이다 — 다 쓸 필요는 없다. ' +
+    '이제 카드 월에서 사람을 골라 심문한다. 한 사람과의 대화는 10회가 상한이다 — 다 쓸 필요는 없다. ' +
     '기록과 어긋난 진술이 있는 사람부터 캐묻는 것이 보통 빠르다.'))
 
   const go = h('button', undefined, '심문 시작') as HTMLButtonElement
@@ -2147,15 +2355,15 @@ function openBriefing(): void {
   sheet.appendChild(h('h2', undefined, '당신이 할 일'))
   const ol = h('ol', 'steps')
   for (const [t, d] of [
-    ['현장을 조사한다 — 기록 조회 5회',
-      `기록철에서 다섯 번만 조회할 수 있다. ${josa(AUTOPSY_NAME, '은/는')} ${josa(WEAPON_AXIS, '을/를')}, ` +
-      `${SLOT_L(CRIME_SLOT)} 기록은 사람을 말한다 — 무엇을 포기할지 고르는 것이 곧 수사다.`],
+    ['현장을 밟는다 — 30초, 가방 다섯 칸',
+      `감식반이 철수하기 전에 현장의 기록을 주워 담는다. ${josa(AUTOPSY_NAME, '은/는')} ${josa(WEAPON_AXIS, '을/를')}, ` +
+      `${SLOT_L(CRIME_SLOT)} 기록은 사람을 말한다 — 다 들 수 없으니, 무엇을 포기할지 고르는 것이 곧 수사다.`],
     ['기록으로 후보를 지운다 — 이게 승리 경로다',
       `${SLOT_L(CRIME_SLOT)} 기록에 현장이 아닌 곳으로 찍힌 사람은 소거된다. ` +
       '표 위의 "남은 후보" 가 줄어드는 걸로 확인하라. 진술은 거짓일 수 있어 사람을 지우지 못한다.'],
-    ['조사가 끝나면 심문이 열린다',
-      `다섯 사람 각각과 대화 ${TALK_CAP}회까지 — 상한이지 의무가 아니다. 심문하면 그 사람의 나머지 시각이 표에 채워지고, ` +
-      '관계를 캐물으면 저마다의 사정이 드러난다.'],
+    ['호루라기가 울리면 심문이 열린다',
+      `수사를 정리한 뒤 카드 월에서 사람을 고른다. 다섯 사람 각각과 대화 ${TALK_CAP}회까지 — 상한이지 의무가 아니다. ` +
+      '심문하면 그 사람의 나머지 시각이 표에 채워지고, 관계를 캐물으면 저마다의 사정이 드러난다.'],
     ['기록과 진술을 맞춰 붉은 인장을 찍는다',
       '기록 한 장과 표의 칸 하나를 누르면 대조된다. 어긋나면 인장이 찍힌다. 대조는 무료이고, ' +
       '인장은 누구를 의심할지 정하는 근거다.'],
@@ -2203,16 +2411,18 @@ function openBriefing(): void {
      * `showJournal()` 이 즉시 resolve 하므로 예전과 똑같이 바로 펼쳐진다.
      */
     /**
-     * **물건이 먼저 서고, 그 위에서 수첩이 펼쳐진다.**
-     * `showJournal` 은 3D 가 걷히기 시작하는 순간 이 콜백을 부른다 — 끝난 뒤가 아니다.
-     * 그래서 두 연출이 0.45초쯤 **겹치고**, 잘라 붙인 두 화면이 아니라 한 물건이 된다.
-     * 에셋이 없거나 못 그리는 상황에서도 이 콜백은 반드시 한 번 불린다.
+     * **브리핑 다음은 현장이다** (기획서 「30초의 현장」).
+     * 씬이 못 서면(webgl·저사양) 기존 경로 — 수첩 펼침 → 기록철 조회 — 가 그대로 산다.
+     * 그 폴백 안의 showJournal 은 3D 가 걷히기 시작하는 순간 콜백을 불러 두 연출이
+     * 0.45초쯤 겹친다. 에셋이 없어도 콜백은 반드시 한 번 불린다.
      */
-    void showJournal(() => {
-      ui.opening = true
-      render()
-      play('paper')
-      setTimeout(() => { ui.opening = false; render() }, 1000)
+    openCrimeScene(() => {
+      void showJournal(() => {
+        ui.opening = true
+        render()
+        play('paper')
+        setTimeout(() => { ui.opening = false; render() }, 1000)
+      })
     })
   }
   sheet.appendChild(go)
@@ -2245,7 +2455,7 @@ function coachLine(): string {
 
   // ── 2장: 심문 ──
   const interviewed = SUSPECTS.some((s) => (ui.chats[s]?.length ?? 0) > 0)
-  if (!interviewed) return '③ 취조실이 열렸다 — 대조표의 이름을 눌러 데려온다. 한 사람과 나눌 수 있는 말은 열 마디뿐이다.'
+  if (!interviewed) return '③ 취조실이 열렸다 — 카드 월에서 사람을 골라 데려온다. 한 사람과 나눌 수 있는 말은 열 마디뿐이다.'
   if (g.foundContradictions.length === 0) return '③ 기록 한 장과 진술 한 칸을 맞대 본다 — 종이는 공짜고, 어긋나면 인장이 찍힌다.'
   const sceneLocked = lockedRecords(g).some((l) => l.evidence.decisive)
   if (sceneLocked) {

@@ -198,7 +198,7 @@ const LEG_BONES = new Set([
   'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
 ])
 
-function unrollLegs(clip: THREE.AnimationClip, root: THREE.Object3D): void {
+export function unrollLegs(clip: THREE.AnimationClip, root: THREE.Object3D): void {
   /**
    * **rest 기준 delta 에 걸어야 한다 — 원 회전값에 걸면 안 된다.**
    * 어긋난 것은 "이 본이 rest 에서 얼마나 움직였나" 를 표현한 축이지 최종 자세가 아니다.
