@@ -873,19 +873,21 @@ function rightPage(): HTMLElement {
  *
  * 미대조 조합과 모순은 별도 목록이 아니라 여기에 흡수된다. 모순은 일지 안의 인장이다.
  */
-function journalBlock(): HTMLElement {
-  const wrap = h('div', 'nb-journal')
-
-  // 조서는 `ui.chats` 에 있다. journal.ts 는 인물별 배열만 받고 순번으로 맞춘다.
-  const statements = Object.fromEntries(
+/** 조서 — `ui.chats` 에 있다. journal.ts 는 인물별 배열만 받고 순번으로 맞춘다. */
+function journalStatements(): Partial<Record<SuspectId, (string | undefined)[]>> {
+  return Object.fromEntries(
     SUSPECTS.map((s) => [s, ui.chats[s]!.map((c) => {
       const st = c.st
       if (!st || !(st.time || st.place || st.action)) return undefined
       return [st.time, st.place, st.action].filter(Boolean).join(' · ')
     })]),
   ) as Partial<Record<SuspectId, (string | undefined)[]>>
+}
 
-  const lines = journalLines(CASE, ui.journey, statements)
+function journalBlock(): HTMLElement {
+  const wrap = h('div', 'nb-journal')
+
+  const lines = journalLines(CASE, ui.journey, journalStatements())
 
   const head = h('div', 'nb-cap')
   head.appendChild(document.createTextNode('수사 일지'))
@@ -2371,27 +2373,58 @@ function fileHeader(stamp: string, cold = false): HTMLElement {
   return hd
 }
 
-/* ─────────── 오프닝 브리핑 (기획서 §5.1) ─────────── */
+/* ─────────── 오프닝 브리핑 (기획서 §5.1 · 승인 UX ①) ─────────── */
 /**
  * 플레이 테스트 지적: "어디부터 해야 되는지, 뭘 조사해야 되는지 모르겠다."
  * 규칙을 툴팁으로 흩뿌리는 대신 **시작 전에 한 번** 사건과 목표를 세워준다.
+ *
+ * ## 왜 한 화면이 아니라 세 장인가 (승인 UX ①)
+ * 예전에는 사건 개요·수사 절차 6항·조작법이 **한 시트에 전부** 있었고, 그 아래
+ * [수사를 시작한다] 가 붙어 있었다. 읽을 것이 화면보다 길면 사람은 읽지 않고 스크롤을
+ * 내려 버튼을 찾는다 — 그리고 30초가 시작된다. 읽을 시간을 안 주면서 읽으라고
+ * 적어 둔 화면이었다.
+ *
+ * 그래서 **막을 셋으로 끊는다**: ① 무슨 일이 있었나 → ② 무엇을 하는 게임인가 →
+ * ③ 손이 무엇을 누르나 + 카운트다운. 넘기는 것은 스페이스/엔터/클릭 — 넘기는 행위가
+ * 곧 "읽었다" 는 신호다. 마지막 장만 시계가 돌고(3·2·1), 그 전에는 시간이 흐르지 않는다.
  */
 function openBriefing(): void {
-  const ov = h('div', 'overlay')
+  const ov = h('div', 'overlay brf')
   const sheet = h('div', 'sheet casefile')
+  ov.appendChild(sheet)
+  document.body.appendChild(ov)
 
-  sheet.appendChild(fileHeader('수사\n개시'))
-  sheet.appendChild(h('h2', undefined, CASE.title))
-  sheet.appendChild(h('p', undefined,
-    `어젯밤 ${SLOT_L(CRIME_SLOT)}, ${CASE.venue.name} ${CASE.venue.room}에서 ` +
-    `${CASE.victim.title} ${josa(CASE.victim.name, '이/가')} 숨진 채 발견됐다. ` +
-    // 장소 명사를 하드코딩하지 않는다 — 월드 사건(갤러리 등)에서도 같은 문장이 성립해야 한다
-    `${CASE.venue.name}에는 다섯 사람이 남아 있었고, 그중 한 명이 범인이다.`))
-  sheet.appendChild(h('p', undefined,
-    '다섯 명 모두 "그 시간엔 다른 곳에 있었다"고 말한다. ' +
-    '그러나 거짓말하는 사람이 곧 범인은 아니다 — 저마다 숨기고 싶은 사정이 따로 있다.'))
+  /** 지금 몇 번째 장인가 — 0·1·2 */
+  let step = 0
+  /** 카운트다운 타이머 — 넘기기가 두 번 걸리면 시계도 두 개가 된다 */
+  let ticker: number | null = null
+  /** 이미 들어갔는가 — 카운트다운 만료와 [지금 들어간다] 가 겹쳐도 한 번만 */
+  let entered = false
 
-  sheet.appendChild(h('h2', undefined, '당신이 할 일'))
+  /* ① 사건 개요 — 무슨 일이 있었나 */
+  const pageBrief = (): HTMLElement => {
+    const box = h('div', 'brf-body')
+    box.appendChild(h('h2', undefined, CASE.title))
+    box.appendChild(h('p', undefined,
+      `어젯밤 ${SLOT_L(CRIME_SLOT)}, ${CASE.venue.name} ${CASE.venue.room}에서 ` +
+      `${CASE.victim.title} ${josa(CASE.victim.name, '이/가')} 숨진 채 발견됐다. ` +
+      // 장소 명사를 하드코딩하지 않는다 — 월드 사건(갤러리 등)에서도 같은 문장이 성립해야 한다
+      `${CASE.venue.name}에는 다섯 사람이 남아 있었고, 그중 한 명이 범인이다.`))
+    box.appendChild(h('p', undefined,
+      '다섯 명 모두 "그 시간엔 다른 곳에 있었다"고 말한다. ' +
+      '그러나 거짓말하는 사람이 곧 범인은 아니다 — 저마다 숨기고 싶은 사정이 따로 있다.'))
+    const st = stats()
+    if (st.plays > 0) {
+      box.appendChild(h('div', 'tally',
+        `통산 ${st.plays}판 중 ${st.solved}건 해결 · 최고 ${st.best}점. 이번 판은 사건번호 ${CASE_NO} 입니다.`))
+    }
+    return box
+  }
+
+  /* ② 수사 절차 — 무엇을 하는 게임인가 */
+  const pageHow = (): HTMLElement => {
+  const box = h('div', 'brf-body')
+  box.appendChild(h('h2', undefined, '당신이 할 일'))
   const ol = h('ol', 'steps')
   for (const [t, d] of [
     ['현장을 밟는다 — 30초, 가방 다섯 칸',
@@ -2417,17 +2450,49 @@ function openBriefing(): void {
     li.appendChild(h('span', undefined, d))
     ol.appendChild(li)
   }
-  sheet.appendChild(ol)
-
-  const st = stats()
-  if (st.plays > 0) {
-    sheet.appendChild(h('div', 'tally',
-      `통산 ${st.plays}판 중 ${st.solved}건 해결 · 최고 ${st.best}점. 이번 판은 사건번호 ${CASE_NO} 입니다.`))
+    box.appendChild(ol)
+    return box
   }
 
-  const go = h('button', undefined, '수사를 시작한다') as HTMLButtonElement
-  go.style.marginTop = '10px'
-  go.onclick = () => {
+  /* ③ 조작법 + 카운트다운 — 손이 무엇을 누르나 */
+  const pageKeys = (): HTMLElement => {
+    const box = h('div', 'brf-body')
+    box.appendChild(h('h2', undefined, `${SCENE_FX.collectMs / 1000}초의 현장 — 조작`))
+    box.appendChild(h('p', undefined,
+      '막이 오르면 곧바로 현장이다. 처음 5초는 카메라가 한 바퀴 돌며 ' +
+      '무엇이 어디 있는지 이름표로 보여준다 — 그동안 무엇을 주울지 정해 둔다.'))
+    const keys = h('div', 'brf-keys')
+    for (const [k, d] of [
+      ['W A S D · 클릭', '걷는다. 바닥을 클릭하면 그리로 간다'],
+      ['E', '가까이 간 기록을 줍는다 — 가방은 다섯 칸'],
+      ['V', '조감과 1인칭을 오간다'],
+      ['1 ~ 5', '가방 칸을 확인한다'],
+    ] as [string, string][]) {
+      const row = h('div', 'brf-key')
+      row.appendChild(h('kbd', undefined, k))
+      row.appendChild(h('span', undefined, d))
+      keys.appendChild(row)
+    }
+    box.appendChild(keys)
+    box.appendChild(h('p', 'brf-warn',
+      '가방은 다섯 칸뿐이다. 다 들 수 없으니 무엇을 포기할지 고르는 것이 곧 수사다.'))
+    return box
+  }
+
+  const PAGES: readonly { cap: string; stamp: string; next: string; build: () => HTMLElement }[] = [
+    { cap: '사건 개요', stamp: '수사\n개시', next: '수사 절차를 본다', build: pageBrief },
+    { cap: '수사 절차', stamp: '수사\n절차', next: '조작법을 본다', build: pageHow },
+    { cap: '현장 조작', stamp: '현장\n투입', next: '지금 들어간다', build: pageKeys },
+  ]
+
+  /**
+   * 실제 진입 — **브리핑의 끝이자 제1막의 시작이다.**
+   * 커튼이 닫히는 동안 현장이 서고, 다 서면 커튼이 열린다 (R3 · 연극 3막 구조).
+   */
+  const enter = (): void => {
+    if (entered) return
+    entered = true
+    if (ticker !== null) { clearInterval(ticker); ticker = null }
     wake()
     // 음성 엔진 예열 — 여기서 안 깨우면 첫 심문에서만 소리가 ~800ms 늦는다
     void initVoice()
@@ -2464,11 +2529,69 @@ function openBriefing(): void {
       })
     })
   }
-  sheet.appendChild(go)
 
-  ov.appendChild(sheet)
-  document.body.appendChild(ov)
-  queueMicrotask(() => go.focus())
+  /** 다음 장 — 마지막 장에서 부르면 현장으로 들어간다 */
+  const advance = (): void => {
+    if (entered) return
+    if (step >= PAGES.length - 1) return enter()
+    step++
+    draw()
+  }
+
+  const draw = (): void => {
+    const p = PAGES[step]!
+    sheet.replaceChildren()
+    sheet.appendChild(fileHeader(p.stamp))
+    // 몇 장 중 몇 장인가 — 남은 분량이 보이면 사람은 읽는다
+    const dots = h('div', 'brf-dots')
+    PAGES.forEach((q, i) => {
+      const d = h('i', `brf-dot${i === step ? ' on' : ''}${i < step ? ' past' : ''}`)
+      d.title = q.cap
+      dots.appendChild(d)
+    })
+    sheet.appendChild(dots)
+    sheet.appendChild(p.build())
+
+    const go = h('button', 'brf-go', p.next) as HTMLButtonElement
+    go.onclick = (e) => { e.stopPropagation(); play('paper'); advance() }
+    sheet.appendChild(go)
+    sheet.appendChild(h('div', 'brf-hint',
+      step < PAGES.length - 1 ? '스페이스 · 엔터 · 아무 곳이나 클릭하면 넘어간다' : ''))
+
+    /* 마지막 장에서만 시계가 돈다 — 3·2·1, 그리고 막이 오른다 */
+    if (step === PAGES.length - 1) {
+      let n = 3
+      const cd = h('div', 'brf-cd', String(n))
+      sheet.appendChild(cd)
+      play('tick')
+      ticker = window.setInterval(() => {
+        n--
+        if (n <= 0) { cd.textContent = '막이 오른다'; cd.classList.add('go'); return enter() }
+        cd.textContent = String(n)
+        cd.classList.remove('beat')
+        void cd.offsetWidth       // 리플로우 — 같은 애니메이션을 다시 돌리려면 필요하다
+        cd.classList.add('beat')
+        play('tick')
+      }, 1000)
+    }
+    queueMicrotask(() => go.focus())
+  }
+
+  // 넘기기 — 클릭(시트 어디든)과 스페이스/엔터. 버튼은 자기 핸들러가 먼저 먹는다.
+  ov.onclick = () => { play('paper'); advance() }
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key !== ' ' && e.key !== 'Enter') return
+    if (!document.body.contains(ov)) return window.removeEventListener('keydown', onKey)
+    // 단추가 포커스를 쥐고 있으면 브라우저가 이미 클릭으로 바꿔 준다 —
+    // 여기서 또 넘기면 한 번 누르고 두 장이 넘어간다
+    if (document.activeElement instanceof HTMLButtonElement) return
+    e.preventDefault()
+    play('paper')
+    advance()
+  }
+  window.addEventListener('keydown', onKey)
+
+  draw()
 }
 
 /* ─────────── 다음 할 일 코치 ─────────── */

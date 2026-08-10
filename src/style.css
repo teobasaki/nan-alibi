@@ -1839,3 +1839,39 @@ body::after {
 @media (prefers-reduced-motion: reduce) {
   .cs-toast { transition: opacity .18s ease-out; transform: translateX(-50%); }
 }
+
+/* ═══════════ 브리핑 3장 분할 (승인 UX ① · 신규 블록) ═══════════ */
+.overlay.brf .sheet { cursor: pointer; }        /* 시트 어디를 눌러도 넘어간다 */
+.brf-dots { display: flex; gap: 7px; margin: 2px 0 14px; }
+.brf-dot {
+  width: 26px; height: 3px; border-radius: 2px; background: var(--line);
+  transition: background .2s ease-out;
+}
+.brf-dot.past { background: #6b503a; }
+.brf-dot.on { background: var(--amber); }
+.brf-body { animation: brfIn .32s cubic-bezier(.2, .8, .3, 1); }
+@keyframes brfIn { from { opacity: 0; transform: translateY(8px); } }
+.brf-keys { margin: 12px 0 4px; display: grid; gap: 7px; }
+.brf-key { display: flex; align-items: baseline; gap: 12px; font-size: 13px; }
+.brf-key kbd {
+  flex: 0 0 auto; min-width: 116px; text-align: center;
+  font-family: var(--mono); font-size: 12px; color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-bottom-width: 3px; border-radius: 4px; padding: 4px 8px;
+}
+.brf-key span { color: #cfc9c0; }
+.brf-warn { color: var(--amber) !important; font-family: var(--serif); margin-top: 14px !important; }
+.brf-go { margin-top: 14px; }
+.brf-hint { margin-top: 8px; font-size: 11px; color: var(--muted); letter-spacing: .3px; }
+.brf-cd {
+  margin-top: 10px; text-align: center; overflow: hidden;
+  font-family: var(--mono); font-size: 40px; line-height: 1.2; letter-spacing: 4px;
+  color: var(--amber); text-shadow: 0 0 18px rgba(200, 145, 47, .3);
+}
+/* 마지막 한 줄은 숫자가 아니라 문장이다 — 같은 크기로 두면 시트를 뚫고 나간다 */
+.brf-cd.go { font-family: var(--serif); font-size: 19px; letter-spacing: 8px; }
+.brf-cd.beat { animation: brfBeat .5s ease-out; }
+@keyframes brfBeat { from { transform: scale(1.35); opacity: .35; } }
+@media (prefers-reduced-motion: reduce) {
+  .brf-body, .brf-cd.beat { animation: none; }
+}

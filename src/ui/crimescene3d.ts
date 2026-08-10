@@ -837,15 +837,17 @@ export async function mountCrimeScene(
      * 마커 노드 구성 집계 — "중복 스폰인가"를 눈이 아니라 숫자로 판정한다.
      * DEV 훅(`__cs.markerStats()`)으로도 나간다.
      */
-    const markerStats = (): { bodies: number; halos: number; locks: number; total: number; dup: string[] } => {
+    const markerStats = (): { bodies: number; halos: number; locks: number; labels: number; total: number; dup: string[] } => {
       const seen = new Map<string, number>()
       let bodies = 0
       let halos = 0
       let locks = 0
+      let labels = 0
       for (const c of markerRoot.children) {
         const part = c.userData.part as string | undefined
         if (part === 'halo') halos++
         else if (part === 'lock') locks++
+        else if (part === 'label') labels++
         else {
           bodies++
           const id = String(c.userData.id)
@@ -853,8 +855,54 @@ export async function mountCrimeScene(
         }
       }
       return {
-        bodies, halos, locks, total: markerRoot.children.length,
+        bodies, halos, locks, labels, total: markerRoot.children.length,
         dup: [...seen.entries()].filter(([, n]) => n > 1).map(([id, n]) => `${id}×${n}`),
+      }
+    }
+
+    /**
+     * **훑기 라벨 힌트** (승인 UX ②) — 5초 오빗 동안 증거 위치마다 이름표가 뜬다.
+     * 훑기는 "무엇을 포기할지"를 고르는 시간인데, 실루엣만 돌면 무엇이 어디 있는지를
+     * 몸이 익히기 전에 시계가 돈다. 라벨은 훑기가 끝나는 순간 함께 걷힌다 —
+     * 수집 중에는 근접 힌트바가 같은 정보를 말하므로 화면을 어지럽힐 이유가 없다.
+     * 캔버스 스프라이트(웹폰트 0)는 explore3d 의 이름표와 같은 문법이다.
+     */
+    const makeHintLabel = (text: string): THREE.Sprite => {
+      const c = document.createElement('canvas')
+      c.width = 512
+      c.height = 96
+      const g = c.getContext('2d')!
+      g.fillStyle = 'rgba(13,9,8,.85)'
+      g.beginPath()
+      // roundRect 는 사파리 16 미만에 없다 — 없으면 각진 판으로 선다. 폴백이 본선이다.
+      if (g.roundRect) g.roundRect(4, 16, 504, 64, 12)
+      else g.rect(4, 16, 504, 64)
+      g.fill()
+      g.strokeStyle = '#c8912f'
+      g.lineWidth = 3
+      g.stroke()
+      g.textAlign = 'center'
+      g.textBaseline = 'middle'
+      g.fillStyle = '#e9e1d3'
+      g.font = 'bold 34px "Apple SD Gothic Neo", sans-serif'
+      g.fillText(text, 256, 50, 480)
+      const tex = new THREE.CanvasTexture(c)
+      tex.colorSpace = THREE.SRGBColorSpace
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }))
+      sp.scale.set(2.6, 0.49, 1)
+      sp.renderOrder = 9
+      return sp
+    }
+
+    /** 훑기가 끝났는가 — 끝난 뒤의 setMarkers(수거 갱신)는 라벨을 다시 세우지 않는다 */
+    let surveyOver = calm
+    const clearHintLabels = (): void => {
+      for (const c of [...markerRoot.children]) {
+        if (c.userData.part !== 'label') continue
+        const sp = c as THREE.Sprite
+        sp.material.map?.dispose()
+        sp.material.dispose()
+        markerRoot.remove(c)
       }
     }
 
@@ -864,6 +912,8 @@ export async function mountCrimeScene(
       list = markers
       for (const c of markerRoot.children) {
         const m = c as THREE.Mesh
+        // 이름표는 자기 캔버스 텍스처를 갖는다 — 재질만 버리면 그림이 GPU 에 남는다
+        if (c.userData.part === 'label') (c as unknown as THREE.Sprite).material.map?.dispose()
         m.geometry?.dispose?.()
         ;((m as unknown as { material?: THREE.Material }).material)?.dispose?.()
         // 실모델 마커 — 지오메트리는 프로토와 공유라 두고, 복제한 재질만 버린다
@@ -965,6 +1015,15 @@ export async function mountCrimeScene(
           sp.userData.id = m.id
           sp.userData.part = 'lock'            // 구성 집계용 꼬리표 (markerStats)
           markerRoot.add(sp)
+        }
+
+        // 훑기 중에만 — 증거 이름표 (승인 UX ②). 봉인 자물쇠보다 위에 띄운다.
+        if (!surveyOver) {
+          const lb = makeHintLabel(m.label)
+          lb.position.set(m.at[0], my + (m.sealed ? 0.95 : 0.75), m.at[1])
+          lb.userData.id = m.id
+          lb.userData.part = 'label'
+          markerRoot.add(lb)
         }
       }
 
@@ -1375,12 +1434,13 @@ export async function mountCrimeScene(
       if (!ended) phase = phaseAt(elapsed, calm)
       if (phase === 'done' && !ended) { endScene('time'); }
 
-      /* 훑기 — 카메라가 현장을 한 바퀴, 마커 전부 점멸 (기획서 §3) */
+      /* 훑기 — 카메라가 현장을 한 바퀴, 마커 전부 점멸 + 이름표 (기획서 §3 · 승인 UX ②) */
       if (phase === 'survey') {
         const k = elapsed / SCENE_FX.surveyMs
         placeCam(camAngle0 + k * Math.PI * 2)
         const blink = 0.75 + 0.45 * Math.sin(k * Math.PI * 10)
         for (const g of markerRoot.children) {
+          if (g.userData.part === 'label') continue          // 이름표는 점멸하지 않는다 — 읽는 물건이다
           if ((g as THREE.Mesh).geometry?.type !== 'RingGeometry') {
             g.scale.setScalar(((g.userData.baseScale as number) ?? 1) * blink)
           }
@@ -1388,6 +1448,9 @@ export async function mountCrimeScene(
       } else if (prevPhase === 'survey') {
         placeCam(camAngle0)
         caption.classList.remove('on')
+        // 훑기 이름표는 여기서 걷힌다 — 수집 중에는 근접 힌트바가 그 정보를 잇는다
+        surveyOver = true
+        clearHintLabels()
         for (const g of markerRoot.children) g.scale.setScalar((g.userData.baseScale as number) ?? 1)
         // 훑기가 끝나는 순간이 조작의 첫 순간이다 — 시점 문법을 여기서 한 번만 말한다
         note('1인칭 시점 — V 조감 · WASD/클릭 이동 · E 수거')
