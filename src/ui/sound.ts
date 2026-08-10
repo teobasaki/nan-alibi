@@ -15,6 +15,7 @@
  */
 
 type Voice = 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'filed' | 'creak' | 'doorOpen'
+  | 'verdict' | 'type' | 'typebell' | 'page' | 'unlock'
 
 const KEY = 'nan-alibi:muted'
 
@@ -77,6 +78,32 @@ function buildAmbience(): void {
   const master = ctx.createGain()
   master.gain.setValueAtTime(0, t)
   master.connect(ctx.destination)
+
+  /**
+   * 생성 앰비언스(`public/sfx/ambience.opus`)가 있으면 그걸 루프한다 —
+   * 확인음과 같은 파일 우선 규칙. HTMLAudio 의 loop 는 이음새에서 딸꾹질하므로
+   * AudioBuffer 루프로 돌린다 (양끝 20ms 페이드는 인코딩 때 넣었다).
+   */
+  const url = SFX_URL.get('ambience')
+  if (url) {
+    ambMaster = master
+    const ac = ctx
+    void fetch(url)
+      .then((r) => r.arrayBuffer())
+      .then((b) => ac.decodeAudioData(b))
+      .then((buf) => {
+        const src = ac.createBufferSource()
+        src.buffer = buf
+        src.loop = true
+        const g = ac.createGain()
+        g.gain.value = 0.16   // '있는지도 모르게' — 껐을 때에야 없어진 걸 아는 크기
+        src.connect(g).connect(master)
+        src.start()
+        master.gain.linearRampToValueAtTime(muted ? 0 : 1, ac.currentTime + 2.5)
+      })
+      .catch(() => { /* 디코드 실패 — 소리 없이 간다. 합성으로 되돌리면 코드 경로가 둘이 된다 */ })
+    return
+  }
 
   // 공용 잡음 버퍼 4초 — 비와 룸톤이 같은 버퍼를 다른 필터로 나눠 쓴다
   const n = Math.floor(ctx.sampleRate * 4)
@@ -183,6 +210,15 @@ for (const [path, url] of Object.entries(FILES)) {
 /** 한 번 받은 것은 다시 받지 않는다 — `paper` 는 한 판에 수십 번 난다 */
 const cache = new Map<string, HTMLAudioElement>()
 
+/**
+ * 파일 재생 음량 — 생성물은 라우드니스가 제각각인데 HTMLAudio 는 기본 1.0 이다.
+ * 특히 `type` 은 몇 초에 수십 번 나는 소리라 여기서 눌러 두지 않으면 타자기가
+ * 조서를 쓰는 게 아니라 조서를 두드려 부순다.
+ */
+const FILE_VOL: Partial<Record<Voice, number>> = {
+  type: 0.28, typebell: 0.5, page: 0.65, paper: 0.7, unlock: 0.8, verdict: 0.9,
+}
+
 function playFile(v: Voice): boolean {
   const url = SFX_URL.get(v)
   if (!url) return false
@@ -191,6 +227,7 @@ function playFile(v: Voice): boolean {
     el = new Audio(url)
     cache.set(v, el)
   }
+  el.volume = FILE_VOL[v] ?? 1
   el.currentTime = 0
   // 재생 실패(자동재생 정책 등)는 조용히 넘긴다. 합성음으로 되돌리지는 않는다 —
   // 두 소리가 겹쳐 나는 것이 안 나는 것보다 나쁘다.
@@ -282,6 +319,34 @@ export function play(v: Voice): void {
       // 미제 편철 — 서류가 닫힌다
       noise(t, 0.18, 0.3, 1200)
       tone(t + 0.04, 130.81, 0.45, 0.13, 'sine')
+      break
+    case 'verdict':
+      // 최종 판정 인장 — stamp 보다 한 체급 무겁게 (낮고 길게 울린다)
+      noise(t, 0.09, 0.6, 1400)
+      tone(t, 110, 0.18, 0.4, 'triangle')
+      tone(t + 0.01, 55, 0.4, 0.3, 'sine')
+      break
+    case 'type':
+      // 타자기 한 타 — 아주 작은 기계식 틱
+      noise(t, 0.025, 0.16, 4200)
+      tone(t, 1100, 0.02, 0.05, 'square')
+      break
+    case 'typebell':
+      // 줄 끝의 벨 + 캐리지 리턴
+      tone(t, 1975, 0.35, 0.1, 'sine')
+      tone(t + 0.002, 3951, 0.2, 0.05, 'sine')
+      noise(t + 0.28, 0.14, 0.12, 900)
+      break
+    case 'page':
+      // 만화 페이지가 넘어간다 — paper 보다 크고 느린 종이
+      noise(t, 0.3, 0.3, 1600)
+      noise(t + 0.22, 0.12, 0.2, 2600)
+      break
+    case 'unlock':
+      // 자물쇠가 떨어진다 — 금속 두 번 + 문이 살짝 열림
+      tone(t, 620, 0.05, 0.18, 'square')
+      tone(t + 0.09, 430, 0.07, 0.16, 'square')
+      noise(t + 0.2, 0.3, 0.14, 800)
       break
   }
 }

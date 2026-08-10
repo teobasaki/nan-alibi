@@ -207,6 +207,7 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
         old.classList.add('page-out')
         setTimeout(() => old.remove(), still ? 0 : 650)
         fresh.el.classList.add('page-in')
+        play('page')          // 칸의 'paper' 보다 크고 무거운 종이 — 단락이 넘어간다
       }
       handle = fresh
       panelIdx = -1

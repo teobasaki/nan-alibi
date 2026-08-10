@@ -17,6 +17,7 @@
 /** `sound.ts` 의 합성 효과음과 같은 키를 쓴다 — 생성 실패 시 그대로 폴백된다 */
 export type SfxKey =
   | 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'creak' | 'doorOpen' | 'filed'
+  | 'verdict' | 'type' | 'typebell' | 'page' | 'unlock' | 'ambience'
 
 export interface SfxSpec {
   key: SfxKey
@@ -103,6 +104,62 @@ export const SFX: readonly SfxSpec[] = [
       'Handcuffs closing once, then a heavy door shutting at the end of a corridor. ' +
       'Metal ratchet, distant door, long empty silence after. No music, no fanfare.',
     seconds: 3,
+  },
+  {
+    key: 'verdict',
+    moment: '결과 시트에 "사건 해결"/"미제" 인장이 내리찍힐 때',
+    meaning: 'stamp(격자 인장)보다 한 체급 무거운, 한 판의 최종 판정',
+    prompt:
+      'A large heavy brass seal stamp slammed down once onto a document on a thick ' +
+      'wooden desk. Deep wooden boom, paper crush, a faint metal ring after the hit. ' +
+      'Single hit, dry 1960s office, close-miked. No music, no electronic tone.',
+    seconds: 1.4,
+  },
+  {
+    key: 'type',
+    moment: '심문 응답이 한 글자씩 찍힐 때 (조서 타자기)',
+    meaning: '조서가 지금 작성되고 있다. 몇 초에 수십 번 나므로 존재감이 없어야 한다',
+    prompt:
+      'One single soft manual typewriter key strike on paper. Very short muffled ' +
+      'mechanical tap, no carriage noise, no bell, extremely close and quiet. No music.',
+    seconds: 0.3,
+  },
+  {
+    key: 'typebell',
+    moment: '심문 응답 타이핑이 끝났을 때',
+    meaning: '한 진술이 조서에 박제됐다 — 줄 끝의 벨과 캐리지 리턴',
+    prompt:
+      'A manual typewriter line-end: small bell ding then the carriage return slide ' +
+      'and stop. Bright but quiet bell, short mechanical slide, dry room. No music.',
+    seconds: 1,
+  },
+  {
+    key: 'page',
+    moment: '발단 카툰의 페이지가 넘어갈 때',
+    meaning: '감정 단락이 넘어간다 — paper(기록 한 장)보다 크고 무거운 종이',
+    prompt:
+      'A large stiff comic-book page turning once: heavy paper flex, a wide sweep of ' +
+      'air, and the page settling. Single page, close, dry, no hand noise. No music.',
+    seconds: 0.9,
+  },
+  {
+    key: 'unlock',
+    moment: '잠긴 기록(결정적 증거 사슬)이 조건을 채워 풀릴 때',
+    meaning: 'open(증언 개방)보다 결정적인 순간 — 자물쇠가 실제로 떨어진다',
+    prompt:
+      'An old padlock shackle popping open and a thin chain slipping off a metal ' +
+      'cabinet handle, then the small door easing ajar. Metallic, close, dry. No music.',
+    seconds: 1.3,
+  },
+  {
+    key: 'ambience',
+    moment: '수사 내내 (루프)',
+    meaning: '장소의 존재 — 유리창 밖의 비와 방의 웅웅거림. 있는지도 모르게',
+    prompt:
+      'Seamless loop of steady moderate rain heard from inside a quiet 1960s office ' +
+      'at night: soft rain wash against a window, very low room rumble, no thunder, ' +
+      'no distinct droplets, no events, perfectly steady texture for looping. No music.',
+    seconds: 4.5,
   },
 ]
 
