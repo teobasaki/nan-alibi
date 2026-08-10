@@ -36,6 +36,12 @@ export function setMuted(v: boolean): void {
   } catch {
     /* 사파리 사생활 보호 모드 등 — 소리는 계속 되게 두고 기억만 포기한다 */
   }
+  // 앰비언스는 확인음과 달리 '지금 나고 있는' 소리라 토글이 즉시 먹어야 한다
+  if (ambMaster && ctx) {
+    ambMaster.gain.cancelScheduledValues(ctx.currentTime)
+    ambMaster.gain.setValueAtTime(ambMaster.gain.value, ctx.currentTime)
+    ambMaster.gain.linearRampToValueAtTime(v ? 0 : 1, ctx.currentTime + 0.35)
+  }
 }
 
 /**
@@ -49,6 +55,72 @@ export function wake(): void {
     ctx = new AC()
   }
   if (ctx.state === 'suspended') void ctx.resume()
+  buildAmbience()
+}
+
+/**
+ * 앰비언스 — 수사 내내 깔리는 **비와 방의 숨.**
+ *
+ * 확인음(아래 play)이 "판정의 통보"라면 앰비언스는 "장소의 존재"다.
+ * 이 게임은 소리가 확인음뿐이라 행동 사이가 완전한 정적이었고, 정적은
+ * 브라우저 탭을 게임이 아니라 문서로 읽게 만든다. 인트로 카툰이 전부
+ * 비 오는 밤이므로 그 비를 게임 화면까지 끌고 들어온다.
+ *
+ * 원칙: **있는지도 모르게.** 껐을 때에야 없어진 걸 아는 크기가 정답이다.
+ * 파일 없이 합성(이 파일의 규칙), Math.random 금지(재현 가능성)도 그대로 탄다.
+ */
+let ambMaster: GainNode | null = null
+
+function buildAmbience(): void {
+  if (!ctx || ambMaster) return
+  const t = ctx.currentTime
+  const master = ctx.createGain()
+  master.gain.setValueAtTime(0, t)
+  master.connect(ctx.destination)
+
+  // 공용 잡음 버퍼 4초 — 비와 룸톤이 같은 버퍼를 다른 필터로 나눠 쓴다
+  const n = Math.floor(ctx.sampleRate * 4)
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate)
+  let x = 0x9e3779b9
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch)
+    for (let i = 0; i < n; i++) {
+      x ^= x << 13; x ^= x >>> 17; x ^= x << 5
+      d[i] = ((x >>> 0) / 0xffffffff) * 2 - 1
+    }
+  }
+
+  // 비 — 잡음을 밴드패스로 가늘게. 유리창 밖에서 들리는 굵기다.
+  const rain = ctx.createBufferSource()
+  rain.buffer = buf; rain.loop = true
+  const bp = ctx.createBiquadFilter()
+  bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 0.6
+  const rainG = ctx.createGain()
+  rainG.gain.value = 0.02
+  rain.connect(bp).connect(rainG).connect(master)
+  rain.start()
+
+  // 빗발이 숨쉬듯 굵어졌다 가늘어진다 — 아주 느린 LFO 가 비의 '살아있음'이다
+  const lfo = ctx.createOscillator()
+  lfo.type = 'sine'; lfo.frequency.value = 0.05
+  const lfoAmt = ctx.createGain()
+  lfoAmt.gain.value = 0.007
+  lfo.connect(lfoAmt).connect(rainG.gain)
+  lfo.start()
+
+  // 방의 숨 — 같은 잡음을 반속 재생 + 로우패스로 낮게 깐다 (형광등·보일러의 웅웅거림)
+  const hum = ctx.createBufferSource()
+  hum.buffer = buf; hum.loop = true; hum.playbackRate.value = 0.5
+  const lp = ctx.createBiquadFilter()
+  lp.type = 'lowpass'; lp.frequency.value = 140
+  const humG = ctx.createGain()
+  humG.gain.value = 0.012
+  hum.connect(lp).connect(humG).connect(master)
+  hum.start()
+
+  ambMaster = master
+  // 2.5초에 걸쳐 스며든다 — 갑자기 켜지면 '효과'가 되고, 스며들면 '장소'가 된다
+  master.gain.linearRampToValueAtTime(muted ? 0 : 1, t + 2.5)
 }
 
 function tone(at: number, freq: number, dur: number, gain: number, type: OscillatorType = 'sine'): void {

@@ -1379,6 +1379,30 @@ body::after {
   transition: opacity .38s ease;
 }
 .startpage.leave { opacity: 0; pointer-events: none; }
+
+/* 시작 페이지 무드 — 비가 긋는 유리창 너머의 밤.
+   인트로 카툰이 전부 비 오는 밤이라 그 비를 첫 화면부터 깐다 (앰비언스와 짝). */
+.startpage::before {   /* 빗줄기 — 기울어진 가는 선들이 흘러내린다 */
+  content: ''; position: absolute; inset: -25%;
+  background: repeating-linear-gradient(78deg,
+    transparent 0 11px, rgba(214, 191, 158, .05) 11px 12px,
+    transparent 12px 25px, rgba(214, 191, 158, .03) 25px 26px);
+  animation: srain 1.15s linear infinite;
+  pointer-events: none;
+}
+@keyframes srain { to { transform: translateY(52px); } }
+.startpage::after {    /* 비네트 숨쉬기 — 화면이 아주 느리게 어두워졌다 밝아진다 */
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 42%, transparent 42%, rgba(0, 0, 0, .5) 100%);
+  animation: sbreath 7.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sbreath { 50% { opacity: .68; } }
+.startpage .startbox { position: relative; z-index: 1; }  /* 무드 레이어 위에 */
+@media (prefers-reduced-motion: reduce) {
+  .startpage::before, .startpage::after { animation: none; }
+}
+
 .startbox { text-align: center; padding: 24px; max-width: 560px; }
 .start-kicker {
   font-family: var(--mono); font-size: 11px; letter-spacing: .22em;

@@ -34,34 +34,40 @@ for (const [path, url] of Object.entries(FILES)) {
 }
 
 /**
- * 시드 사건(호텔) 발단 — 3페이지. gc001 과 같은 감정 문법을 탄다:
+ * 시드 사건 발단 — 3페이지. gc001 과 같은 감정 문법을 탄다:
  * 평온→위화감 / 충격 / 호기심. 한 페이지에 다 넣었을 때
  * "너무 몰아넣었다"는 지적을 받았고, 페이지가 곧 감정 단락이 되도록 갈랐다.
- * 그림은 다섯 장 그대로 — 충격 페이지는 **스플래시**(전면 한 칸)로 세운다.
+ *
+ * 그림 다섯 장은 **호텔을 그린 것**이다. 월드 스킨(경매장·방송국·극장)이 입혀진
+ * 사건에서 이 그림을 그대로 쓰면 인트로가 첫 화면부터 거짓말을 한다 —
+ * 그래서 월드 사건은 그림 없이 색면+활자 폴백으로 간다 (전 에셋 공통 규칙).
+ * 월드별 카툰이 생기면 여기서 갈아 끼우면 된다.
  */
 function hotelPages(c: CaseFile): ComicPageDef[] {
   const five = SUSPECTS.map((s) => c.suspects[s].job).join(' · ')
+  const themed = !c.world           // 호텔(기본 세계)일 때만 호텔 그림을 쓴다
+  const img = (n: string): string | undefined => (themed ? PANEL_URL.get(n) : undefined)
   return [
     { // 1면 — 평온함이 식어 간다 (종이는 2열 그리드 — 전폭 칸은 두 토큰으로 스팬)
       rows: ['p0 p0', 'p1 p1'], heights: '54% 46%',
       panels: [
-        { area: 'p0', img: PANEL_URL.get('0'), key: '어젯밤', corner: 'tl', tilt: -0.8,
+        { area: 'p0', img: img('0'), key: '어젯밤', corner: 'tl', tilt: -0.8,
           line: `어젯밤, ${c.venue.name}. 비가 막 그친 밤이었다.`, fx: ['kb-in', 'rain'] },
-        { area: 'p1', img: PANEL_URL.get('1'), key: SLOT_LABEL[CRIME_SLOT], corner: 'bl', tilt: 0.9, bam: '치지직',
-          line: `${SLOT_LABEL[CRIME_SLOT]}. 12층 복도의 불이 반쯤 나가 있었다.`, fx: ['kb-in', 'flicker'] },
+        { area: 'p1', img: img('1'), key: SLOT_LABEL[CRIME_SLOT], corner: 'bl', tilt: 0.9, bam: '치지직',
+          line: `${SLOT_LABEL[CRIME_SLOT]}. ${themed ? '12층 복도' : '복도'}의 불이 반쯤 나가 있었다.`, fx: ['kb-in', 'flicker'] },
       ] },
     { // 2면 — 충격. 스플래시 한 칸이 페이지 전체를 먹는다.
       rows: ['p2 p2'], heights: '100%',
       panels: [
-        { area: 'p2', img: PANEL_URL.get('2'), key: c.venue.room, corner: 'bl', tilt: -1.2, bam: '쿵—',
+        { area: 'p2', img: img('2'), key: c.venue.room, corner: 'bl', tilt: -1.2, bam: '쿵—',
           line: `${c.venue.room}. ${c.victim.title} ${josa(c.victim.name, '이/가')} 숨진 채 발견됐다.`, fx: ['kb-in', 'pulse'] },
       ] },
     { // 3면 — 호기심. 다섯 그림자와 사건 파일.
       rows: ['p3 p3', 'p4 p4'], heights: '50% 50%',
       panels: [
-        { area: 'p3', img: PANEL_URL.get('3'), key: '다섯', corner: 'tr', tilt: 0.7,
-          line: `호텔에 남아 있던 사람은 다섯 — ${five}.`, fx: ['kb-left', 'smoke'] },
-        { area: 'p4', img: PANEL_URL.get('4'), key: '한 명', corner: 'br', tilt: -0.6, bam: '?!',
+        { area: 'p3', img: img('3'), key: '다섯', corner: 'tr', tilt: 0.7,
+          line: `${c.venue.name}에 남아 있던 사람은 다섯 — ${five}.`, fx: ['kb-left', 'smoke'] },
+        { area: 'p4', img: img('4'), key: '한 명', corner: 'br', tilt: -0.6, bam: '?!',
           line: '다섯 모두 그 시간엔 다른 곳에 있었다고 말한다. 그중 한 명이 범인이다.', fx: ['kb-out'] },
       ] },
   ]
