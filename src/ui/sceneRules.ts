@@ -532,3 +532,20 @@ export function variantFor(id: string): { yaw: number; tilt: number; tiltDir: nu
     scale: 1 + (u(23, 1000) * 2 - 1) * VARIANT.scaleSpread,
   }
 }
+
+/**
+ * **1인칭 이동 방향 — 몸 기준의 두 축.**
+ *
+ * 앞 = `(sinθ, 0, cosθ)` · 오른쪽 = **앞 × 위** = `(−cosθ, 0, sinθ)`.
+ * 씬(3D)이 아니라 여기 두는 이유는 하나다 — **부호 하나가 틀리면 A/D 가 반대로 간다.**
+ * 실제로 한 번 틀렸고(오른쪽을 `(cosθ, 0, −sinθ)` 로 짐작해 썼다), 3D 는 테스트가
+ * 못 닿아 사용자가 신고할 때까지 살아 있었다. 짐작한 부호는 또 틀리므로 게이트가 본다.
+ *
+ * 반환은 정규화하지 않은 XZ 성분이다 — 정규화·속도는 호출부(씬)가 소유한다.
+ */
+export function moveDirFor(yaw: number, fwd: number, side: number): [number, number] {
+  if (fwd === 0 && side === 0) return [0, 0]
+  const s = Math.sin(yaw)
+  const c = Math.cos(yaw)
+  return [s * fwd - c * side, c * fwd + s * side]
+}

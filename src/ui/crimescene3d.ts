@@ -24,7 +24,7 @@ import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
   DEATH_AT, FLAG_KEY, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
-  clipRateFor, moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, variantFor, vignetteAt,
+  clipRateFor, moveDirFor, moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, variantFor, vignetteAt,
   VARIANT, type ScenePhase,
 } from './sceneRules'
 
@@ -1648,11 +1648,13 @@ export async function mountCrimeScene(
            * 키로 몸을 돌리던 시절엔 "좌우로밖에 시야가 안 된다" 는 말이 정확했다.
            * 앞뒤(W/S)는 보는 쪽, 좌우(A/D)는 그 직각. FPS 의 표준 문법 그대로다.
            */
-          if (fwd !== 0 || side !== 0) {
-            const sy = Math.sin(actor.rotation.y)
-            const cy = Math.cos(actor.rotation.y)
-            dir.set(sy * fwd + cy * side, 0, cy * fwd - sy * side)
-          }
+          /**
+           * 축 계산은 `sceneRules.moveDirFor` 가 소유한다 — 부호 하나가 틀리면
+           * A/D 가 반대로 가는데(실제로 그랬다) 3D 는 테스트가 못 닿기 때문이다.
+           * 여기서는 그 결과를 받아 쓰기만 한다. `tests/strafe.test.ts` 가 잠근다.
+           */
+          const [dx, dz] = moveDirFor(actor.rotation.y, fwd, side)
+          dir.set(dx, 0, dz)
         } else if (fwd !== 0 || side !== 0) {
           camera.getWorldDirection(camFwd)
           camFwd.y = 0
