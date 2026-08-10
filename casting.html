@@ -9,18 +9,21 @@
       font-family: 'Courier New', monospace; color: #e9e1d3; }
     #stage { position: fixed; inset: 0; }
     .bar {
-      position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 8px;
-      padding: 12px 16px; align-items: center; z-index: 10;
-      background: linear-gradient(#14100eee, transparent);
+      position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 6px;
+      padding: 10px 16px; align-items: center; z-index: 10; flex-wrap: wrap;
+      background: linear-gradient(#14100eee, #14100e88 70%, transparent);
     }
+    .bar button { white-space: nowrap; }
     .bar h1 { font-size: 14px; letter-spacing: .2em; margin: 0 16px 0 0; color: #c8912f; }
     .bar button {
       font: inherit; font-size: 12px; padding: 7px 14px; cursor: pointer;
       background: #221b17; color: #e9e1d3; border: 1px solid #4a3b2e;
     }
     .bar button.on { border-color: #c8912f; color: #c8912f; }
-    .cards { position: fixed; bottom: 0; left: 0; right: 0; display: flex; z-index: 10; }
-    .card { flex: 1; padding: 12px 16px 16px; background: linear-gradient(transparent, #14100ef2 30%); }
+    .cards { position: fixed; bottom: 0; left: 0; right: 0; display: flex; z-index: 10;
+      overflow-x: auto; background: linear-gradient(transparent, #14100ef2 30%); }
+    .card { flex: 0 0 auto; min-width: 150px; padding: 10px 14px 14px; }
+    .card.ours { opacity: .75; min-width: 118px; }
     .card b { color: #c8912f; font-size: 13px; }
     .card .meta { font-size: 11px; opacity: .8; margin-top: 4px; white-space: pre-line; }
     .card .compat { font-size: 11px; margin-top: 4px; }
@@ -33,7 +36,7 @@
     <h1>캐스팅 룸</h1>
     <span style="font-size:11px;opacity:.6">애니메이션:</span>
   </div>
-  <div id="hint">드래그 회전 · 휠 줌 · 후보는 왼쪽부터 ① Joe(Mixamo) ② character_type ③ private_investigator</div>
+  <div id="hint">드래그 회전 · 휠 줌 · 앞줄 = 다운로드 후보 3 · 뒷줄 = 우리 배우 8 (여기선 다리 보정 없이 재생 — 게임에선 보정됨)</div>
   <div id="stage"></div>
   <div class="cards"></div>
   <script type="module" src="/src/casting.ts"></script>

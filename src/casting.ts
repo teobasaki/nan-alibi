@@ -1,14 +1,20 @@
 /**
- * 캐스팅 룸 — **주인공 후보 3명을 같은 무대에 세우고 같은 클립을 먹여 본다.**
+ * 캐스팅 룸 — **후보와 재적 배우 전원을 같은 무대에 세우고 같은 클립을 먹여 본다.**
  *
- * dev 전용이다: 후보 파일(수십 MB FBX/GLB)은 ~/Downloads 에서 /@fs/ 로 직접 읽고
+ * dev 전용이다: 외부 후보(수십 MB FBX/GLB)는 ~/Downloads 에서 /@fs/ 로 직접 읽고
  * (vite.config server.fs.allow), casting.html 은 빌드 인풋에 없어 배포에 안 실린다.
  *
+ * 무대는 2열이다:
+ *   앞줄 — 다운로드 후보 3명 (Joe · 탐정 2종)
+ *   뒷줄 — 우리 게임 캐릭터 8종 (assets-src/*.mvrigged.glb, A포즈 원본)
+ *
  * 비교 축은 둘이다:
- * ① 눈 — 같은 조명 아래서 화풍·비율·질감이 게임과 어울리는가
- * ② 기계 — 우리 Mixamo 클립이 그 리그에 몇 %나 붙는가 (본 이름 매칭률)
- *    Mixamo 캐릭터는 100% 가 정상이고, Sketchfab 리그는 이름 규약이 다르면
- *    카드에 매칭률이 낮게 뜬다 — 그 수치가 곧 "리타게팅 노동의 양"이다.
+ * ① 눈 — 같은 조명 아래서 화풍·비율·질감
+ * ② 기계 — 클립 호환률(본 이름 매칭). Mixamo 리그는 100%, 이름 규약이 다르면
+ *    낮게 뜬다 — 그 수치가 곧 리타게팅 노동량이다.
+ *
+ * ⚠ 우리 8종은 여기서 **다리 축 보정(unrollLegs) 없이** 재생된다 — 게임에서는
+ * 보정이 걸리므로, 뒷줄 다리가 뒤틀려 보여도 그건 캐스팅 룸의 한계지 게임의 모습이 아니다.
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -16,70 +22,97 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 const DL = '/@fs/Users/teo/Downloads'
-/**
- * 후보는 ~/Downloads/character/ 에서 온다. character_cyberpunk(831MB)는
- * 브라우저가 감당 못 하는 크기 + 세계관 밖(SF)이라 명단에서 뺐다.
- */
-const CANDIDATES = [
-  { name: 'Joe (Mixamo)', url: `${DL}/character/Ch33_nonPBR.fbx`, kind: 'fbx' },
-  { name: 'character_type_detective', url: `${DL}/character/character_type_detective.glb`, kind: 'glb' },
-  { name: 'private_investigator', url: `${DL}/character/private_investigator_detective.glb`, kind: 'glb' },
-] as const
+// manager 는 A포즈 원본(mvrigged)이 없어 뺐다 — face 레퍼런스로 만든 배역이라 bust 뿐이다
+const OUR = ['security', 'investor', 'expartner', 'appraiser', 'secretary', 'housekeeping', 'nephew']
 
+interface Candidate { name: string; url: string; kind: 'fbx' | 'glb'; x: number; z: number; ours?: boolean }
+const CANDIDATES: Candidate[] = [
+  // 앞줄 — 다운로드 후보 (character_cyberpunk 831MB 는 브라우저가 감당 못 해 제외)
+  { name: 'Joe (Mixamo)', url: `${DL}/character/Ch33_nonPBR.fbx`, kind: 'fbx', x: -2.6, z: 1.5 },
+  { name: 'character_type_detective', url: `${DL}/character/character_type_detective.glb`, kind: 'glb', x: 0, z: 1.5 },
+  { name: 'private_investigator', url: `${DL}/character/private_investigator_detective.glb`, kind: 'glb', x: 2.6, z: 1.5 },
+  // 뒷줄 — 우리 배우들 (프로젝트 파일이라 dev 서버가 그대로 서빙한다)
+  ...OUR.map((slug, i): Candidate => ({
+    name: slug, url: `/assets-src/${slug}.mvrigged.glb`, kind: 'glb',
+    x: (i - (OUR.length - 1) / 2) * 1.7, z: -1.9, ours: true,
+  })),
+]
+
+/** ~/Downloads/anims/ 의 전 클립 — 새 파일을 받으면 여기 한 줄 추가 (폴더 스캔은 브라우저가 못 한다) */
 const CLIPS = [
-  { key: '대기', url: `${DL}/Breathing Idle (2).fbx` },
-  { key: '걷기', url: `${DL}/Walking.fbx` },
-  { key: '달리기', url: `${DL}/Running.fbx` },
-  { key: '집기', url: `${DL}/Taking Item.fbx` },
-  { key: '회전', url: `${DL}/Running To Turn.fbx` },
-] as const
+  '대기|Breathing Idle (2).fbx',
+  '걷기|Walking.fbx',
+  '달리기|Running.fbx',
+  '달리기B|Standard Run.fbx',
+  '집기|Taking Item.fbx',
+  '코너|Running To Turn.fbx',
+  '우회전|Running Right Turn.fbx',
+  '반전180|Running Turn 180.fbx',
+  '후진|Running Backward.fbx',
+  '벽run|Wall Run.fbx',
+  '소총대기|Rifle Idle.fbx',
+  '소총걷기|Rifle Walk.fbx',
+  '소총달리기|Rifle Run.fbx',
+  '사격|Firing Rifle.fbx',
+  '엎드려재장전|Prone Reloading.fbx',
+  '소총사망|Rifle Death.fbx',
+].map((s) => { const [key, file] = s.split('|') as [string, string]; return { key, url: `${DL}/anims/${file}` } })
 
-const X = [-2.6, 0, 2.6]
 const TARGET_H = 1.75      // 후보를 같은 키로 정규화 — 스케일 차이가 비교를 오염시키면 안 된다
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x14100e)
-scene.fog = new THREE.Fog(0x14100e, 9, 20)
+scene.fog = new THREE.Fog(0x14100e, 12, 26)
 
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 60)
-camera.position.set(0, 2.1, 6.4)
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 80)
+camera.position.set(0, 3.1, 9.2)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.shadowMap.enabled = true
 document.getElementById('stage')!.appendChild(renderer.domElement)
 const controls = new OrbitControls(camera, renderer.domElement)
-controls.target.set(0, 1, 0)
+controls.target.set(0, 1, -0.2)
 
-// 바닥 + 후보별 원판 + 스포트라이트 — 오디션 무대의 문법
 const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(30, 30),
+  new THREE.PlaneGeometry(40, 40),
   new THREE.MeshStandardMaterial({ color: 0x1c1613, roughness: 0.95 }),
 )
 floor.rotation.x = -Math.PI / 2
 floor.receiveShadow = true
 scene.add(floor)
-scene.add(new THREE.AmbientLight(0xfff2dd, 0.35))
-for (const x of X) {
+scene.add(new THREE.AmbientLight(0xfff2dd, 0.5))
+const sun = new THREE.DirectionalLight(0xffe6bf, 1.1)
+sun.position.set(4, 8, 6)
+sun.castShadow = true
+scene.add(sun)
+
+for (const c of CANDIDATES) {
   const disc = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.05, 1.05, 0.06, 40),
-    new THREE.MeshStandardMaterial({ color: 0x2a211b, roughness: 0.8 }),
+    new THREE.CylinderGeometry(c.ours ? 0.72 : 1.0, c.ours ? 0.72 : 1.0, 0.06, 36),
+    new THREE.MeshStandardMaterial({ color: c.ours ? 0x241d18 : 0x2e241d, roughness: 0.8 }),
   )
-  disc.position.set(x, 0.03, 0)
+  disc.position.set(c.x, 0.03, c.z)
   disc.receiveShadow = true
   scene.add(disc)
-  const spot = new THREE.SpotLight(0xffe6bf, 60, 14, Math.PI / 7, 0.45, 1.6)
-  spot.position.set(x, 5.2, 1.6)
-  spot.target.position.set(x, 1, 0)
+}
+// 앞줄 스포트라이트 — 오디션의 주인공은 후보다
+for (const c of CANDIDATES.filter((c) => !c.ours)) {
+  const spot = new THREE.SpotLight(0xffe6bf, 55, 15, Math.PI / 7, 0.45, 1.6)
+  spot.position.set(c.x, 5.2, c.z + 1.6)
+  spot.target.position.set(c.x, 1, c.z)
   spot.castShadow = true
   scene.add(spot, spot.target)
 }
 
-/** Mixamo 트랙 이름을 후보 리그의 본 이름에 붙여 본다 — 매칭률이 카드에 뜬다 */
+/** Mixamo 트랙 이름을 후보 리그에 붙여 본다 — 접두(mixamorig7·mixamorig:)와 접미(_01)를 벗겨 매칭 */
+const normKey = (s: string): string =>
+  s.toLowerCase().replace(/^mixamorig[:0-9]*/i, '').replace(/_\d+$/, '').replace(/[_\s]/g, '')
+
 function bindClip(clip: THREE.AnimationClip, root: THREE.Object3D): { clip: THREE.AnimationClip; pct: number } {
   const bones = new Map<string, string>()
   root.traverse((o) => {
-    const key = o.name.toLowerCase().replace(/^mixamorig[:0-9]*/i, '').replace(/_\d+$/, '').replace(/[_\s]/g, '')
+    const key = normKey(o.name)
     if (!bones.has(key)) bones.set(key, o.name)
   })
   const tracks: THREE.KeyframeTrack[] = []
@@ -88,28 +121,27 @@ function bindClip(clip: THREE.AnimationClip, root: THREE.Object3D): { clip: THRE
   for (const t of clip.tracks) {
     const [node, prop] = [t.name.slice(0, t.name.lastIndexOf('.')), t.name.slice(t.name.lastIndexOf('.') + 1)]
     nodesAll.add(node)
-    const key = node.toLowerCase().replace(/^mixamorig[:0-9]*/i, '').replace(/_\d+$/, '').replace(/[_\s]/g, '')
+    const key = normKey(node)
     const real = bones.get(key)
     if (real) {
       nodesHit.add(node)
       const nt = t.clone()
       nt.name = `${real}.${prop}`
-      // 루트 이동은 제자리 재생 — 무대를 벗어나면 비교가 안 된다
-      if (/hips/i.test(key) && prop === 'position') continue
+      if (/hips/i.test(key) && prop === 'position') continue   // 제자리 재생
       tracks.push(nt)
     }
   }
   return { clip: new THREE.AnimationClip(clip.name, clip.duration, tracks), pct: Math.round((nodesHit.size / Math.max(1, nodesAll.size)) * 100) }
 }
 
-interface Slot { name: string; root?: THREE.Object3D; mixer?: THREE.AnimationMixer; card: HTMLElement; own: THREE.AnimationClip[] }
+interface Slot { def: Candidate; root?: THREE.Object3D; mixer?: THREE.AnimationMixer; card: HTMLElement; own: THREE.AnimationClip[] }
 const cards = document.querySelector('.cards')!
-const slots: Slot[] = CANDIDATES.map((c) => {
+const slots: Slot[] = CANDIDATES.map((def) => {
   const card = document.createElement('div')
-  card.className = 'card'
-  card.innerHTML = `<b>${c.name}</b><div class="meta">불러오는 중…</div><div class="compat"></div>`
+  card.className = `card${def.ours ? ' ours' : ''}`
+  card.innerHTML = `<b>${def.name}</b><div class="meta">불러오는 중…</div><div class="compat"></div>`
   cards.appendChild(card)
-  return { name: c.name, card, own: [] }
+  return { def, card, own: [] }
 })
 
 const fbxLoader = new FBXLoader()
@@ -130,7 +162,7 @@ async function loadClip(url: string): Promise<THREE.AnimationClip | null> {
   } catch { return null }
 }
 
-function fit(root: THREE.Object3D, x: number): void {
+function fit(root: THREE.Object3D, x: number, z: number): void {
   const box = new THREE.Box3().setFromObject(root)
   const h = box.max.y - box.min.y
   const s = h > 0.01 ? TARGET_H / h : 1
@@ -138,13 +170,13 @@ function fit(root: THREE.Object3D, x: number): void {
   const box2 = new THREE.Box3().setFromObject(root)
   root.position.x = x - (box2.min.x + box2.max.x) / 2
   root.position.y -= box2.min.y
-  root.position.z = -(box2.min.z + box2.max.z) / 2
+  root.position.z = z - (box2.min.z + box2.max.z) / 2
   root.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true } })
 }
 
 async function loadCandidate(i: number): Promise<void> {
-  const c = CANDIDATES[i]!
   const slot = slots[i]!
+  const c = slot.def
   try {
     let root: THREE.Object3D
     let own: THREE.AnimationClip[] = []
@@ -155,17 +187,16 @@ async function loadCandidate(i: number): Promise<void> {
       const g = await glbLoader.loadAsync(c.url)
       root = g.scene; own = (g.animations ?? []).filter((a) => a.tracks.length > 0)
     }
-    fit(root, X[i]!)
+    fit(root, c.x, c.z)
     scene.add(root)
     slot.root = root
     slot.own = own
     slot.mixer = new THREE.AnimationMixer(root)
     let bones = 0
     root.traverse((o) => { if ((o as THREE.Bone).isBone) bones += 1 })
-    slot.card.querySelector('.meta')!.textContent =
-      `본 ${bones}개 · 내장 클립 ${own.length}개${own.length ? ` (${own.map((a) => a.name).slice(0, 2).join(', ')}…)` : ''}`
+    slot.card.querySelector('.meta')!.textContent = `본 ${bones} · 내장 ${own.length}`
   } catch (e) {
-    slot.card.querySelector('.meta')!.textContent = `로드 실패 — ${String(e).slice(0, 60)}`
+    slot.card.querySelector('.meta')!.textContent = `로드 실패 ${String(e).slice(0, 40)}`
   }
 }
 
@@ -182,9 +213,9 @@ async function playAll(key: string): Promise<void> {
     const { clip: bound, pct } = bindClip(clip, slot.root)
     const el = slot.card.querySelector('.compat')!
     el.className = `compat ${pct >= 80 ? 'ok' : pct >= 40 ? 'warn' : 'bad'}`
-    el.textContent = `클립 호환 ${pct}% ${pct >= 80 ? '— 무변환 사용 가능' : pct >= 40 ? '— 부분 매칭 (리타게팅 필요)' : '— 리그 상이 (리타게팅 필수)'}`
+    el.textContent = `호환 ${pct}%`
     if (bound.tracks.length) slot.mixer.clipAction(bound).play()
-    else if (slot.own[0]) slot.mixer.clipAction(slot.own[0]).play()   // 최소한 내장 클립이라도
+    else if (slot.own[0]) slot.mixer.clipAction(slot.own[0]).play()
   }
 }
 
@@ -195,7 +226,6 @@ for (const c of CLIPS) {
   b.onclick = () => void playAll(c.key)
   bar.appendChild(b)
 }
-// 내장 클립 재생 버튼 — Sketchfab 후보의 자체 애니를 본다
 const ownBtn = document.createElement('button')
 ownBtn.textContent = '내장'
 ownBtn.onclick = () => {
@@ -204,7 +234,7 @@ ownBtn.onclick = () => {
     if (!slot.mixer) continue
     slot.mixer.stopAllAction()
     if (slot.own[0]) slot.mixer.clipAction(slot.own[0]).play()
-    slot.card.querySelector('.compat')!.textContent = slot.own.length ? `내장 클립 재생: ${slot.own[0]!.name}` : '내장 클립 없음'
+    slot.card.querySelector('.compat')!.textContent = slot.own.length ? `내장: ${slot.own[0]!.name.slice(0, 14)}` : '내장 없음'
   }
 }
 bar.appendChild(ownBtn)
@@ -223,7 +253,10 @@ addEventListener('resize', () => {
 })
 
 void (async () => {
-  await Promise.all(CANDIDATES.map((_, i) => loadCandidate(i)))
+  // 앞줄 먼저(주인공 후보), 뒷줄은 이어서 — 54MB FBX 가 우리 8종을 막지 않게
+  await Promise.all(CANDIDATES.map((_, i) => (CANDIDATES[i]!.ours ? null : loadCandidate(i))))
+  await playAll(current)
+  await Promise.all(CANDIDATES.map((_, i) => (CANDIDATES[i]!.ours ? loadCandidate(i) : null)))
   await playAll(current)
 })()
 
