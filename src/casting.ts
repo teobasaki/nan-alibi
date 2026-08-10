@@ -16,10 +16,14 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 const DL = '/@fs/Users/teo/Downloads'
+/**
+ * 후보는 ~/Downloads/character/ 에서 온다. character_cyberpunk(831MB)는
+ * 브라우저가 감당 못 하는 크기 + 세계관 밖(SF)이라 명단에서 뺐다.
+ */
 const CANDIDATES = [
-  { name: 'Joe (Mixamo)', url: `${DL}/Ch33_nonPBR.fbx`, kind: 'fbx' },
-  { name: 'character_type_detective', url: `${DL}/character_type_detective.glb`, kind: 'glb' },
-  { name: 'private_investigator', url: `${DL}/private_investigator_detective.glb`, kind: 'glb' },
+  { name: 'Joe (Mixamo)', url: `${DL}/character/Ch33_nonPBR.fbx`, kind: 'fbx' },
+  { name: 'character_type_detective', url: `${DL}/character/character_type_detective.glb`, kind: 'glb' },
+  { name: 'private_investigator', url: `${DL}/character/private_investigator_detective.glb`, kind: 'glb' },
 ] as const
 
 const CLIPS = [
