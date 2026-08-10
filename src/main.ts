@@ -505,7 +505,7 @@ function exploreRoom(): HTMLElement {
   page.appendChild(pips)
 
   const bar = h('div', 'exbar')
-  const back = focusKey(h('button', 'backbtn', '← 책상으로'), 'exback') as HTMLButtonElement
+  const back = focusKey(h('button', 'backbtn', ui.wall && ui.chapter2 ? '← 카드 월' : '← 책상으로'), 'exback') as HTMLButtonElement
   back.onclick = () => {
     ui.explore?.handle?.dispose()
     ui.explore = null

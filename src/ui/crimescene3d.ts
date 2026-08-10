@@ -80,6 +80,21 @@ for (const [p, url] of Object.entries(CHAR)) {
   if (slug) WALK_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
 }
 
+/**
+ * 증거품 빌보드 아이콘 — `public/evidence/<kind>.webp` (연필 스케치 512px, 메인 세션 생성).
+ * **없으면 기존 프리미티브 마커가 그대로 돈다** — 인물 사진·효과음과 같은 에셋 0 원칙.
+ * import.meta.glob 은 빌드 타임에 실제 파일만 잡으므로 폴더가 비면 이 맵도 빈다.
+ */
+const EVIDENCE_FILES = import.meta.glob('/public/evidence/*.webp', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+
+const ICON_BY_KIND = new Map<string, string>()
+for (const [p, url] of Object.entries(EVIDENCE_FILES)) {
+  const k = p.split('/').pop()?.replace('.webp', '')
+  if (k) ICON_BY_KIND.set(k, (url as string).replace(/^\/public/, ''))
+}
+
 const ACTOR_HEIGHT = 1.78
 const EYE_HEIGHT = 1.64
 const MARK_Y = 0.8
@@ -280,6 +295,21 @@ export async function mountCrimeScene(
       return t
     })()
 
+    /** 아이콘 텍스처 캐시 — 같은 kind 를 다시 받지 않는다 */
+    const iconTex = new Map<string, THREE.Texture>()
+    const texLoader = new THREE.TextureLoader()
+    const iconFor = (kind: string): THREE.Texture | null => {
+      const url = ICON_BY_KIND.get(kind)
+      if (!url) return null
+      let t = iconTex.get(kind)
+      if (!t) {
+        t = texLoader.load(url)
+        t.colorSpace = THREE.SRGBColorSpace
+        iconTex.set(kind, t)
+      }
+      return t
+    }
+
     const setMarkers = (list: SceneMarker[]): void => {
       markers = list
       for (const c of markerRoot.children) {
@@ -289,13 +319,27 @@ export async function mountCrimeScene(
       }
       markerRoot.clear()
       for (const m of list) {
-        const g = new THREE.Mesh(
-          shapeOf(m.kind),
-          new THREE.MeshStandardMaterial({
-            color: m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber,
-            emissive: m.sealed ? 0x241f1a : m.crime ? 0x5a1a14 : 0x4a3410,
-            roughness: 0.45, metalness: 0.3,
-          }))
+        /**
+         * 빌보드 아이콘이 있으면 그것, 없으면 프리미티브 실루엣 — 폴백이 본선이다.
+         * 봉인은 회색으로 눌러 두고(틴트 곱), 범행 시각의 붉음은 발치 링이 계속 말한다.
+         */
+        const tex = iconFor(m.kind)
+        const g: THREE.Object3D = tex
+          ? new THREE.Sprite(new THREE.SpriteMaterial({
+              map: tex, transparent: true,
+              color: m.sealed ? 0x8a8078 : 0xffffff,
+            }))
+          : new THREE.Mesh(
+              shapeOf(m.kind),
+              new THREE.MeshStandardMaterial({
+                color: m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber,
+                emissive: m.sealed ? 0x241f1a : m.crime ? 0x5a1a14 : 0x4a3410,
+                roughness: 0.45, metalness: 0.3,
+              }))
+        if (tex) {
+          g.userData.baseScale = 0.85          // 스프라이트 배율은 월드 크기다 — 펄스가 덮으면 안 된다
+          g.scale.setScalar(0.85)
+        }
         g.position.set(m.at[0], MARK_Y, m.at[1])
         g.userData.id = m.id
         markerRoot.add(g)
@@ -313,6 +357,7 @@ export async function mountCrimeScene(
 
         if (m.sealed) {
           const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: lockTex, transparent: true, depthTest: false }))
+          sp.userData.baseScale = 0.42         // 펄스 루프가 배율을 덮으므로 기준값을 남긴다
           sp.scale.setScalar(0.42)
           sp.position.set(m.at[0], MARK_Y + 0.55, m.at[1])
           sp.userData.id = m.id
@@ -552,12 +597,14 @@ export async function mountCrimeScene(
         placeCam(camAngle0 + k * Math.PI * 2)
         const blink = 0.75 + 0.45 * Math.sin(k * Math.PI * 10)
         for (const g of markerRoot.children) {
-          if ((g as THREE.Mesh).geometry?.type !== 'RingGeometry') g.scale.setScalar(blink)
+          if ((g as THREE.Mesh).geometry?.type !== 'RingGeometry') {
+            g.scale.setScalar(((g.userData.baseScale as number) ?? 1) * blink)
+          }
         }
       } else if (prevPhase === 'survey') {
         placeCam(camAngle0)
         caption.classList.remove('on')
-        for (const g of markerRoot.children) g.scale.setScalar(1)
+        for (const g of markerRoot.children) g.scale.setScalar((g.userData.baseScale as number) ?? 1)
       }
 
       /* 이동 — collect 중에만. 화면 축 기준(정사영) / 몸 기준(1인칭) */
@@ -634,9 +681,10 @@ export async function mountCrimeScene(
         }
         for (const g of markerRoot.children) {
           const isHalo = (g as THREE.Mesh).geometry?.type === 'RingGeometry'
-          if (!isHalo) g.rotation.y += dt * 1.1
+          if (!isHalo) g.rotation.y += dt * 1.1   // 스프라이트에는 회전이 안 보인다 — 빌보드니까. 무해하다.
           const on = g.userData.id === near
-          g.scale.setScalar(on ? (isHalo ? 1.12 : 1.35) : 1)
+          const base = (g.userData.baseScale as number) ?? 1
+          g.scale.setScalar(base * (on ? (isHalo ? 1.12 : 1.35) : 1))
           if (isHalo) ((g as THREE.Mesh).material as THREE.Material).opacity = on ? 0.42 : 0.16
         }
 
