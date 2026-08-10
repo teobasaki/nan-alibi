@@ -125,6 +125,36 @@ export async function synthesize(
   }
 }
 
+/**
+ * **대사를 청크로 쪼갠다 — 첫 소리를 앞당기기 위해.**
+ *
+ * 합성 시간은 대체로 글자 수에 비례한다. 120자 한 덩어리를 통째로 보내면
+ * 2.3~2.6초를 다 기다린 뒤에야 첫 소리가 난다. 앞의 **몇 단어만 먼저** 보내면
+ * 그 조각은 훨씬 빨리 돌아오고, 나머지는 그 사이에 병렬로 합성된다.
+ *
+ * 첫 청크는 짧게(단어 3개 남짓), 그 뒤는 문장 단위로 묶는다 —
+ * 문장 중간에서 자르면 억양이 끊겨 로봇처럼 들린다. 첫 조각만 예외인 이유는
+ * 그 대가(억양 한 번 끊김)보다 **1초 이상 빠른 첫 소리**가 크기 때문이다.
+ */
+export function chunkSpeech(text: string): string[] {
+  const t = text.trim()
+  if (!t) return []
+  /**
+   * 문장 단위 1차 분할. **종결부호 뒤에서만** 자른다(lookbehind) —
+   * `match` 로 문장을 긁어모으면 `…글쎄요` 처럼 **부호로 시작하는 대사에서 앞머리가
+   * 조용히 사라진다**(테스트가 잡은 실제 버그). 자르기는 언제나 무손실이어야 한다.
+   */
+  const sentences = t.split(/(?<=[.!?…])\s+/).map((s) => s.trim()).filter(Boolean)
+  if (!sentences.length) return [t]
+  const first = sentences[0]!
+  // 첫 문장이 충분히 짧으면 그대로 첫 조각이다 — 쪼갤 이득이 없다
+  if (first.length <= 18) return sentences
+  // 아니면 첫 문장에서 단어 3개까지만 떼어낸다 (공백은 원문 그대로 둔다)
+  const m = /^(\S+\s+\S+\s+\S+)\s+([\s\S]+)$/.exec(first)
+  if (!m) return sentences
+  return [m[1]!, m[2]!, ...sentences.slice(1)]
+}
+
 let el: HTMLAudioElement | null = null
 
 /** 합성된 오디오를 재생한다. 이전 대사는 끊는다 — 두 용의자가 겹쳐 말하면 안 된다. */

@@ -124,16 +124,35 @@ export function speak(
     // 이 발화의 세대 번호. 도중에 다른 인물로 넘어가면(`stop()`) 늦게 온 오디오를 버린다 —
     // 안 버리면 이미 떠난 사람의 목소리가 뒤늦게 들린다.
     const gen = ++speakGen
-    void supertone.synthesize(reply.speech, reply.tell, pressureOf(reply), personaId).then((r) => {
-      if (isMuted() || gen !== speakGen) return
-      if (r) {
+    /**
+     * **문장이 완성되기를 기다리지 않고 청크로 쏜다** (사용자 지시).
+     *
+     * 합성 시간은 글자 수에 비례하므로, 앞의 몇 단어만 먼저 보내면 그 조각이
+     * 훨씬 먼저 돌아온다. 조각 전부를 **동시에** 요청해 두고(서로 독립된 호출이다)
+     * **순서대로 재생**한다 — 첫 조각이 울리는 동안 뒤 조각은 이미 합성 중이라,
+     * 총 대기는 "가장 긴 조각" 이 아니라 "첫 조각" 으로 줄어든다.
+     *
+     * 첫 조각이 실패하면 전체를 내장 합성으로 넘긴다. 중간 조각이 비면 그 조각만
+     * 건너뛴다 — 말이 조금 끊기는 것이 통째로 침묵하는 것보다 낫다.
+     */
+    const chunks = supertone.chunkSpeech(reply.speech)
+    const pressure = pressureOf(reply)
+    const pending = chunks.map((c) => supertone.synthesize(c, reply.tell, pressure, personaId))
+    void (async () => {
+      for (let i = 0; i < pending.length; i++) {
+        const r = await pending[i]!
+        if (isMuted() || gen !== speakGen) return
+        if (!r) {
+          // 첫 조각부터 못 냈으면 서버가 죽은 것이다 — 내장이 통째로 받는다
+          if (i === 0) speakLocal(reply, personaId)
+          continue
+        }
         setStage('speaking')
-        supertone.play(r.audio, () => setStage('idle'))
-      } else {
-        // 서버가 못 냈으면 내장이 받는다. 타이핑은 이미 돌고 있으므로 다시 물리지 않는다.
-        speakLocal(reply, personaId)
+        await new Promise<void>((done) => supertone.play(r.audio, done))
+        if (gen !== speakGen) return
       }
-    })
+      if (gen === speakGen) setStage('idle')
+    })()
     return
   }
 
