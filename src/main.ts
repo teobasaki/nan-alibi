@@ -680,7 +680,7 @@ function onScenePick(id: string): void {
       if (!CALM) csHandle.addPenalty(SCENE_FX.swapPenaltyMs)
       mark({ k: 'lookup', ev: id })
       playAny('pickup')
-      setTimeout(() => playAny('snap'), 220)
+      csHandle.flyFrom(id)     // 착지 프레임이 snap 을 낸다
       syncSceneState()
     })
     return
@@ -688,7 +688,7 @@ function onScenePick(id: string): void {
   ui.game = lookupEvidence(ui.game, id)
   mark({ k: 'lookup', ev: id })
   playAny('pickup')
-  setTimeout(() => playAny('snap'), 220)   // 폴라로이드가 가방에 꽂힌다
+  csHandle.flyFrom(id)         // 포물선 착지가 snap(폴라로이드 찰칵)을 낸다
   syncSceneState()
 }
 

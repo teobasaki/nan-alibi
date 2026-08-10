@@ -1779,3 +1779,38 @@ body::after {
   .pcard.enter, .pcard-out.fresh { animation: none; }
   .pcard-in, .pcard.flip .pcard-in, .pcard:hover .pcard-in { transition: none; }
 }
+
+/* ── 회중시계 초시계 (60 Seconds! 아날로그 시계의 누아르 번역 — 신규 블록) ── */
+.cs-timer.watch {
+  background: transparent; border: none; padding: 0; text-shadow: none;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  animation: none;
+}
+.cs-watch { width: 86px; height: 86px; filter: drop-shadow(0 3px 9px rgba(0, 0, 0, .65)); }
+.cw-case { fill: #2a1c20; stroke: var(--amber); stroke-width: 3; }
+.cw-face { fill: #e5dccb; }
+.cw-tick { stroke: #6d5f4c; stroke-width: 1.6; }
+.cw-sector { fill: rgba(179, 55, 44, .38); }
+.cw-needle { stroke: var(--red); stroke-width: 2.4; stroke-linecap: round; }
+.cw-pin { fill: #2a1c20; }
+.cs-digits {
+  font-family: var(--mono); font-size: 14px; letter-spacing: 1px; color: var(--ink);
+  background: rgba(13, 9, 8, .72); border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 9px;
+}
+.cs-timer.watch.hot .cs-digits { color: var(--red); border-color: var(--red); }
+.cs-timer.watch.hot .cw-needle { stroke-width: 3.2; }
+.cs-timer.watch.hot .cw-case { stroke: var(--red); }
+
+/* ── 수거 포물선 칩 — 증거가 가방으로 날아간다 (신규 블록) ── */
+.cs-fly {
+  position: absolute; left: -24px; top: -24px; width: 48px; height: 48px;
+  pointer-events: none; z-index: 5;
+  background: center / contain no-repeat;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .6));
+}
+.cs-fly.blank {
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e0b25a, #8a5f22 72%);
+  width: 22px; height: 22px; left: -11px; top: -11px;
+}

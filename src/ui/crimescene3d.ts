@@ -61,6 +61,11 @@ export interface CrimeScene {
   setBag(labels: string[], capacity: number): void
   /** 스왑 시간 비용 등 — 시계에 ms 를 얹는다 */
   addPenalty(ms: number): void
+  /**
+   * 수거 연출 — 그 자리에서 가방 슬롯으로 포물선 비행, 착지에 snap (60 Seconds! 해치 투척).
+   * **setMarkers 로 마커가 지워지기 전에** 불러야 출발 좌표가 남아 있다.
+   */
+  flyFrom(id: string): void
   /** 안내줄(봉인·가방 가득 등) — 힌트바에 잠깐 띄운다 */
   note(text: string): void
   /**
@@ -167,12 +172,15 @@ export async function mountCrimeScene(
     }
     mkWall(0, SCENE_ROOM.minZ - 0.15, 12.6, 0.3)          // 뒷벽
     mkWall(SCENE_ROOM.minX - 0.15, 0, 0.3, 9.6)           // 좌벽
-    mkWall(SCENE_ROOM.maxX + 0.15, 0, 0.3, 9.6)           // 우벽
-    // 앞벽(카메라 쪽)은 낮게 — 탑다운에서 방 안이 가려지면 안 된다
+    // **컷어웨이** — 카메라 쪽 두 벽(+X·+Z)은 낮춘다. 60 Seconds! 의 문법이고
+    // 경찰서 씬이 천장을 숨기는 것과 같은 이유다: 보여야 고를 수 있다.
     {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.5, 0.3), wallMat)
-      m.position.set(0, 0.25, SCENE_ROOM.maxZ + 0.15)
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 9.6), wallMat)
+      m.position.set(SCENE_ROOM.maxX + 0.15, 0.25, 0)
       scene.add(m)
+      const f = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.5, 0.3), wallMat)
+      f.position.set(0, 0.25, SCENE_ROOM.maxZ + 0.15)
+      scene.add(f)
     }
 
     // 장애물 — 충돌 표(SCENE_BOXES)와 **같은 표**로 그린다. 보이는 것과 막히는 것이 같아야 한다.
@@ -271,13 +279,17 @@ export async function mountCrimeScene(
     scene.add(markerRoot)
     let markers: SceneMarker[] = []
 
+    /**
+     * 실루엣은 explore3d 문법인데 크기는 **실물의 1.6배쯤**이다 — 60 Seconds! 의
+     * 수프캔이 얼굴만 한 것과 같은 이유. 아이소메트릭에서 읽혀야 줍고 싶어진다.
+     */
     const shapeOf = (k: SceneMarker['kind']): THREE.BufferGeometry => {
       switch (k) {
-        case 'cctv': return new THREE.ConeGeometry(0.28, 0.5, 4)
-        case 'keycard': return new THREE.BoxGeometry(0.44, 0.05, 0.28)
-        case 'call': return new THREE.TorusGeometry(0.22, 0.07, 8, 20)
-        case 'autopsy': return new THREE.CylinderGeometry(0.3, 0.34, 0.09, 14)
-        default: return new THREE.CylinderGeometry(0.06, 0.06, 0.52, 6)
+        case 'cctv': return new THREE.ConeGeometry(0.45, 0.8, 4)
+        case 'keycard': return new THREE.BoxGeometry(0.7, 0.08, 0.45)
+        case 'call': return new THREE.TorusGeometry(0.35, 0.11, 8, 20)
+        case 'autopsy': return new THREE.CylinderGeometry(0.48, 0.54, 0.14, 14)
+        default: return new THREE.CylinderGeometry(0.1, 0.1, 0.8, 6)
       }
     }
 
@@ -324,6 +336,7 @@ export async function mountCrimeScene(
          * 봉인은 회색으로 눌러 두고(틴트 곱), 범행 시각의 붉음은 발치 링이 계속 말한다.
          */
         const tex = iconFor(m.kind)
+        const baseEm = m.sealed ? 0x241f1a : m.crime ? 0x5a1a14 : 0x4a3410
         const g: THREE.Object3D = tex
           ? new THREE.Sprite(new THREE.SpriteMaterial({
               map: tex, transparent: true,
@@ -333,26 +346,29 @@ export async function mountCrimeScene(
               shapeOf(m.kind),
               new THREE.MeshStandardMaterial({
                 color: m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber,
-                emissive: m.sealed ? 0x241f1a : m.crime ? 0x5a1a14 : 0x4a3410,
+                emissive: baseEm,
                 roughness: 0.45, metalness: 0.3,
               }))
         if (tex) {
-          g.userData.baseScale = 0.85          // 스프라이트 배율은 월드 크기다 — 펄스가 덮으면 안 된다
-          g.scale.setScalar(0.85)
+          g.userData.baseScale = 1.3           // 스프라이트 배율은 월드 크기다 — 펄스가 덮으면 안 된다
+          g.scale.setScalar(1.3)
         }
+        g.userData.em = baseEm                 // 근접 하이라이트가 되돌릴 기준값
         g.position.set(m.at[0], MARK_Y, m.at[1])
         g.userData.id = m.id
         markerRoot.add(g)
 
+        const haloCol = m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber
         const halo = new THREE.Mesh(
           new THREE.RingGeometry(SCENE_FX.pickRadius - 0.1, SCENE_FX.pickRadius, 28),
           new THREE.MeshBasicMaterial({
-            color: m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber,
+            color: haloCol,
             transparent: true, opacity: 0.16, side: THREE.DoubleSide,
           }))
         halo.rotation.x = -Math.PI / 2
         halo.position.set(m.at[0], 0.04, m.at[1])
         halo.userData.id = m.id
+        halo.userData.col = haloCol            // 근접 시 흰빛으로 바꿨다 되돌릴 기준값
         markerRoot.add(halo)
 
         if (m.sealed) {
@@ -371,9 +387,34 @@ export async function mountCrimeScene(
     hud.className = 'cs-hud'
     host.appendChild(hud)
 
+    /**
+     * 초시계 = **놋쇠 회중시계** (60 Seconds! 의 아날로그 시계를 누아르로 번역).
+     * 남은 시간이 붉은 부채꼴로 줄고, 마지막 5초에는 침이 떨린다.
+     * 숫자(십분의일초)는 시계 아래 작게 병기 — 기획서 §5의 가독 요구는 숫자가 진다.
+     */
     const timerEl = document.createElement('div')
-    timerEl.className = 'cs-timer'
-    timerEl.textContent = '00:30.0'          // 훑기 중에도 판돈이 보인다
+    timerEl.className = 'cs-timer watch'
+    const WR = 38   // 부채꼴 반지름 (viewBox 좌표)
+    const ticksSvg = Array.from({ length: 12 }, (_, i) => {
+      const a = i * Math.PI / 6
+      const sx = 50 + 34 * Math.sin(a)
+      const sy = 50 - 34 * Math.cos(a)
+      const ex = 50 + 40 * Math.sin(a)
+      const ey = 50 - 40 * Math.cos(a)
+      return `<line class="cw-tick" x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}"/>`
+    }).join('')
+    timerEl.innerHTML =
+      `<svg class="cs-watch" viewBox="0 0 100 100" aria-hidden="true">` +
+      `<circle class="cw-case" cx="50" cy="50" r="47"/>` +
+      `<circle class="cw-face" cx="50" cy="50" r="42"/>` +
+      ticksSvg +
+      `<path class="cw-sector" d="M50,50 L50,${50 - WR} A${WR},${WR} 0 1 1 ${(50 - 0.01).toFixed(2)},${50 - WR} Z"/>` +
+      `<line class="cw-needle" x1="50" y1="50" x2="50" y2="${50 - WR - 2}"/>` +
+      `<circle class="cw-pin" cx="50" cy="50" r="2.6"/>` +
+      `</svg><span class="cs-digits">00:30.0</span>`
+    const sectorEl = timerEl.querySelector('.cw-sector')!
+    const needleEl = timerEl.querySelector('.cw-needle')!
+    const digitsEl = timerEl.querySelector('.cs-digits')!
     if (!calm) hud.appendChild(timerEl)      // calm 은 타이머 미표시 (기획서 ⑥)
 
     const bagEl = document.createElement('div')
@@ -427,6 +468,50 @@ export async function mountCrimeScene(
         bagEl.appendChild(slot)
       }
       bagEl.dataset.n = String(labels.length)
+    }
+
+    /**
+     * 수거 포물선 — 증거가 화면의 그 자리에서 가방 슬롯으로 날아가 꽂힌다.
+     * 착지 프레임에 snap(폴라로이드 찰칵) — 소리가 연출의 마침표다.
+     * 모션 축소면 비행 없이 소리만 낸다.
+     */
+    const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const flyFrom = (id: string): void => {
+      if (REDUCED) { sfx('snap'); return }
+      const m = markers.find((x) => x.id === id)
+      if (!m) return
+      const cam = firstPerson ? eye : camera
+      const v = new THREE.Vector3(m.at[0], MARK_Y, m.at[1]).project(cam)
+      const hw2 = host.clientWidth
+      const hh2 = host.clientHeight
+      const x0 = (v.x / 2 + 0.5) * hw2
+      const y0 = (-v.y / 2 + 0.5) * hh2
+      // 착지 칸 = 지금 가득 찬 칸 수 번째 (이 연출 직후 setBag 이 그 칸을 채운다)
+      const nFull = bagEl.querySelectorAll('.cs-slot.full').length
+      const slot = bagEl.children[Math.min(nFull, Math.max(0, bagEl.children.length - 1))] as HTMLElement | undefined
+      const hostR = host.getBoundingClientRect()
+      const sr = slot?.getBoundingClientRect()
+      const x1 = sr ? sr.left + sr.width / 2 - hostR.left : hw2 / 2
+      const y1 = sr ? sr.top + sr.height / 2 - hostR.top : hh2 - 60
+      const chip = document.createElement('div')
+      chip.className = 'cs-fly'
+      const iconUrl = ICON_BY_KIND.get(m.kind)
+      if (iconUrl) chip.style.backgroundImage = `url(${iconUrl})`
+      else chip.classList.add('blank')
+      host.appendChild(chip)
+      const t0 = performance.now()
+      const DUR = 400
+      const ARC = Math.max(90, Math.abs(y1 - y0) * 0.35)
+      const step = (): void => {
+        if (!alive) return chip.remove()
+        const k = Math.min(1, (performance.now() - t0) / DUR)
+        const x = x0 + (x1 - x0) * k
+        const y = y0 + (y1 - y0) * k - ARC * 4 * k * (1 - k)   // 포물선
+        chip.style.transform = `translate(${x}px, ${y}px) rotate(${(k * 260).toFixed(0)}deg) scale(${(1 - k * 0.35).toFixed(3)})`
+        if (k < 1) requestAnimationFrame(step)
+        else { chip.remove(); sfx('snap') }
+      }
+      step()
     }
 
     /* ── 스왑 선택지 — 시계는 계속 돈다 ── */
@@ -679,13 +764,24 @@ export async function mountCrimeScene(
             hintEl.classList.toggle('on', want !== '')
           }
         }
+        /**
+         * 근접 신호 — 부풀림 + **흰 윤곽빛** (60 Seconds! 의 흰 컨투어를 우리 재질로 번역).
+         * 실루엣은 emissive 를 종이빛으로 끌어올리고, 발치 링은 흰색으로 바뀐다 —
+         * "지금 손에 닿는다" 가 색으로 읽힌다. 떠나면 기준값(userData.em/col)으로 되돌린다.
+         */
         for (const g of markerRoot.children) {
           const isHalo = (g as THREE.Mesh).geometry?.type === 'RingGeometry'
           if (!isHalo) g.rotation.y += dt * 1.1   // 스프라이트에는 회전이 안 보인다 — 빌보드니까. 무해하다.
           const on = g.userData.id === near
           const base = (g.userData.baseScale as number) ?? 1
           g.scale.setScalar(base * (on ? (isHalo ? 1.12 : 1.35) : 1))
-          if (isHalo) ((g as THREE.Mesh).material as THREE.Material).opacity = on ? 0.42 : 0.16
+          const mat = (g as THREE.Mesh).material as THREE.MeshStandardMaterial & THREE.MeshBasicMaterial
+          if (isHalo) {
+            mat.opacity = on ? 0.5 : 0.16
+            mat.color.setHex(on ? 0xf5efe0 : ((g.userData.col as number) ?? COL.amber))
+          } else if (typeof g.userData.em === 'number' && mat.emissive) {
+            mat.emissive.setHex(on ? 0xbdb49e : (g.userData.em as number))
+          }
         }
 
         /* 시계·압박 곡선 — calm 은 전부 건너뛴다 */
@@ -693,9 +789,23 @@ export async function mountCrimeScene(
           const rm = remainMs(elapsed)
           const sec = Math.floor(rm / 1000)
           const tenth = Math.floor((rm % 1000) / 100)
-          timerEl.textContent = `00:${String(sec).padStart(2, '0')}.${tenth}`
+          digitsEl.textContent = `00:${String(sec).padStart(2, '0')}.${tenth}`
           const pulse = pulseAt(rm / 1000)
           timerEl.classList.toggle('hot', pulse === 'heart')
+          // 회중시계 — 남은 시간의 붉은 부채꼴이 줄고, 침이 그 가장자리를 짚는다
+          const frac = rm / SCENE_FX.collectMs
+          const ang = frac * Math.PI * 2
+          if (frac > 0.9995) {
+            sectorEl.setAttribute('d', `M50,50 L50,${50 - WR} A${WR},${WR} 0 1 1 49.99,${50 - WR} Z`)
+          } else {
+            const px = 50 + WR * Math.sin(ang)
+            const py = 50 - WR * Math.cos(ang)
+            sectorEl.setAttribute('d',
+              `M50,50 L50,${50 - WR} A${WR},${WR} 0 ${ang > Math.PI ? 1 : 0} 1 ${px.toFixed(2)},${py.toFixed(2)} Z`)
+          }
+          // 마지막 5초 — 침이 떨린다 (결정론: elapsed 기반 사인, Math.random 금지)
+          const jitter = pulse === 'heart' ? Math.sin(elapsed * 0.045) * 3.2 : 0
+          needleEl.setAttribute('transform', `rotate(${(ang * 180 / Math.PI + jitter).toFixed(2)} 50 50)`)
           if (pulse === 'heart') {
             if (performance.now() - lastHeartAt > SCENE_FX.heartGapMs) {
               lastHeartAt = performance.now()
@@ -749,6 +859,7 @@ export async function mountCrimeScene(
       setMarkers,
       setBag,
       addPenalty: (ms) => { elapsedMs += ms },
+      flyFrom,
       note,
       openSwap,
       dispose() {
