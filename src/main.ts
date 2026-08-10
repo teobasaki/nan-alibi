@@ -277,6 +277,15 @@ const h = (tag: string, cls?: string, text?: string): HTMLElement => {
   return n
 }
 
+/**
+ * 오버레이를 부드럽게 걷는다 (P2-2) — 즉발 제거는 전환이 아니라 스위치다.
+ * 모션 축소 설정이면 CSS 전환이 0 이 되므로 타이머만 짧게 남는다.
+ */
+function fadeOut(ov: HTMLElement): void {
+  ov.classList.add('fadeout')
+  setTimeout(() => ov.remove(), 400)
+}
+
 /* ─────────── 상단 바 ─────────── */
 function topbar(): HTMLElement {
   const bar = h('div', 'topbar')
@@ -349,6 +358,21 @@ function stageChip(): HTMLElement {
     row.appendChild(cell)
   })
   box.appendChild(row)
+
+  /**
+   * 타이핑 인디케이터 (P2-1) — 점 세 개가 숨쉬고, 기다림에 인물의 결을 입힌다.
+   * 파이프라인 칩은 "시스템이 무엇을 하나" 를, 이 줄은 "사람이 무엇을 하나" 를 말한다 —
+   * 같은 2초가 지연이 아니라 망설임으로 읽히게.
+   */
+  const typing = h('div', 'typing')
+  typing.appendChild(h('i'))
+  typing.appendChild(h('i'))
+  typing.appendChild(h('i'))
+  typing.appendChild(h('span', 'typing-l',
+    now === 'verifying' ? '한 말을 되짚어 보고 있다'
+    : now === 'synthesizing' || now === 'speaking' ? '목소리를 고르고 있다'
+    : '말을 고르고 있다'))
+  box.appendChild(typing)
   return box
 }
 
@@ -411,6 +435,11 @@ function exploreRoom(): HTMLElement {
   const page = h('div', 'nb-page nb-left explore')
   const host = exploreEl          // 새로 만들지 않는다 — 옮겨 붙일 뿐이다
   page.appendChild(host)
+
+  // 씬이 서는 동안 검은 화면을 두지 않는다 (P2-4) — 로딩도 장면의 일부여야 한다
+  if (!ui.explore?.handle) {
+    page.appendChild(h('div', 'exloading', '경찰서로 이동 중 — 복도 불이 먼저 켜진다…'))
+  }
 
   /**
    * **조사 잔량을 화면 안에 박는다.**
@@ -503,6 +532,7 @@ function exploreRoom(): HTMLElement {
       ui.explore.handle = hd
       hd.setMarkers(exploreMarkers())
       void hd.setSeats(exploreSeats())
+      render()   // 로딩 표시를 걷는다 (P2-4) — handle 이 생겼으니 재렌더가 그 사실을 그린다
     })
   } else if (ui.explore?.handle) {
     ui.explore.handle.setMarkers(exploreMarkers())
@@ -1327,7 +1357,8 @@ function syncChapter(): void {
 function gatePass(): boolean {
   if (ui.chapter2) return true
   play('deny')
-  ui.gateMsg = `현장 조사 ${ui.game.investigationsLeft}회 남음 — 조사를 마치면 심문이 열린다`
+  // 디에게틱 문구 (P2-3) — 매뉴얼이 아니라 형사의 독백. 숫자(남은 횟수)는 남긴다.
+  ui.gateMsg = `아직 현장이 남았다 — 기록 ${ui.game.investigationsLeft}건을 더 꺼내 보기 전엔 취조실 문이 열리지 않는다.`
   render()
   setTimeout(() => { if (ui.gateMsg) { ui.gateMsg = null; render() } }, 2600)
   return false
@@ -1382,7 +1413,7 @@ function openCaseReview(): void {
 
   const go = h('button', undefined, '심문 시작') as HTMLButtonElement
   go.style.marginTop = '12px'
-  go.onclick = () => { play('paper'); ov.remove(); render() }
+  go.onclick = () => { play('paper'); fadeOut(ov); render() }
   sheet.appendChild(go)
 
   ov.appendChild(sheet)
@@ -1414,6 +1445,8 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   mark({ k: 'ask', who: s, preset: PRESETS.some((p) => p.q === q), fallback: r.fallback })
   ui.chats[s] = [...ui.chats[s]!, { q, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement }]
   ui.busy = false
+  // 응답 도착음 (P2-1) — 조서 한 장이 놓이는 소리. 폴백은 아무것도 도착하지 않은 것이다.
+  if (!r.fallback) play('paper')
   render()
   animateLast(r.reply.speech)
   // 3D 인물 옆에도 띄운다 — 심문 중 눈은 아래 로그가 아니라 얼굴에 가 있다
@@ -1928,6 +1961,7 @@ function renderResultSheet(
   /**
    * 새 게임 = **다음 무대** (P1 로테이션). 호텔 → 경매장 → 방송국 → 극장 → 호텔.
    * 시드는 지운다 — 로드 시 검증된 풀에서 새로 뽑힌다 (ADR 012).
+   * 다음 무대 이름을 버튼이 미리 말해주면 스포일러가 아니라 초대가 된다.
    */
   fresh.onclick = () => {
     const cur = IS_GC001 ? null : (WORLD_ID && WORLD_PACKS[WORLD_ID] ? WORLD_ID : null)
@@ -2017,7 +2051,7 @@ function openBriefing(): void {
     void probeProviders().then(() => { if (ui.dash) render() })
     // 서버 음성을 쓸 수 있는지만 확인한다. 목소리·감정 배정은 배역표가 안다.
     void probeKey()
-    ov.remove()
+    fadeOut(ov)   // 브리핑 → 보드 전환은 페이드로 (P2-2) — 수첩 펼침 연출과 0.4초쯤 겹친다
     /**
      * **수첩이 펼쳐지며 수사가 시작된다.**
      *
@@ -2060,28 +2094,27 @@ function coachLine(): string {
   const g = ui.game
   const hasEvidence = g.cards.some((id) => CASE.evidence.some((e) => e.id === id))
 
-  // ── 1장: 현장 조사 ──
+  // ── 1장: 현장 조사 — 디에게틱 독백체 (P2-3). 명료성(숫자·다음 행동)은 유지한다.
   if (!fieldDone(g)) {
     if (!hasEvidence) {
-      return `① 현장 조사 ${g.investigationsLeft}회 — 오른쪽 기록철에서 기록을 조회하십시오. ` +
-        `조사를 마쳐야 심문이 열립니다.`
+      return `① 현장 조사 ${FIELD_BUDGET}회 — 기록철에서 다섯 번만 꺼내 볼 수 있다. 무엇을 포기할지가 수사다.`
     }
     const hasCrimeRecord = CASE.evidence.some((e) => g.cards.includes(e.id) && e.slot === CRIME_SLOT)
     if (!hasCrimeRecord && availableEvidence(g).some((e) => e.slot === CRIME_SLOT && e.kind !== 'autopsy')) {
-      return `② 사람을 지우는 건 ${SLOT_L(CRIME_SLOT)} 기록뿐입니다 — 남은 ${g.investigationsLeft}회 중 하나는 거기 쓰십시오.`
+      return `② 사람을 지우는 건 ${SLOT_L(CRIME_SLOT)} 기록뿐이다 — 남은 ${g.investigationsLeft}번 중 하나는 거기 쓴다.`
     }
-    return `② 현장 조사 ${g.investigationsLeft}회 남음 — 무엇을 포기할지 고르는 것도 조사입니다. 조사를 마치면 심문이 열립니다.`
+    return `② 기록철을 ${g.investigationsLeft}번 더 열 수 있다 — 버리는 기록을 정하는 것도 수사다. 조사가 끝나면 취조실이 열린다.`
   }
 
   // ── 2장: 심문 ──
   const interviewed = SUSPECTS.some((s) => (ui.chats[s]?.length ?? 0) > 0)
-  if (!interviewed) return '③ 심문이 열렸습니다 — 대조표의 이름을 눌러 데려오십시오. 인당 대화 10회가 상한입니다.'
-  if (g.foundContradictions.length === 0) return '③ 기록 카드와 진술 카드를 하나씩 눌러 연결하십시오. 무료입니다.'
+  if (!interviewed) return '③ 취조실이 열렸다 — 대조표의 이름을 눌러 데려온다. 한 사람과 나눌 수 있는 말은 열 마디뿐이다.'
+  if (g.foundContradictions.length === 0) return '③ 기록 한 장과 진술 한 칸을 맞대 본다 — 종이는 공짜고, 어긋나면 인장이 찍힌다.'
   const sceneLocked = lockedRecords(g).some((l) => l.evidence.decisive)
   if (sceneLocked) {
-    return '④ 모순이 나온 인물에게 그 증거를 제시하면 새 진술이 열립니다 — 잠긴 현장 기록(통찰 +10)의 열쇠입니다.'
+    return '④ 모순이 걸린 사람에게 그 종이를 들이민다 — 흔들리면 잠긴 기록의 자물쇠가 풀린다.'
   }
-  return '④ 근거가 모였으면 상단 [최종 추론]으로 결론을 내리십시오 — 범인·동기·도구 세 가지를 지목합니다.'
+  return '④ 근거는 모였다 — [최종 추론]에서 누가, 왜, 무엇으로. 세 줄이면 사건이 닫힌다.'
 }
 
 /* ─────────── 렌더 ─────────── */

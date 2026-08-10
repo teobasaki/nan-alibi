@@ -1457,3 +1457,34 @@ body::after {
   font-family: var(--serif); font-size: 14.5px; line-height: 1.85;
   color: var(--ink); word-break: keep-all;
 }
+
+/* ─────────── P2 몰입 루프 — 신규 클래스 (기존 규칙 무수정) ─────────── */
+
+/* 타이핑 인디케이터 — 점 세 개가 숨쉰다. 지연을 망설임으로 읽히게 */
+.typing { display: flex; align-items: center; gap: 5px; margin-top: 7px; }
+.typing i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--muted); opacity: .35;
+  animation: typingBreath 1.3s ease-in-out infinite;
+}
+.typing i:nth-child(2) { animation-delay: .22s; }
+.typing i:nth-child(3) { animation-delay: .44s; }
+@keyframes typingBreath { 0%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: .9; transform: translateY(-2px); } }
+.typing-l { font-size: 11.5px; color: var(--muted); font-style: italic; margin-left: 3px; }
+
+/* 오버레이 페이드아웃 — 브리핑·수사 정리가 걷힐 때 (P2-2) */
+.overlay.fadeout { opacity: 0; transition: opacity .38s ease; pointer-events: none; }
+
+/* 경찰서 3D 로딩 — 씬이 서는 동안의 한 줄 (P2-4) */
+.exloading {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 14px; letter-spacing: .08em;
+  color: var(--muted); background: rgba(13, 9, 8, .55);
+  animation: fadein .3s ease-out; pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing i { animation: none; opacity: .7; }
+  .overlay.fadeout { transition: none; }
+}
