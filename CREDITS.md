@@ -54,6 +54,12 @@ CC-BY 계열이면 저작자 표기로 충족된다. NC(비상업)·ND(변경 �
 | 에셋 | 저장소 경로 | 상태 |
 |---|---|---|
 | **미술관(갤러리) 방** | `public/room/gallery.opt.glb` (원본 `art_gallery.glb`, Sketchfab 제너레이터 흔적) | **출처 확인 필요** — 사용자가 원본 페이지 URL·저작자·라이선스를 주면 채운다. 확인 전에는 제출물에 포함하지 않는 것이 이 문서 서두의 원칙이다 |
+| 1970s 보안 카메라 | `public/props/ev-cctv.opt.glb` | **출처 확인 필요** |
+| 필름 릴 | `public/props/ev-reel.opt.glb` | **출처 확인 필요** |
+| 앤티크 다이얼 전화기 | `public/props/ev-call.opt.glb` | **출처 확인 필요** |
+| 서류 뭉치 | `public/props/ev-receipt.opt.glb` | **출처 확인 필요** |
+| 왕진 가방 | `public/props/ev-autopsy.opt.glb` | **출처 확인 필요** |
+| 나무 운송 상자 | `public/props/crate.opt.glb` | **출처 확인 필요** |
 
 ## 생성 에셋 — 저작권이 이쪽에 있는 것
 

@@ -158,10 +158,31 @@ for (const [p, url] of Object.entries(IDLE)) {
   if (slug) IDLE_BY_SLUG.set(slug, (url as string).replace(/^\/public/, ''))
 }
 
+/**
+ * 증거품 실모델 (`public/props/ev-<kind>.opt.glb`) — 표현 서열: **실모델 > 빌보드 > 프리미티브.**
+ * 없는 kind(keycard 봉인 봉투 등)는 아래 단계가 그대로 받는다 — 에셋 0 원칙.
+ * crate.opt.glb 는 증거품이 아니라 지형 소품(운송 상자 더미)의 옷이다.
+ */
+const PROP_FILES = import.meta.glob('/public/props/ev-*.opt.glb', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+
+const PROP_BY_KIND = new Map<string, string>()
+for (const [p, url] of Object.entries(PROP_FILES)) {
+  const k = p.split('/').pop()?.replace(/^ev-/, '').replace('.opt.glb', '')
+  if (k) PROP_BY_KIND.set(k, (url as string).replace(/^\/public/, ''))
+}
+
+const CRATE_URL = (Object.values(
+  import.meta.glob('/public/props/crate.opt.glb', { eager: true, query: '?url', import: 'default' }),
+)[0] as string | undefined)?.replace(/^\/public/, '')
+
 const ACTOR_HEIGHT = 1.78
 const EYE_HEIGHT = 1.64
 const MARK_Y = 0.8
 const TURN = 2.4
+/** 증거품 실모델의 목표 최대 치수(m) — 0.5m 급 소품 × 과장 1.6배 규칙 */
+const PROP_TARGET = 0.85
 
 /** 씬 팔레트 — style.css 의 세계(불 꺼진 갤러리)와 같은 계열 */
 const COL = {
@@ -344,12 +365,51 @@ export async function mountCrimeScene(
       mkWall(CX, SCENE_ROOM.maxZ + 0.15, RW, 0.3, 0.5)
     }
 
+    /**
+     * 증거품 실모델 프로토 — mount 중 한 번씩 받아 두면 setMarkers 가 동기로 복제한다.
+     * bbox 실측으로 최대 치수를 PROP_TARGET(0.85m — 0.5m 급 × 과장 1.6배)에 정규화.
+     */
+    const propProto = new Map<string, { obj: THREE.Object3D; scale: number }>()
+    await Promise.all([...PROP_BY_KIND.entries()].map(async ([kind, url]) => {
+      try {
+        const g = await loader.loadAsync(url)
+        const size = new THREE.Vector3()
+        new THREE.Box3().setFromObject(g.scene).getSize(size)
+        const maxD = Math.max(size.x, size.y, size.z)
+        g.scene.traverse((o) => {
+          const mm = o as THREE.Mesh
+          if (mm.isMesh) { mm.castShadow = true }
+        })
+        propProto.set(kind, { obj: g.scene, scale: maxD > 0 ? PROP_TARGET / maxD : 1 })
+      } catch { /* 이 kind 는 빌보드/프리미티브가 받는다 */ }
+    }))
+
     // 장애물 — 충돌 표(SCENE_BOXES)와 **같은 표**로 그린다. 보이는 것과 막히는 것이 같아야 한다.
+    // 운송 상자는 실모델(crate.opt.glb)이 있으면 그 옷을 입는다 — 충돌은 여전히 표가 정한다.
+    let crateProto: { obj: THREE.Object3D; scale: number } | null = null
+    if (CRATE_URL) {
+      try {
+        const g = await loader.loadAsync(CRATE_URL)
+        const size = new THREE.Vector3()
+        new THREE.Box3().setFromObject(g.scene).getSize(size)
+        const maxH = Math.max(size.x, size.z)
+        g.scene.traverse((o) => { const mm = o as THREE.Mesh; if (mm.isMesh) mm.castShadow = true })
+        crateProto = { obj: g.scene, scale: maxH > 0 ? 1 / maxH : 1 }
+      } catch { /* 프리미티브 상자가 받는다 */ }
+    }
     const boxMat: Record<string, THREE.MeshStandardMaterial> = {
       pedestal: mat(COL.pedestal, 0.7), partition: mat(COL.partition, 0.85),
       crate: mat(COL.crate, 0.9), desk: mat(COL.desk, 0.75),
     }
     for (const b of SCENE_BOXES) {
+      if (b.kind === 'crate' && crateProto) {
+        const c = crateProto.obj.clone()
+        c.scale.setScalar(crateProto.scale * b.hx * 2)
+        const bb = new THREE.Box3().setFromObject(c)
+        c.position.set(b.x, -bb.min.y, b.z)      // 바닥에 접지
+        scene.add(c)
+        continue
+      }
       const m = new THREE.Mesh(new THREE.BoxGeometry(b.hx * 2, b.h, b.hz * 2), boxMat[b.kind]!)
       m.position.set(b.x, b.h / 2, b.z)
       m.castShadow = true
@@ -585,6 +645,8 @@ export async function mountCrimeScene(
         const m = c as THREE.Mesh
         m.geometry?.dispose?.()
         ;((m as unknown as { material?: THREE.Material }).material)?.dispose?.()
+        // 실모델 마커 — 지오메트리는 프로토와 공유라 두고, 복제한 재질만 버린다
+        if (Array.isArray(c.userData.mats)) for (const mm of c.userData.mats as THREE.Material[]) mm.dispose()
       }
       markerRoot.clear()
       for (const m of list) {
@@ -592,25 +654,45 @@ export async function mountCrimeScene(
          * 빌보드 아이콘이 있으면 그것, 없으면 프리미티브 실루엣 — 폴백이 본선이다.
          * 봉인은 회색으로 눌러 두고(틴트 곱), 범행 시각의 붉음은 발치 링이 계속 말한다.
          */
+        const proto = propProto.get(m.kind)
         const tex = iconFor(m.kind)
         const baseEm = m.sealed ? 0x241f1a : m.crime ? 0x5a1a14 : 0x4a3410
-        const g: THREE.Object3D = tex
-          ? new THREE.Sprite(new THREE.SpriteMaterial({
-              map: tex, transparent: true,
-              color: m.sealed ? 0x8a8078 : 0xffffff,
-            }))
-          : new THREE.Mesh(
-              shapeOf(m.kind),
-              new THREE.MeshStandardMaterial({
-                color: m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber,
-                emissive: baseEm,
-                roughness: 0.45, metalness: 0.3,
-              }))
-        if (tex) {
+        let g: THREE.Object3D
+        if (proto) {
+          /* 실모델 — 재질은 인스턴스마다 복제한다: 근접 흰 윤곽빛이 이웃에게 새면 안 된다 */
+          g = proto.obj.clone()
+          const mats: THREE.MeshStandardMaterial[] = []
+          g.traverse((o) => {
+            const mm = o as THREE.Mesh
+            if (!mm.isMesh) return
+            mm.material = Array.isArray(mm.material)
+              ? mm.material.map((x) => (x as THREE.Material).clone())
+              : (mm.material as THREE.Material).clone()
+            for (const x of (Array.isArray(mm.material) ? mm.material : [mm.material]) as THREE.MeshStandardMaterial[]) {
+              if (m.sealed && x.color) x.color.multiplyScalar(0.55)   // 봉인 — 잿빛으로 눌러 둔다
+              mats.push(x)
+            }
+          })
+          g.userData.mats = mats
+          g.userData.baseScale = proto.scale
+          g.scale.setScalar(proto.scale)
+        } else if (tex) {
+          g = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: tex, transparent: true,
+            color: m.sealed ? 0x8a8078 : 0xffffff,
+          }))
           g.userData.baseScale = 1.3           // 스프라이트 배율은 월드 크기다 — 펄스가 덮으면 안 된다
           g.scale.setScalar(1.3)
+        } else {
+          g = new THREE.Mesh(
+            shapeOf(m.kind),
+            new THREE.MeshStandardMaterial({
+              color: m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber,
+              emissive: baseEm,
+              roughness: 0.45, metalness: 0.3,
+            }))
+          g.userData.em = baseEm               // 근접 하이라이트가 되돌릴 기준값
         }
-        g.userData.em = baseEm                 // 근접 하이라이트가 되돌릴 기준값
         g.position.set(m.at[0], MARK_Y, m.at[1])
         g.userData.id = m.id
         markerRoot.add(g)
@@ -1088,6 +1170,11 @@ export async function mountCrimeScene(
           if (isHalo) {
             mat.opacity = on ? 0.5 : 0.16
             mat.color.setHex(on ? 0xf5efe0 : ((g.userData.col as number) ?? COL.amber))
+          } else if (Array.isArray(g.userData.mats)) {
+            // 실모델 — 복제해 둔 재질의 emissive 를 통째로 올린다 (흰 윤곽빛)
+            for (const mm of g.userData.mats as THREE.MeshStandardMaterial[]) {
+              mm.emissive?.setHex(on ? 0x8a8274 : 0x000000)
+            }
           } else if (typeof g.userData.em === 'number' && mat.emissive) {
             mat.emissive.setHex(on ? 0xbdb49e : (g.userData.em as number))
           }
