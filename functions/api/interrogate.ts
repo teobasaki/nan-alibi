@@ -17,6 +17,8 @@
 import { generateValidCase } from '../../src/engine/validate'
 import { buildPersonaPrefix, buildTurn, RESPONSE_SCHEMA } from '../../src/engine/prompt'
 import { verifyReply, fallbackReply } from '../../src/engine/verify'
+import { applyWorld } from '../../src/data/worlds'
+import { gc001Case } from '../../src/data/gc001'
 import type { SuspectId } from '../../src/types'
 
 interface Env {
@@ -27,6 +29,10 @@ interface Env {
 
 interface Body {
   seed: number
+  /** 월드 스킨 id — 시드만으로는 옷을 모른다. 없으면 호텔 */
+  world?: string
+  /** 고정 사건 id — 'gc001' 이면 생성기를 우회한다 (클라이언트와 같은 규칙) */
+  caseId?: string
   suspectId: SuspectId
   personaId: string
   question: string
@@ -118,7 +124,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ reply: fallbackReply(body.personaId), fallback: true, reason: 'no_key' })
   }
 
-  const c = generateValidCase(body.seed).case
+  /**
+   * 사건 재구성 — **클라이언트가 보는 사건과 같은 옷**이어야 한다.
+   * 시드만 재생성하면 프롬프트가 호텔 어휘(로비·1204호)로 만들어져, 갤러리·경매장
+   * 화면 앞에서 페르소나가 다른 세계의 말을 한다. 고정 사건(gc001)은 생성기를 우회한다.
+   * applyWorld 는 모르는 id 를 무시하므로 임의 문자열이 와도 호텔로 안전하게 떨어진다.
+   */
+  const c = body.caseId === 'gc001'
+    ? gc001Case()
+    : applyWorld(generateValidCase(body.seed).case, body.world)
   const prefix = buildPersonaPrefix(c, body.suspectId, body.personaId)
   const turn = buildTurn({
     question: body.question,
@@ -126,7 +140,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     pressure: body.pressure ?? 0,
     history: body.history ?? [],
   })
-  const cacheKey = `alibi-${body.seed}-${body.suspectId}`
+  // 옷이 다르면 프리픽스가 다르다 — 캐시 그룹도 옷까지 포함해야 히트가 산다
+  const cacheKey = `alibi-${body.caseId ?? body.world ?? 'hotel'}-${body.seed}-${body.suspectId}`
 
   // 1층: 검증 실패 시 1회 재요청
   const model = env.OPENAI_MODEL || MODEL

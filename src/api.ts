@@ -13,6 +13,13 @@ import type { SuspectId } from './types'
 
 export interface AskInput {
   seed: number
+  /**
+   * 서버는 시드로 사건을 재생성한다 — 그래서 **옷도 같이 알려줘야 한다.**
+   * world/caseId 없이 시드만 보내면 서버 프롬프트는 호텔 어휘로 만들어지고,
+   * 갤러리·경매장 화면과 페르소나의 말이 어긋난다 (gc001 에서 실제로 그랬다).
+   */
+  world?: string
+  caseId?: 'gc001'
   suspectId: SuspectId
   personaId: string
   question: string

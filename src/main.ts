@@ -9,6 +9,7 @@
 import './style.css'
 import { generateValidCase, validateCase } from './engine/validate'
 import { gc001Case, GC001_CASE_NO } from './data/gc001'
+import { applyWorld, WORLD_PACKS, WORLD_ROTATION } from './data/worlds'
 import {
   availableEvidence, claimCardId, connect, createGame, fieldDone, interview, lockedRecords,
   lookupEvidence, presentEvidence, presentReveal, submit, talksLeft,
@@ -141,6 +142,13 @@ const app = document.querySelector<HTMLDivElement>('#app')!
  */
 const IS_GC001 = new URLSearchParams(location.search).get('case') === 'gc001'
 
+/**
+ * 월드 팩 선택 (P1) — `?world=auction|studio|theater`. 없으면 호텔.
+ * 모르는 값은 applyWorld 가 원본을 돌려주므로 오타가 빈 화면이 되지 않는다.
+ * gc001 은 자기 월드를 갖고 있어 이 축과 겹치지 않는다.
+ */
+const WORLD_ID = IS_GC001 ? null : new URLSearchParams(location.search).get('world')
+
 const seed = IS_GC001 ? 1 : Number(new URLSearchParams(location.search).get('seed')) || (() => {
   const buf = new Uint32Array(1)
   crypto.getRandomValues(buf)
@@ -157,7 +165,8 @@ const generated = IS_GC001
       return { case: c, validation, attempts: 1 }
     })()
   : generateValidCase(seed)
-const CASE: CaseFile = generated.case
+// 스킨은 검증 **뒤에** 입는다 — 라벨은 유일해에 관여하지 않고, 관여하게 두면 안 된다
+const CASE: CaseFile = IS_GC001 ? generated.case : applyWorld(generated.case, WORLD_ID)
 
 /** 서류·시작 페이지에 찍히는 사건번호 — 고정 사건은 시드가 아니라 케이스 번호를 쓴다 */
 const CASE_NO = IS_GC001 ? GC001_CASE_NO : String(CASE.seed).padStart(5, '0')
@@ -1392,7 +1401,8 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   ui.game = interview(ui.game, s) // 대화 횟수는 낙관적으로 먼저 깎는다 (폴백이면 환불)
 
   const r = await ask({
-    seed: CASE.seed, suspectId: s, personaId: CASE.suspects[s].personaId,
+    seed: CASE.seed, world: WORLD_ID ?? undefined, caseId: IS_GC001 ? 'gc001' : undefined,
+    suspectId: s, personaId: CASE.suspects[s].personaId,
     question: q, pressure: before.pressure[s],
     history: ui.chats[s]!.map((c) => ({ q: c.q, a: c.a })),
   })
@@ -1425,7 +1435,8 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   render()
 
   const r = await ask({
-    seed: CASE.seed, suspectId: s, personaId: CASE.suspects[s].personaId,
+    seed: CASE.seed, world: WORLD_ID ?? undefined, caseId: IS_GC001 ? 'gc001' : undefined,
+    suspectId: s, personaId: CASE.suspects[s].personaId,
     question: '이 기록을 어떻게 설명하시겠습니까?',
     presentedEvidence: cardSummary(CASE, evId),
     pressure: before.pressure[s],
@@ -1902,8 +1913,10 @@ function renderResultSheet(
    */
   const retry = h('button', undefined, '같은 사건 다시') as HTMLButtonElement
   retry.onclick = () => {
-    // 고정 사건은 ?case= 로 돌아온다 — seed 로 바꾸면 생성기가 다른 사건을 만든다 (GC001 계약 §3)
-    const target = IS_GC001 ? `${location.pathname}?case=gc001` : `${location.pathname}?seed=${CASE.seed}`
+    // 고정 사건은 ?case=, 월드 사건은 ?world=&seed= 로 돌아온다 — 옷까지 같아야 같은 사건이다
+    const target = IS_GC001 ? `${location.pathname}?case=gc001`
+      : WORLD_ID && WORLD_PACKS[WORLD_ID] ? `${location.pathname}?world=${WORLD_ID}&seed=${CASE.seed}`
+      : `${location.pathname}?seed=${CASE.seed}`
     // 같은 URL 이면 href 대입이 항상 재로드를 보장하지 않는다 — reload 로 못박는다
     if (location.pathname + location.search === target) location.reload()
     else location.href = target
@@ -1912,10 +1925,16 @@ function renderResultSheet(
 
   const fresh = h('button', undefined, '새 게임') as HTMLButtonElement
   fresh.style.marginLeft = '8px'
-  // seed 파라미터를 지우고 재로드 — 시드는 로드 시 검증된 풀에서 새로 뽑힌다 (ADR 012)
+  /**
+   * 새 게임 = **다음 무대** (P1 로테이션). 호텔 → 경매장 → 방송국 → 극장 → 호텔.
+   * 시드는 지운다 — 로드 시 검증된 풀에서 새로 뽑힌다 (ADR 012).
+   */
   fresh.onclick = () => {
-    if (location.search === '') location.reload()
-    else location.href = location.pathname
+    const cur = IS_GC001 ? null : (WORLD_ID && WORLD_PACKS[WORLD_ID] ? WORLD_ID : null)
+    const next = WORLD_ROTATION[(WORLD_ROTATION.indexOf(cur) + 1) % WORLD_ROTATION.length]!
+    const target = next ? `${location.pathname}?world=${next}` : location.pathname
+    if (location.pathname + location.search === target) location.reload()
+    else location.href = target
   }
   sheet.appendChild(fresh)
 
