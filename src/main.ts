@@ -318,21 +318,47 @@ function topbar(): HTMLElement {
 /* ─────────── 왼쪽: 용의자 ─────────── */
 
 /* ─────────── 중앙: 인터뷰 ─────────── */
+/** 타자기 연출 상수 — **체감 조정은 여기서** (몰입 루프 2패스) */
+const TYPE_FX = {
+  /** 글자당 간격 */
+  charMs: 28,
+  /** 몇 글자마다 타자음을 낼 것인가 — 매 글자는 과하다 (지시: 2~3글자) */
+  sndEveryChars: 3,
+  /** 타자음 최소 재생 간격 — HTMLAudio 동시 재생 한계로 이보다 촘촘하면 끊긴다 */
+  sndMinGapMs: 45,
+} as const
+
 /**
  * 응답은 1.7초 만에 통째로 도착한다. 타이핑 연출로 "말하는 중" 을 만든다 —
  * 구조화 출력의 부분 JSON 파싱 없이 스트리밍과 같은 체감을 얻는 방법 (ADR 005).
+ *
+ * 2패스: 타자음(3글자마다·45ms 스로틀) + 커서(▌) + 완료 시 줄 끝 벨.
+ * 조서가 **지금 작성되고 있다**는 감각 — TTS 와 공존한다 (type 볼륨은 sound.ts 가 눌러 둠).
  */
 function typeInto(node: HTMLElement, text: string): void {
-  // CSS 미디어 쿼리로는 못 잡는 JS 애니메이션이다. 여기서 직접 존중한다.
+  // CSS 미디어 쿼리로는 못 잡는 JS 애니메이션이다. 여기서 직접 존중한다 — 즉시 표시 + 무음.
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     node.textContent = text
     return
   }
   node.textContent = ''
+  node.classList.add('typeline')   // ::after 커서가 깜빡인다
   let i = 0
+  let lastSnd = 0
   const tick = (): void => {
     node.textContent = text.slice(0, ++i)
-    if (i < text.length) setTimeout(tick, 28)
+    const now = performance.now()
+    if (i % TYPE_FX.sndEveryChars === 0 && now - lastSnd >= TYPE_FX.sndMinGapMs) {
+      lastSnd = now
+      play('type')
+    }
+    if (i < text.length) setTimeout(tick, TYPE_FX.charMs)
+    else {
+      // 문장이 끝났다 — 벨이 울리고, 커서가 멎으며 조서 라인으로 굳는다
+      node.classList.remove('typeline')
+      node.classList.add('typeset')
+      play('typebell')
+    }
   }
   tick()
 }
@@ -1481,7 +1507,14 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   // 해금 쌍은 범인에게만 있어서 그 한 줄이 곧 정답이다 (`presentReveal` 주석).
   const reveal = presentReveal(before, advanced, r.fallback)
   mark({ k: 'present', ev: evId, who: s, opened: reveal === 'opened' })
-  play(reveal === 'opened' ? 'open' : 'deny')
+  /**
+   * 소리로 두 가지 '열림' 을 가른다 (2패스): 증언이 나온 것(open)과
+   * **잠겨 있던 기록의 자물쇠가 풀린 것**(unlock) — 결정적 사슬의 마디가 넘어가는 순간이다.
+   * 판별은 상태 비교로만 한다: 제시 전 잠겨 있던 기록이 제시 후 조회 가능해졌는가.
+   */
+  const lockFell = reveal === 'opened' &&
+    lockedRecords(before).some((l) => availableEvidence(advanced).some((e) => e.id === l.evidence.id))
+  play(reveal === 'opened' ? (lockFell ? 'unlock' : 'open') : 'deny')
   ui.chats[s] = [...ui.chats[s]!, {
     q: `[증거 제시] ${cardSummary(CASE, evId)}`,
     a: r.reply.speech + unlockNote(before, advanced, reveal),
@@ -1789,7 +1822,7 @@ function renderResultSheet(
   const ov = h('div', 'overlay')
   const sheet = h('div', 'sheet casefile')
   // 붉은 인장은 '확정' 의 색이다. 못 맞혔으면 색을 빼야 한다 — 색이 곧 판정이다.
-  play(r.correct.culprit ? 'solved' : 'filed')
+  // 소리는 여기서 내지 않는다 — 연출(choreographResult)이 인장이 닿는 프레임에 낸다.
   sheet.appendChild(fileHeader(r.correct.culprit ? '사건\n해결' : '미제\n편철', !r.correct.culprit))
   /**
    * **판정을 네 등급으로 나눠 이름을 준다** (QA 5.6).
@@ -1916,7 +1949,11 @@ function renderResultSheet(
 
   const sc = h('div', 'score')
   const line = (label: string, v: number, cls?: string): void => {
-    sc.appendChild(h('div', cls, label)); sc.appendChild(h('div', cls, String(v)))
+    sc.appendChild(h('div', cls, label))
+    // 값 칸에 목표치를 실어 둔다 — 연출이 0→N 으로 세어 올라간다 (reduced-motion 은 그대로)
+    const val = h('div', `${cls ? cls + ' ' : ''}sc-v`, String(v))
+    val.dataset.n = String(v)
+    sc.appendChild(val)
   }
   line(r.correct.culprit && r.candidatesLeft > 1 ? `범인 (후보 ${r.candidatesLeft}명 중 지목)` : '범인',
     r.breakdown.culprit)
@@ -1974,6 +2011,96 @@ function renderResultSheet(
 
   ov.appendChild(sheet)
   document.body.appendChild(ov)
+  choreographResult(sheet, r.correct.culprit)
+}
+
+/**
+ * 결과 시트 연출 타이밍(ms) — **체감 조정은 전부 여기서** (몰입 루프 2패스).
+ * 순서: 인장 내리찍기 → 3축 O·X 순차 → 점수 카운트업 · 본문 줄 페이드.
+ */
+const RESULT_FX = {
+  /** 인장이 내리찍히는 시점 */
+  stampAt: 320,
+  /** 인장이 닿을 때 시트가 흔들리는 시간 */
+  quakeMs: 140,
+  /** 첫 O·X 가 찍히는 시점 */
+  axisAt: 950,
+  /** O·X 간격 */
+  axisGap: 260,
+  /** 점수 카운트업 시작·길이 */
+  countAt: 1600,
+  countMs: 700,
+  /** 자백·5단계 줄 페이드 시작·줄 간격 */
+  fadeAt: 1600,
+  fadeGap: 110,
+} as const
+
+/**
+ * 결과 시트 안무 — 서류가 "처리되는" 순서를 몸으로 보여준다.
+ *
+ * 정답·오답이 같은 문법을 쓰되 정답이 더 크다: 인장이 더 높은 곳에서 떨어진다.
+ * prefers-reduced-motion 이면 전부 즉시 표시 — 소리도 판정음 하나로 줄인다.
+ * DOM 은 renderResultSheet 가 이미 다 만들어 둔 것을 **읽어서 움직일 뿐**이다.
+ */
+function choreographResult(sheet: HTMLElement, solved: boolean): void {
+  const stamp = sheet.querySelector<HTMLElement>('.filehd .stamp')
+  const axes = Array.from(sheet.querySelectorAll<HTMLElement>('.axis'))
+  const rows = Array.from(sheet.querySelectorAll<HTMLElement>('.confess, .story .beat'))
+  const counters = Array.from(sheet.querySelectorAll<HTMLElement>('.sc-v'))
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    play('verdict')
+    return   // 전부 이미 최종 상태로 그려져 있다
+  }
+
+  // 초기 상태 — appendChild 와 같은 틱이라 첫 페인트 전에 적용된다 (깜빡임 없음)
+  if (stamp) {
+    stamp.classList.add('slam')
+    if (solved) stamp.style.setProperty('--slam-from', '2.35')   // 정답은 더 높은 데서 떨어진다
+  }
+  axes.forEach((a) => a.classList.add('pend'))
+  rows.forEach((el) => el.classList.add('fx-hide'))
+  counters.forEach((el) => { el.textContent = '0' })
+
+  // ① 인장 내리찍기 — 닿는 프레임에 판정음 + 시트 미세 흔들림
+  setTimeout(() => {
+    stamp?.classList.add('land')
+    play('verdict')
+    sheet.classList.add('quake')
+    setTimeout(() => sheet.classList.remove('quake'), RESULT_FX.quakeMs)
+    // 기존 해결/미제 징글은 인장의 여운으로 — 판정음과 겹치면 소리가 죽이 된다
+    setTimeout(() => play(solved ? 'solved' : 'filed'), 420)
+  }, RESULT_FX.stampAt)
+
+  // ② 3축 O·X 순차 — 범인 → 동기 → 수단
+  axes.forEach((a, i) => setTimeout(() => {
+    a.classList.remove('pend')
+    a.classList.add('hit')
+    play('stamp')
+  }, RESULT_FX.axisAt + i * RESULT_FX.axisGap))
+
+  // ③ 점수 카운트업 0→N
+  setTimeout(() => {
+    const t0 = performance.now()
+    const step = (): void => {
+      const k = Math.min(1, (performance.now() - t0) / RESULT_FX.countMs)
+      const ease = 1 - (1 - k) * (1 - k)
+      for (const el of counters) el.textContent = String(Math.round(Number(el.dataset.n ?? '0') * ease))
+      if (k < 1) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+    // rAF 는 탭이 안 그려지는 동안 영원히 안 온다 — 창을 내려놓고 돌아온 사람이
+    // 0점 화면을 보면 안 되므로, 마감 시각에 최종값을 못박는다 (rAF 완주 시에는 no-op).
+    setTimeout(() => {
+      for (const el of counters) el.textContent = el.dataset.n ?? el.textContent
+    }, RESULT_FX.countMs + 150)
+  }, RESULT_FX.countAt)
+
+  // ④ 자백·5단계 줄 — 순서대로 페이드+슬라이드. 타자기까지 가면 과하다 (지시).
+  rows.forEach((el, i) => setTimeout(() => {
+    el.classList.remove('fx-hide')
+    el.classList.add('fx-in')
+  }, RESULT_FX.fadeAt + i * RESULT_FX.fadeGap))
 }
 
 /**
@@ -2180,7 +2307,12 @@ function render(): void {
 
 // 파이프라인 단계가 바뀌면 칩만 갱신하면 되지만, 이 앱은 전체 재렌더 구조다.
 // 심문 중에만 바뀌는 값이라 재렌더 비용(측정 0.8ms)이 문제되지 않는다.
-onStage(() => { if (ui.active) render() })
+// **타자기가 치는 중이면 미룬다** — 전체 재렌더가 타이핑 줄을 완성문으로 갈아치워서,
+// 음성 파이프라인의 단계 전환(수 초 안에 몇 번 온다)이 연출을 그때마다 끊고 있었다.
+onStage(() => {
+  if (document.querySelector('.typeline')) return
+  if (ui.active) render()
+})
 
 /* ─────────── 시작 페이지 (ADR 022) ─────────── */
 /**

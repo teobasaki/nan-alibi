@@ -1512,3 +1512,57 @@ body::after {
   .typing i { animation: none; opacity: .7; }
   .overlay.fadeout { transition: none; }
 }
+
+/* ─────────── 몰입 루프 2패스 — 결과 안무·타자기 (신규 클래스만) ─────────── */
+
+/* 판정 인장 내리찍기 — 기본 자세(rotate -9deg, opacity .88)로 착지한다 */
+.filehd .stamp.slam {
+  opacity: 0;
+  transform: scale(var(--slam-from, 2.1)) rotate(-24deg);
+}
+.filehd .stamp.slam.land {
+  opacity: .88;
+  transform: scale(1) rotate(-9deg);
+  transition: transform .17s cubic-bezier(.2, .85, .3, 1.18), opacity .1s ease-in;
+}
+
+/* 인장이 닿는 순간의 시트 미세 흔들림 — 1~2px, 짧게 */
+.sheet.quake { animation: sheetQuake .14s ease-out; }
+@keyframes sheetQuake {
+  0% { transform: translate(0, 0); }
+  30% { transform: translate(1.6px, -1.2px); }
+  60% { transform: translate(-1.2px, .8px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* 3축 O·X 순차 찍힘 */
+.axis.pend .axis-m { opacity: 0; transform: scale(1.9); }
+.axis.hit .axis-m {
+  opacity: 1; transform: scale(1);
+  transition: transform .15s cubic-bezier(.2, .85, .3, 1.2), opacity .08s ease-in;
+}
+
+/* 본문 줄 페이드+슬라이드 (자백·5단계) — 타자기까지 가면 과하다 */
+.fx-hide { opacity: 0; transform: translateY(7px); }
+.fx-in { opacity: 1; transform: translateY(0); transition: opacity .32s ease, transform .32s ease; }
+
+/* 타자기 커서 — 문장이 끝나면 멎고 조서 라인으로 굳는다 */
+.typeline::after {
+  content: '▌'; margin-left: 1px; color: var(--amber);
+  animation: caretBlink .8s steps(1) infinite;
+}
+@keyframes caretBlink { 50% { opacity: 0; } }
+.typeset { animation: lineSettle .4s ease-out; }
+@keyframes lineSettle { from { text-shadow: 0 0 7px rgba(200, 145, 47, .4); } }
+
+@media (prefers-reduced-motion: reduce) {
+  /* JS 가 클래스를 안 붙이지만, 붙어도 움직이지 않게 이중 잠금 */
+  .filehd .stamp.slam { opacity: .88; transform: scale(1) rotate(-9deg); transition: none; }
+  .sheet.quake, .typeset { animation: none; }
+  .axis.pend .axis-m { opacity: 1; transform: none; }
+  .fx-hide { opacity: 1; transform: none; }
+  .typeline::after { content: ''; }
+}
+
+/* 축 이름이 두 줄로 꺾이지 않게 — '살인 도구' 가 '살인 도/구' 로 갈라졌다 (실측) */
+.axes .axis-k { width: auto; min-width: 46px; white-space: nowrap; }
