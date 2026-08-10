@@ -18,7 +18,16 @@
 import { SUSPECTS, type SuspectId } from '../types'
 
 export interface CastMember {
-  /** 에셋 태그 — `public/characters/<tag>.{sit,idle}.opt.glb` */
+  /**
+   * 에셋 태그 — 이 배우의 **모든** 에셋이 이 한 글자열에 매달린다.
+   *   - 3D 몸: `public/characters/<tag>.{sit,idle}.opt.glb`
+   *   - 초상:  `public/portraits/<tag>.webp` (같은 idle GLB 를 구운 것)
+   *
+   * 초상 파일명이 이 태그와 어긋나면 `portraitFor` 가 조용히 null 을 돌려주고
+   * 카드월·취조실·조서가 한꺼번에 이니셜 명패로 떨어진다 — 실제로 배역을 이 다섯으로
+   * 갈아엎었을 때 옛 태그(manager·security…)의 초상만 남아 그 일이 벌어졌다.
+   * 태그를 바꾸면 **초상도 같이 다시 굽는다**: `scripts/render-portraits.py`.
+   */
   tag: string
   gender: 'm' | 'f'
   /** 사람이 읽는 설명 (배역표·크레딧용) */

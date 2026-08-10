@@ -1,39 +1,53 @@
-# 인물 사진 — 넣는 법
+# 인물 사진 — **3D 배우에서 굽는다**
 
-`<slug>.webp` (또는 .jpg/.png) 로 저장하면 코드 수정 없이 붙는다.
-없는 역할은 자동으로 놋쇠 명패로 되돌아간다 — 8장을 다 채우지 않아도 화면은 안 깨진다.
+`<배역태그>.webp` 로 저장하면 코드 수정 없이 붙는다 (`src/ui/portraits.ts`).
+없는 배역은 자동으로 놋쇠 명패로 되돌아간다 — 한 장도 없어도 화면은 안 깨진다.
 
-| slug | 역할 |
+## 굽는 법
+
+```
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
+  --python scripts/render-portraits.py --          # 다섯 장 전부
+  ... -- carla                                     # 한 명만
+  ... -- --full                                    # 전신 진단본(.full.png)
+```
+
+입력은 `public/characters/<태그>.idle.opt.glb`, 출력은 여기 `<태그>.webp` (512×512).
+
+| 태그 | 배역 |
 |---|---|
-| `manager` | 호텔 지배인 |
-| `security` | 보안 팀장 |
-| `secretary` | 피해자의 비서 |
-| `appraiser` | 보석 감정사 |
-| `investor` | 투자자 |
-| `expartner` | 전 동업자 |
-| `housekeeping` | 객실 담당 |
-| `nephew` | 피해자의 조카 |
+| `wong` | 남 · 정장 |
+| `carla` | 여 · 정장 |
+| `m1` | 남 |
+| `f3` | 여 |
+| `f1` | 여 |
 
-## 규격
-- **세로 3:4**, 짧은 변 512px 이상 (표시 크기는 42~60px 이지만 고해상도 화면 대비)
-- **webp, 장당 60KB 이하.** 8장이면 500KB 미만 — 60초 시연에서 첫 화면이 늦으면 안 된다
-- 배경은 어둡게. 화면이 `#16110f` 위에 얹히므로 밝은 배경은 사각형으로 떠 보인다
+## 왜 그리지 않고 굽는가
+
+**2D 초상과 런타임 3D 캐릭터가 다른 얼굴이면 금지** — 카드월에서 본 얼굴과
+취조실에서 말하는 얼굴이 다르면 플레이어는 인물 추적을 포기한다. 3D 모델이
+정체성의 원본이고, 초상은 그 모델의 스크린샷이다. 배역을 갈아끼우면 초상도
+같은 명령 한 줄로 따라온다.
+
+## 규격 (비주얼 바이블 6.4~6.6)
+
+- **512×512**, webp. 실측 8~20KB — 다섯 장 합쳐 70KB 남짓
+- **다섯 명 전원 동일한 카메라·조명·노출.** 한 명만 밝거나 크면 그 자체가 단서처럼
+  읽혀 추리 공정성이 깨진다. 그래서 카메라를 상수로 박고 **모델 쪽을 정규화**한다
+  (정수리를 같은 높이에, 머리 길이를 같은 크기에, 정면을 같은 방향으로)
+- 프레이밍 어깨~가슴 위 · 머리 위 여백 12% · 눈높이(기울기 0, 렌즈 시프트로 프레임만 내림)
+- 수직 화각 32° · yaw 12°(살짝 3/4)
+- **양 눈과 입이 반드시 판독 가능**할 것. 얼굴 절반이 검게 죽거나 하얗게 날면 실패
+- 배경은 중립 어두운 면 (완전 검정 금지)
 
 ## 화면 처리
-CSS 가 자동으로 **증거 사진** 처리를 입힌다 — 채도를 죽이고, 대비를 올리고, 입자를 얹고,
-모서리에 사건번호를 찍는다. 그래서 원본이 매끈한 스튜디오 사진이어도
-조서 서식과 싸우지 않는다. 생성 시 후보정을 미리 넣을 필요 없다.
 
-## 프롬프트 (하이퍼리얼 · 공포)
-공통 접미사:
-> shot on 35mm, harsh single overhead fluorescent, deep shadows, desaturated,
-> slight motion blur, grainy CCTV-adjacent quality, neutral expression looking
-> slightly off-camera, dark background, 3:4 vertical portrait, photorealistic
+CSS 가 자동으로 **증거 사진** 처리를 입힌다 — 채도를 죽이고, 대비를 올리고, 입자를
+얹고, 모서리에 사건번호를 찍는다. 표시 박스는 3:4 라 좌우가 11% 씩 더 잘린다.
+그래서 인물은 가로 가운데에 몰아 둔다. 생성 시 후보정을 미리 넣을 필요는 없다.
 
-역할별 앞부분 예:
-- `security` — Korean hotel security team leader in a dark uniform, late 40s, tired eyes
-- `housekeeping` — Korean hotel housekeeping staff, apron, holding a keycard, guarded look
-- `investor` — Korean investor in an expensive but rumpled suit, late 50s, unreadable
+## 옛 파일
 
-**얼굴 방향은 정면을 살짝 벗어나게.** 정면 응시는 초상화가 되고, 살짝 빗나간 시선은
-"찍힌 사진" 이 된다 — 이 게임이 원하는 건 후자다.
+`manager` · `security` · `secretary` · `appraiser` · `investor` · `expartner` ·
+`housekeeping` · `nephew` 여덟 장은 배역 개편 이전의 연필 초상이다. 지금은
+아무 배역도 이 태그를 쓰지 않지만 출처 기록(CREDITS.md)이 걸려 있어 남겨 둔다.
