@@ -1349,3 +1349,34 @@ body::after {
 }
 .talkchip.low { border-color: var(--red); color: var(--red); }
 .talkchip.off { border-color: var(--muted); color: var(--muted); font-style: italic; }
+
+/* ─────────── ADR 022 — 엔딩(자백·정확도) 신규 클래스 ─────────── */
+
+/* 지목 정확도 3축 — 시트 위의 대조 확인란 */
+.axes { margin: 14px 0 4px; border-top: 1px solid var(--line); }
+.axis {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 7px 2px; border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.axis-m { font-family: var(--mono); font-size: 14px; width: 18px; text-align: center; }
+.axis.ok .axis-m { color: var(--green); }
+.axis.no .axis-m { color: var(--red); }
+.axis-k { font-family: var(--serif); color: var(--muted); width: 46px; }
+.axis-v { color: var(--ink); word-break: keep-all; }
+.axis.no .axis-v { text-decoration: line-through; text-decoration-color: rgba(179, 55, 44, .6); }
+
+/* 자백 — 페르소나 결정론 템플릿의 인용. 조서에 끼워진 진술서 한 장처럼 */
+.confess {
+  margin: 16px 0 6px; padding: 12px 14px;
+  border-left: 3px solid var(--red);
+  background: rgba(179, 55, 44, .06);
+}
+.confess-who {
+  font-family: var(--serif); font-size: 12px; color: var(--muted);
+  letter-spacing: .12em; margin-bottom: 7px;
+}
+.confess-t {
+  font-family: var(--serif); font-size: 14.5px; line-height: 1.85;
+  color: var(--ink); word-break: keep-all;
+}

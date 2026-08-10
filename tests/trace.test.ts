@@ -13,7 +13,7 @@ describe('사건 트레이스 (밸런스 논의용 · 항상 통과)', () => {
     const c = g.case
     const L = console.log
     L(`\n═══ ${c.title} · ${c.venue.name} ${c.venue.room} · 피해자 ${c.victim.name} ═══`)
-    L(`진범: ${c.suspects[c.culprit].name} (${c.culprit}) · 동기 ${c.motive} · 수단 ${c.method}`)
+    L(`진범: ${c.suspects[c.culprit].name} (${c.culprit}) · 동기 ${c.motive} · 수단 ${c.method} · 도구 ${c.weapon}`)
     L(`최소 조사 수 m* = ${g.validation.solve.minActions}`)
     L(`최적 경로: ${g.validation.solve.path.join('  →  ')}`)
 

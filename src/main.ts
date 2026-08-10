@@ -32,6 +32,7 @@ import { hasModel, mount, type Stage3D } from './ui/stage3d'
 import { hasStation, hasWalkModel, mountExplore, type Explore3D, type Marker, type Seat } from './ui/explore3d'
 import { SLUG_BY_JOB } from './ui/roleSlug'
 import { personaById } from './data/personas'
+import { confessionFor } from './data/confessions'
 import { pickPoolSeed } from './data/pool'
 import { candidatesFrom } from './engine/solver'
 import { newTrace, profile, record as trace, type TraceEvent, type TraceInput } from './engine/journey'
@@ -1549,19 +1550,34 @@ function showResult(culprit: SuspectId, motive: string, weapon: string): void {
   const reenact = r.correct.culprit ? playReenactment(CASE, culprit) : Promise.resolve()
   void reenact
     .then(() => playOutro(CASE, culprit, r.correct.culprit))
-    .then(() => renderResultSheet(r, culprit))
+    .then(() => renderResultSheet(r, { culprit, motive, weapon }))
 }
 
 /**
- * 오답 진단 — **범인·정답 증거·수단은 절대 말하지 않는다.**
- * 대신 "어느 시간대가 비었는가 · 누가 말을 바꿨는가 · 무엇을 확인 안 했는가" 를 준다.
+ * 오답 진단 — **범인·정답 동기·정답 도구는 절대 말하지 않는다.**
+ * 대신 "어느 시간대가 비었는가 · 누가 말을 바꿨는가 · 어느 축의 근거가 부족한가" 를 준다.
  * 다음 수사의 방향은 주되 답은 주지 않는다 (QA 5.7).
  */
-function diagnosis(): HTMLElement {
+function diagnosis(r: ReturnType<typeof submit>): HTMLElement {
   const box = h('div', 'diag')
   box.appendChild(h('h3', undefined, '수사 진단'))
   const held = new Set(ui.game.cards)
   const lines: string[] = []
+
+  /**
+   * 부족한 축 안내 (ADR 022) — 어긋난 축과 **그 축을 뒷받침하는 근거의 종류**만 말한다.
+   * 정답이 무엇인지는 말하지 않는다 — 진단은 재수사의 나침반이지 해설이 아니다.
+   */
+  if (!r.correct.motive) {
+    lines.push('동기 지목이 어긋났습니다 — 동기는 어휘가 아니라 사람의 사정입니다. ' +
+      '다섯 사람 모두 사정이 하나씩 있으니, 심문에서 관계를 캐물어 누구의 사정이 살인까지 갔는지 다시 재보십시오.')
+  }
+  if (!r.correct.weapon) {
+    const hadAutopsy = CASE.evidence.some((e) => e.kind === 'autopsy' && held.has(e.id))
+    lines.push(hadAutopsy
+      ? '도구 지목이 어긋났습니다 — 검시 소견의 흔적 서술을 다시 읽어보십시오. 흔적과 도구는 하나로 이어집니다.'
+      : '도구 지목을 뒷받침할 근거가 없습니다 — 검시 소견을 확인하지 않은 채 고른 도구는 추측입니다.')
+  }
 
   // ① 범행 시각 기록을 얼마나 열었나 — 사람을 지우는 유일한 수단이다
   const crimeRecs = CASE.evidence.filter((e) => e.slot === CRIME_SLOT)
@@ -1616,23 +1632,32 @@ function diagnosis(): HTMLElement {
 /**
  * 정답 결말 — **사실 요약이 아니라 이야기**로 닫는다 (QA 5.8).
  * "범인은 돈 때문에 도구로 죽였다" 는 범죄 사실이지 사건이 아니다.
- * 발단·전개·절정·결말을 페르소나에 맞춘 문장으로 잇는다.
+ * ADR 022: 발단→전개→위기→절정→결말 **5단계 재구성** — 케이스 사실(궤적·동기·도구)로 채운다.
+ * 새 카툰 페이지를 만들지 않는다 — outro 카툰이 닫고, 이 타임라인이 서류로 남는다.
  */
 function storyBlock(): HTMLElement {
   const c = CASE.suspects[CASE.culprit]
   const persona = personaById(c.personaId)
   const d = CASE.evidence.find((e) => e.decisive)!
   const box = h('div', 'story')
-  box.appendChild(h('h3', undefined, '사건의 전말'))
+  box.appendChild(h('h3', undefined, '사건의 전말 — 다섯 단계'))
 
   const beats: [string, string][] = [
-    // 조사는 josa() 로 붙인다 — 이름이 매 판 바뀌므로 '와(과)' 같은 회피 표기는 쓰지 않는다
-    ['발단', `${josa(c.name, '은/는')} ${josa(CASE.victim.name, '과/와')} ${c.relation}. ` +
-             `${josa(CASE.motive, '이/가')} 둘 사이에 남아 있었다.`],
-    ['전개', `${SLOT_LABEL[CRIME_SLOT]}, ${CASE.venue.room}. 그 시각 그 층에 있었던 사람은 하나뿐이었다.`],
+    // 조사는 josa() 로 붙인다 — 이름이 매 판 바뀌므로 '와(과)' 같은 회피 표기는 쓰지 않는다.
+    // relation 은 "피해자에게 큰돈을 빌려줬다" 같은 절이라 피해자 이름을 겹쳐 부르면 안 된다
+    // (실플레이에서 "남기훈과 피해자에게" 로 읽혔다).
+    ['발단', `${josa(c.name, '은/는')} ${c.relation}. ` +
+             `그리고 ${josa(CASE.motive, '이/가')} ${josa(CASE.victim.name, '과/와')}의 사이에 남아 있었다.`],
+    // 전개 — 접근. 궤적의 실제 이동(범행 직전 시각)을 쓴다
+    ['전개', `${SLOT_LABEL[1]}, ${josa(PLACE_LABEL[c.truth[1]!], '을/를')} 지나 12층으로 향했다. ` +
+             `아무도 그 걸음의 뜻을 몰랐다.`],
+    ['위기', `${SLOT_LABEL[CRIME_SLOT]}, ${CASE.venue.room}. 문이 열렸고, 그 시각 그 방에 있었던 사람은 둘 — ` +
+             `나온 사람은 하나뿐이었다.`],
     // 도구는 사건마다 '준비된 것' 일 수도 있어 단정하지 않는다 — 이름만 놓는다
-    ['절정', `그리고 ${josa(CASE.weapon, '이/가')} 쓰였다.`],
-    ['결말', `${josa(d.keyLabel ?? '그 기록', '이/가')} 남았다. ${persona.confession}`],
+    ['절정', `그리고 ${josa(CASE.weapon, '이/가')} 쓰였다. 검시 소견의 흔적이 그 순간의 기록이다.`],
+    // keyLabel 은 "복제 의심 (미등록 사본)" 처럼 괄호로 끝나 조사가 안 붙는다 — 인용으로 놓는다
+    ['결말', `${josa(PLACE_LABEL[c.truth[3]!], '으로/로')} 빠져나갔지만 카드키 기록은 남았다 — ` +
+             `발급 구분 '${d.keyLabel ?? '불명'}'. ${persona.confession}`],
   ]
   for (const [k, t] of beats) {
     const row = h('div', 'beat')
@@ -1643,9 +1668,12 @@ function storyBlock(): HTMLElement {
   return box
 }
 
-function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): void {
+function renderResultSheet(
+  r: ReturnType<typeof submit>,
+  sub: { culprit: SuspectId; motive: string; weapon: string },
+): void {
   // 판이 끝났다 — 여정을 닫고 남긴다. **로컬에만 쌓이고 서버로 가지 않는다.**
-  mark({ k: 'submit', who: culprit, correct: r.correct.culprit, score: r.total })
+  mark({ k: 'submit', who: sub.culprit, correct: r.correct.culprit, score: r.total })
   saveTrace(ui.journey)
 
   const ov = h('div', 'overlay')
@@ -1687,6 +1715,24 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
       `사람을 지우는 건 ${SLOT_LABEL[CRIME_SLOT]} 기록뿐입니다 — 진술과 인장은 의심의 근거이지 소거가 아닙니다.`))
   }
   /**
+   * ## 지목 정확도 — 3축 각각에 O·X (ADR 022)
+   * 등급 한 줄로는 "무엇이 맞고 무엇이 어긋났는지" 가 안 보인다.
+   * 오답 엔딩에서도 축별 판정 자체는 보여준다 — 정답은 diagnosis 가 끝까지 감춘다.
+   */
+  const axes = h('div', 'axes')
+  const axisRow = (label: string, picked: string, ok: boolean): void => {
+    const row = h('div', `axis ${ok ? 'ok' : 'no'}`)
+    row.appendChild(h('span', 'axis-m', ok ? '○' : '✕'))
+    row.appendChild(h('span', 'axis-k', label))
+    row.appendChild(h('span', 'axis-v', picked))
+    axes.appendChild(row)
+  }
+  axisRow('범인', `${CASE.suspects[sub.culprit].name} (${CASE.suspects[sub.culprit].job})`, r.correct.culprit)
+  axisRow('동기', sub.motive, r.correct.motive)
+  axisRow('도구', sub.weapon, r.correct.weapon)
+  sheet.appendChild(axes)
+
+  /**
    * ## 오답이면 **진범을 밝히지 않는다** (QA 5.7)
    *
    * "오답은 정답 공개 화면이 아니라 재수사를 위한 진단 화면이어야 한다."
@@ -1694,9 +1740,25 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
    * 대신 **무엇을 놓쳤는지**를 정답을 노출하지 않고 짚어 준다.
    */
   if (r.correct.culprit) {
+    /**
+     * 자백 — 페르소나별 결정론 템플릿 (ADR 022, LLM 아님).
+     * 마지막 화면이 폴백으로 끝나면 게임 전체가 폴백으로 기억된다.
+     */
+    const k = CASE.suspects[CASE.culprit]
+    const confess = h('div', 'confess')
+    confess.appendChild(h('div', 'confess-who', `${k.name}의 자백`))
+    confess.appendChild(h('div', 'confess-t', `“${confessionFor(k.personaId, {
+      name: k.name,
+      victim: CASE.victim.name,
+      time: SLOT_LABEL[CRIME_SLOT],
+      room: CASE.venue.room,
+      motive: CASE.motive,
+      weapon: CASE.weapon,
+    })}”`))
+    sheet.appendChild(confess)
     sheet.appendChild(storyBlock())
   } else {
-    sheet.appendChild(diagnosis())
+    sheet.appendChild(diagnosis(r))
   }
 
   /**
@@ -1762,15 +1824,29 @@ function renderResultSheet(r: ReturnType<typeof submit>, culprit: SuspectId): vo
       : `통산 ${st.plays}판 중 ${st.solved}건 해결 · 최고 ${st.best}점` +
         (st.bestSeed !== null ? ` (사건번호 ${String(st.bestSeed).padStart(5, '0')})` : '')))
 
-  const again = h('button', undefined, '다른 사건으로') as HTMLButtonElement
-  // 시드 '선택' 은 시뮬레이션 밖이지만, 가드에 예외를 두면 그 예외가 언젠가 시뮬레이션으로 샌다.
-  // crypto 를 쓰면 규칙을 안 깨고도 더 나은 난수를 얻는다.
-  again.onclick = () => {
-    const buf = new Uint32Array(1)
-    crypto.getRandomValues(buf)
-    location.search = `?seed=${buf[0]! % 100000}`
+  /**
+   * Retry 두 갈래 (ADR 022) — 같은 seed 재도전과 새 사건.
+   * 오답 엔딩이 진범을 감추는 이유가 곧 [같은 사건 다시] 의 존재 이유다:
+   * 재수사할 수 있어야 감춘 보람이 있다. 둘 다 URL 재로드로 푼다 —
+   * 상태를 손으로 리셋하는 코드는 언젠가 하나를 빼먹는다.
+   */
+  const retry = h('button', undefined, '같은 사건 다시') as HTMLButtonElement
+  retry.onclick = () => {
+    const target = `${location.pathname}?seed=${CASE.seed}`
+    // 같은 URL 이면 href 대입이 항상 재로드를 보장하지 않는다 — reload 로 못박는다
+    if (location.pathname + location.search === target) location.reload()
+    else location.href = target
   }
-  sheet.appendChild(again)
+  sheet.appendChild(retry)
+
+  const fresh = h('button', undefined, '새 게임') as HTMLButtonElement
+  fresh.style.marginLeft = '8px'
+  // seed 파라미터를 지우고 재로드 — 시드는 로드 시 검증된 풀에서 새로 뽑힌다 (ADR 012)
+  fresh.onclick = () => {
+    if (location.search === '') location.reload()
+    else location.href = location.pathname
+  }
+  sheet.appendChild(fresh)
 
   ov.appendChild(sheet)
   document.body.appendChild(ov)
