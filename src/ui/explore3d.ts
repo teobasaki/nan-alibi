@@ -934,6 +934,15 @@ export async function mountExplore(
 
     /** 이번 판에서 이미 배정한 의자 — 두 사람이 같은 의자에 겹치면 안 된다 */
     const takenChairs = new Set<ChairSpot>()
+    /**
+     * setSeats 재진입 토큰. **이게 없으면 사람이 두 명씩 그려진다** — 실측 스크린샷에서
+     * 서지후·한세아가 각각 두 의자에 앉아 있었다. exploreRoom() 은 매 렌더마다
+     * setSeats 를 부르는데 안에 await(모델 로드)가 있어서, 겹쳐 돈 두 호출이
+     * 서로 다른 의자를 배정하며 둘 다 seatRoot 에 모델을 넣는다.
+     * 그 결과가 신고된 버그 둘이다: 눈앞의 (낡은 복제) 인물 곁에서 E 가 안 먹고
+     * (등록 좌표는 다른 의자다), 겹친 두 모델의 다리가 얽혀 "붙어" 보인다.
+     */
+    let seatEpoch = 0
     const pickChair = (ax: number, az: number): ChairSpot | null => {
       let best: ChairSpot | null = null
       let bestD = 4.5                     // 앵커에서 이보다 멀면 "근처 의자" 가 아니다
@@ -953,8 +962,16 @@ export async function mountExplore(
     }
 
     const setSeats = async (list: Seat[]): Promise<void> => {
+      const epoch = ++seatEpoch
       takenChairs.clear()
-      seats = list
+      /**
+       * **화면에 있는 사람만 E 의 대상이다.**
+       * 소거됐거나 착석 모델이 없어 안 그린 사람이 `seats` 에 남아 있으면, 그의 at 는
+       * 의자로 옮겨진 적 없는 **앵커 원좌표**다 — 보이지 않는 좌석이 방 한가운데서
+       * 근접 판정(nearestWithin)을 가로채 "빈 바닥에 E" 가 되거나, 보이는 사람 곁에서
+       * E 가 유령을 연행한다. 실제로 그린 사람만 판정 목록에 올린다.
+       */
+      const placed: Seat[] = []
       seatRoot.clear()
       for (const st of list) {
         /**
@@ -969,10 +986,13 @@ export async function mountExplore(
         let proto = seatCache.get(st.slug)
         if (!proto) {
           const g = await loader.loadAsync(url)
+          // 로드하는 사이 새 배치가 시작됐으면 이 판은 폐기한다 — 늦게 온 손이 얹으면 두 명이 된다
+          if (epoch !== seatEpoch) return
           proto = g.scene
           dressUp(proto)
           seatCache.set(st.slug, proto)
         }
+        if (epoch !== seatEpoch) return
         const o = cloneSkinned(proto)
         // 착석 모델은 rest pose 가 앉은 자세라 그대로 놓으면 된다.
         // 크기는 사람 키(1.7m)에 맞춘다 — 모델마다 원본 스케일이 다르다.
@@ -1047,7 +1067,9 @@ export async function mountExplore(
         ring.position.set(st.at[0], 0.03, st.at[1])
         ring.userData.seatId = st.id
         seatRoot.add(ring)
+        placed.push(st)
       }
+      if (epoch === seatEpoch) seats = placed
     }
 
     // ── 입력 ──

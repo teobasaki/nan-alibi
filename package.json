@@ -22,7 +22,9 @@
     "pose:chars": "node scripts/pose-all.mjs",
     "gen:mv": "node scripts/multiview2char.mjs",
     "build:chars": "bash scripts/build-chars.sh",
-    "add:face": "bash scripts/add-face.sh"
+    "add:face": "bash scripts/add-face.sh",
+    "probe:seats": "node scripts/probe-seats.mjs",
+    "probe:legs": "node scripts/probe-legs.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260804.1",

@@ -493,12 +493,22 @@ function exploreRoom(): HTMLElement {
   const nearId = ui.explore?.near ?? null
   const seatId = ui.explore?.nearSeat as SuspectId | null | undefined
   const ev = nearId ? CASE.evidence.find((e) => e.id === nearId) : null
-  // **사람이 우선한다** — 연행이 조회보다 큰 행동이라 힌트도 그 순서다
+  // **사람이 우선한다** — 연행이 조회보다 큰 행동이라 힌트도 그 순서다.
+  /**
+   * **게이트가 잠겨 있으면 힌트가 E 를 권하면 안 된다.** "E 를 눌러 데려간다" 고 적어 놓고
+   * 게이트가 소리 없이 막으면 "E 가 안 먹는다" 로 읽힌다 — 실플레이 리포트가 정확히 이것이었다.
+   * 문이 잠긴 이유를 그 자리(3D 힌트바)에서 말한다.
+   */
   bar.appendChild(h('div', 'exhint', seatId
-    ? `${CASE.suspects[seatId].name} · ${CASE.suspects[seatId].job} — E 또는 Space 를 눌러 취조실로 데려간다`
+    ? (ui.chapter2
+      ? `${CASE.suspects[seatId].name} · ${CASE.suspects[seatId].job} — E 또는 Space 를 눌러 취조실로 데려간다`
+      : `${CASE.suspects[seatId].name} · ${CASE.suspects[seatId].job} — 아직 연행할 수 없다. ` +
+        `현장 기록 ${ui.game.investigationsLeft}건을 마저 봐야 취조실이 열린다`)
     : ev
       ? `${labelOfKind(ev.kind)} · ${SLOT_L(ev.slot)} ${PLACE_L(ev.place)} — E 또는 Space 로 조회 (조사 1회)`
-      : '방향키·WASD 로 걷는다 · V 로 1인칭 전환 · 앉아 있는 사람에게 다가가면 취조실로 데려간다.'))
+      : ui.chapter2
+        ? '방향키·WASD 로 걷는다 · V 로 1인칭 전환 · 앉아 있는 사람에게 다가가면 취조실로 데려간다.'
+        : '방향키·WASD 로 걷는다 · V 로 1인칭 전환 · 지금은 기록을 줍는 시간이다 — 조사를 마치면 연행이 열린다.'))
   page.appendChild(bar)
 
   // 씬은 한 번만 만든다. 재렌더마다 새로 만들면 WebGL 컨텍스트가 쌓인다.
