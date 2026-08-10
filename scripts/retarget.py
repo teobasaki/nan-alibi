@@ -54,8 +54,14 @@ RENAME = {
 
 
 def norm(name: str) -> str:
-    """비교용 정규화 — 접두사·대소문자·구분자 차이를 없앤다."""
-    n = re.sub(r'^mixamorig[:_]?', '', name, flags=re.I).lower()
+    """비교용 정규화 — 접두사·접미 번호·대소문자·구분자 차이를 없앤다.
+
+    Sketchfab 재배포 Mixamo 리그는 본 이름이 `mixamorigHips_01` 처럼
+    **숫자 네임스페이스 접미**가 붙는다 (mixamorig7Hips 처럼 접두 숫자도 있다).
+    둘 다 벗겨야 원본 Mixamo 클립과 매칭된다 — 캐스팅 룸에서 실측한 규칙이다.
+    """
+    n = re.sub(r'^mixamorig[:_0-9]*', '', name, flags=re.I).lower()
+    n = re.sub(r'_\d+$', '', n)
     n = RENAME.get(n, n)
     return n.replace('_', '').replace('.', '')
 

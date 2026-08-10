@@ -18,6 +18,7 @@
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
@@ -31,6 +32,8 @@ const CANDIDATES: Candidate[] = [
   { name: 'Joe (Mixamo)', url: `${DL}/character/Ch33_nonPBR.fbx`, kind: 'fbx', x: -2.6, z: 1.5 },
   { name: 'character_type_detective', url: `${DL}/character/character_type_detective.glb`, kind: 'glb', x: 0, z: 1.5 },
   { name: 'private_investigator', url: `${DL}/character/private_investigator_detective.glb`, kind: 'glb', x: 2.6, z: 1.5 },
+  // 리타게팅 실증본 — retarget.py(접미 번호 정규화) + strip-beta 로 idle 을 구웠다. '내장' 버튼으로 확인
+  { name: 'PI (리타게팅됨)', url: '/characters/pi.idle.opt.glb', kind: 'glb', x: 5.2, z: 1.5 },
   // 뒷줄 — 우리 배우들 (프로젝트 파일이라 dev 서버가 그대로 서빙한다)
   ...OUR.map((slug, i): Candidate => ({
     name: slug, url: `/assets-src/${slug}.mvrigged.glb`, kind: 'glb',
@@ -146,6 +149,7 @@ const slots: Slot[] = CANDIDATES.map((def) => {
 
 const fbxLoader = new FBXLoader()
 const glbLoader = new GLTFLoader()
+  .setDRACOLoader(new DRACOLoader().setDecoderPath('/draco/'))   // 게임 opt 파일은 draco 압축
 const clipCache = new Map<string, THREE.AnimationClip>()
 
 /** FBX 는 빈 "Take 001" 이 animations[0] 로 오는 경우가 많다 — 트랙이 가장 많은 것이 진짜다 */
