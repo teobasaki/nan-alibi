@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>사운드 시청실 — VARCO vs ComfyUI (dev 전용)</title>
+  <style>
+    html, body { margin: 0; background: #14100e; color: #e9e1d3;
+      font-family: 'Courier New', monospace; }
+    header { padding: 18px 22px 8px; }
+    header h1 { font-size: 15px; letter-spacing: .2em; margin: 0; color: #c8912f; }
+    header p { font-size: 11.5px; opacity: .65; margin: 6px 0 0; }
+    #rows { padding: 8px 22px 40px; }
+    .row { border-top: 1px solid #2c231c; padding: 12px 0; display: grid;
+      grid-template-columns: 110px 1fr; gap: 4px 16px; }
+    .key { color: #c8912f; font-weight: bold; font-size: 13px; }
+    .moment { font-size: 11px; opacity: .75; }
+    .prompt { grid-column: 2; font-size: 10.5px; opacity: .5; line-height: 1.5; word-break: break-all; }
+    .btns { grid-column: 1 / 3; display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+    .btns button {
+      font: inherit; font-size: 12px; padding: 6px 14px; cursor: pointer;
+      background: #221b17; color: #e9e1d3; border: 1px solid #4a3b2e;
+    }
+    .btns button.playing { border-color: #c8912f; color: #c8912f; }
+    .btns button:disabled { opacity: .3; cursor: default; }
+    .btns .miss { font-size: 10.5px; opacity: .45; }
+    .ab { margin-left: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>사운드 시청실</h1>
+    <p>같은 프롬프트로 만든 두 생성본을 나란히 듣는다 — VARCO(배포 중) vs ComfyUI(Stable Audio 3, 로컬 생성 대기 중).
+       ComfyUI 파일은 <code>~/AI/comfy-vs-varco/comfy-&lt;키&gt;.wav</code> 로 떨어지는 대로 자동 감지(10초 폴링).
+       A/B = 두 소리를 0.6초 간격으로 연달아.</p>
+  </header>
+  <div id="rows"></div>
+  <script type="module" src="/src/soundlab.ts"></script>
+</body>
+</html>

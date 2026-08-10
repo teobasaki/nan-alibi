@@ -96,7 +96,7 @@ export default defineConfig({
       // 캐스팅 룸(casting.html — dev 전용)이 다운로드 폴더의 후보 캐릭터를
       // /@fs/ 로 직접 읽는다. public/ 에 복사하면 54MB FBX 가 배포에 실리므로
       // 여기서만 허용한다. 빌드에는 casting.html 이 포함되지 않는다.
-      allow: ['.', '/Users/teo/Downloads'],
+      allow: ['.', '/Users/teo/Downloads', '/Users/teo/AI/comfy-vs-varco'],
     },
   },
   test: {
