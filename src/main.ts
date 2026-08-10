@@ -21,7 +21,7 @@ import { josa } from './josa'
 import { isMuted, play, setMuted, wake } from './ui/sound'
 import { canSpeak, initVoice, speak, stop as stopVoice } from './ui/voice'
 import { probeKey } from './ui/tts/supertone'
-import { FALLBACK_LABEL, onStage, setStage, stage as pipeStage, STAGE_LABEL } from './ui/pipeline'
+import { FALLBACK_LABEL, onStage, setStage, stage as pipeStage } from './ui/pipeline'
 import { dashboard, probeProviders } from './ui/dashboard'
 import { playIntro } from './ui/intro'
 import { showJournal } from './ui/journal3d'
@@ -404,34 +404,59 @@ function typeInto(node: HTMLElement, text: string): void {
  * "이게 몇 번째인지" 를 알 수 없어서 여전히 끝을 가늠하지 못한다.
  * 음성 합성 칸은 서버 TTS 를 실제로 쓸 때만 켜진다 — 내장 합성은 즉시라서 칸이 없다.
  */
+/**
+ * 기다리는 동안 화면에 뜨는 것 — **말버릇이지 상태 표시가 아니다.**
+ *
+ * 예전엔 `진술을 고르는 중 · 진술 검증 · 음성 합성 · 진술 중` 네 칸을 띄웠다.
+ * 아키텍처를 화면에 드러낸다는 뜻이었지만, **취조실 한복판에서 "음성 합성" 이라고
+ * 적힌 칩이 뜨는 건 배우가 무대에서 대본을 꺼내 보는 것과 같다** (사용자 지적).
+ *
+ * 사람은 말이 늦을 때 상태를 보고하지 않는다 — **"음…" 하고 시간을 번다.**
+ * 그래서 지연을 말버릇으로 옮긴다. 오래 걸릴수록 더듬거림이 길어질 뿐,
+ * 무엇을 기다리는지는 말하지 않는다. 기술 단계는 ⚙ AI 대시보드가 계속 들고 있다 —
+ * 심사자가 파이프라인을 보고 싶으면 거기서 본다.
+ *
+ * **이 말은 대화 기록에 남지 않는다.** 조서에도, 진술 목록에도 들어가지 않는다 —
+ * 남으면 플레이어가 증언으로 오해할 수 있고, 그건 추리에 거짓 단서를 놓는 것이다.
+ */
+const FILLERS: readonly string[] = ['음…', '음… 그게,', '음… 그게, 잠시만요.']
+
+/** 이번 질문을 보낸 시각 — 말버릇이 얼마나 더듬거릴지가 여기서 나온다 */
+let askStartedAt = 0
+let fillerTimers: number[] = []
+
+/**
+ * 말버릇이 **자라게** 한다. 렌더는 단계가 바뀔 때만 도는데, 응답이 한 단계에
+ * 3초 머무르면 "음…" 이 3초 내내 굳어 있다. 두 시점에만 다시 그린다 —
+ * 매 프레임 돌릴 이유가 없다(글자 세 개가 바뀔 뿐이다).
+ */
+function startFillerTicks(): void {
+  stopFillerTicks()
+  for (const at of [1400, 3000]) {
+    fillerTimers.push(window.setTimeout(() => { if (ui.busy) render() }, at))
+  }
+}
+function stopFillerTicks(): void {
+  for (const t of fillerTimers) clearTimeout(t)
+  fillerTimers = []
+}
+
 function stageChip(): HTMLElement {
-  const ORDER = ['thinking', 'verifying', 'synthesizing', 'speaking'] as const
-  const now = pipeStage()
-  const at = ORDER.indexOf(now as (typeof ORDER)[number])
-
   const box = h('div', 'bubble a stagechip')
-  const row = h('div', 'stages')
-  ORDER.forEach((s, i) => {
-    const done = at >= 0 && i < at
-    const active = s === now
-    const cell = h('span', `st${done ? ' done' : ''}${active ? ' on' : ''}`, STAGE_LABEL[s])
-    row.appendChild(cell)
-  })
-  box.appendChild(row)
+  const now = pipeStage()
 
-  /**
-   * 타이핑 인디케이터 (P2-1) — 점 세 개가 숨쉬고, 기다림에 인물의 결을 입힌다.
-   * 파이프라인 칩은 "시스템이 무엇을 하나" 를, 이 줄은 "사람이 무엇을 하나" 를 말한다 —
-   * 같은 2초가 지연이 아니라 망설임으로 읽히게.
-   */
+  /** 기다린 시간이 길어질수록 말이 더듬거린다 — 0.0s "음…" · 1.4s "그게," · 3.0s "잠시만요." */
+  const waited = Date.now() - askStartedAt
+  const step = waited > 3000 ? 2 : waited > 1400 ? 1 : 0
+  box.appendChild(h('div', 'filler', FILLERS[step]!))
+
+  // 점 세 개는 남긴다 — 멈춘 게 아니라 말을 고르는 중이라는 유일한 신호다
   const typing = h('div', 'typing')
   typing.appendChild(h('i'))
   typing.appendChild(h('i'))
   typing.appendChild(h('i'))
-  typing.appendChild(h('span', 'typing-l',
-    now === 'verifying' ? '한 말을 되짚어 보고 있다'
-    : now === 'synthesizing' || now === 'speaking' ? '목소리를 고르고 있다'
-    : '말을 고르고 있다'))
+  // 폴백(응답 실패)만은 숨기지 않는다 — 실패를 감추면 플레이어가 자기 탓을 한다
+  if (now === 'idle') typing.appendChild(h('span', 'typing-l', FALLBACK_LABEL))
   box.appendChild(typing)
   return box
 }
@@ -1974,6 +1999,8 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   const q = question.trim()
   if (!q || ui.busy || talksLeft(ui.game, s) <= 0) return
   ui.busy = true
+  askStartedAt = Date.now()
+  startFillerTicks()
   setStage('thinking')
   render()
 
@@ -1994,6 +2021,7 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   mark({ k: 'ask', who: s, preset: PRESETS.some((p) => p.q === q), fallback: r.fallback })
   ui.chats[s] = [...ui.chats[s]!, { q, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement }]
   ui.busy = false
+  stopFillerTicks()
   // 응답 도착음 (P2-1) — 조서 한 장이 놓이는 소리. 폴백은 아무것도 도착하지 않은 것이다.
   if (!r.fallback) play('paper')
   render()
@@ -2013,6 +2041,8 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
     return alert(e instanceof Error ? e.message : String(e))
   }
   ui.busy = true
+  askStartedAt = Date.now()
+  startFillerTicks()
   ui.game = advanced
   render()
 
@@ -2044,6 +2074,7 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
     fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement,
   }]
   ui.busy = false
+  stopFillerTicks()
   ui.selected = []
   render()
   animateLast(r.reply.speech)

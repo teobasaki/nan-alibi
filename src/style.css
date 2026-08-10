@@ -863,7 +863,15 @@ body::after {
  * 네 칸을 항상 보여주고 지나온 칸에 불을 켠다. 현재 칸만 보이면
  * 몇 번째인지 몰라 여전히 끝을 가늠하지 못한다.
  */
-.stagechip { padding: 7px 10px; }
+.stagechip { padding: 9px 13px; }
+/**
+ * 말버릇 — 기다림의 얼굴. **진짜 대사와 구별되어야 한다**(흐리고, 기울고, 조서가 없다).
+ * 구별되지 않으면 플레이어가 이걸 증언으로 읽고, 그건 추리에 거짓 단서를 놓는 것이다.
+ */
+.filler {
+  font-size: 15px; line-height: 1.5; color: var(--muted);
+  font-style: italic; opacity: .85;
+}
 .stages { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
 .stages .st {
   font-family: var(--mono); font-size: 9.5px; color: #5c4b46;
