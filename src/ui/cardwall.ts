@@ -94,7 +94,16 @@ export function renderWall(cards: WallCard[], opts: WallOpts): HTMLElement {
     const card = el('div', `pcard${c.cleared ? ' out' : ''}${opts.entering ? ' enter' : ''}`)
     // 살짝 기울어진 채 꽂힌다 — 각도는 자리가 정한다 (Math.random 금지)
     card.style.setProperty('--tilt', `${[-2.2, 1.6, -1.1, 2.4, -1.8][i % 5]}deg`)
-    if (opts.entering) card.style.animationDelay = `${i * 120}ms`   // 120ms 스태거 (기획서 §C)
+    /**
+     * **한 벌이 손에서 쫙 펼쳐진다** (R3 · 연극 3막). 다섯 장이 각자 위에서
+     * 떨어지면 그건 다섯 번의 사건이지만, **가운데 한 덩이에서 좌우로 퍼지면**
+     * 형사가 카드 한 벌을 책상에 펼치는 한 번의 동작이 된다.
+     * 시작 위치는 자리가 정한다 — 가운데(mid)로부터의 거리만큼 안쪽에서 출발한다.
+     */
+    const mid = (cards.length - 1) / 2
+    card.style.setProperty('--dx', `${(mid - i) * 76}px`)
+    card.style.setProperty('--fan', `${(i - mid) * -13}deg`)
+    if (opts.entering) card.style.animationDelay = `${i * 90}ms`    // 스태거 (기획서 §C)
     card.setAttribute('role', 'button')
     card.tabIndex = 0
     card.setAttribute('aria-label', `${c.name} 심문하기${c.cleared ? ' (기록으로 소거됨)' : ''}`)

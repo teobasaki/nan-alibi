@@ -35,6 +35,7 @@ import { anyWalkSlug, hasStation, hasWalkModel, mountExplore, type Explore3D, ty
 import { mountCrimeScene, type CrimeScene, type SceneMarker } from './ui/crimescene3d'
 import { SCENE_FX, bagIds, spawnAnchored, swapField, timeUp } from './ui/sceneRules'
 import { renderWall, wallData } from './ui/cardwall'
+import { curtainSwap } from './ui/curtain'
 import { castTagFor } from './ui/cast'
 import { personaById } from './data/personas'
 import { confessionFor } from './data/confessions'
@@ -728,13 +729,31 @@ function onScenePick(id: string): void {
  * 3D 가 못 서면(webgl·저사양) `fallback` 으로 기존 기록철 흐름이 그대로 산다 —
  * 이 프로젝트가 사진 폴백에서 지켜 온 원칙과 같다.
  */
-function openCrimeScene(fallback: () => void): void {
+/**
+ * **제2막의 기본은 자유 이동이다** (사용자 비전 · ADR 019 의 연장).
+ *
+ * 예전에는 커튼이 오르면 책상(격자)이 서 있었고, 경찰서는 인덱스 탭을 눌러야
+ * 들어가는 **옵션**이었다. 그러면 3D 경찰서는 만들어 놓고 안 쓰는 방이 된다.
+ * 제2막은 "다섯 사람이 불려 온 경찰서" 라는 장면이므로, 막이 오르면 그 방에 서 있어야 한다.
+ * 책상·카드 월은 [← 카드 월] 로 언제든 돌아간다 — 없어진 것이 아니라 순서가 바뀐 것이다.
+ *
+ * **3D 가 없으면 아무 일도 하지 않는다** — 걷기 모델이나 경찰서 모델이 없는 배포에서는
+ * 예전 그대로 책상이 선다. 폴백이 본선이라는 이 프로젝트의 상수.
+ */
+function enterStation(): void {
+  if (ui.explore) return
+  const walkable = hasWalkModel(HERO_SLUG) || Boolean(WALKABLE_SLUG)
+  if (!walkable || !hasStation()) return
+  ui.explore = { handle: null, mounting: false, near: null, nearSeat: null }
+}
+
+function openCrimeScene(fallback: () => void, ready?: () => void): void {
   /**
    * **재진입 가드** — 브리핑의 [수사를 시작한다] 는 페이드(0.4s) 동안 한 번 더
    * 눌릴 수 있다. 두 번 열리면 첫 호스트가 고아가 되어 검은 캔버스로 보드를 덮는다
    * (실측 — 연타 재현). explore3d 의 mounting 가드와 같은 이유, 같은 문법.
    */
-  if (csOpening || csHandle) return
+  if (csOpening || csHandle) return ready?.()
   csOpening = true
   const host = h('div', 'cscene')
   const loading = h('div', 'cs-loading', '현장으로 이동 중 — 통제선을 넘는다…')
@@ -748,24 +767,39 @@ function openCrimeScene(fallback: () => void): void {
 
   void mountCrimeScene(host, slug, CALM, pedLine, {
     onPick: onScenePick,
+    /**
+     * **제1막이 내리고 제2막이 오른다** (R3 · 연극 3막 구조).
+     * 현장 철수 → 커튼 → 경찰서. 무대 교체(씬 파기·상태 정리·경찰서 진입)는
+     * 전부 커튼 뒤에서 일어난다 — 관객은 검은 화면 대신 벨벳을 본다.
+     */
     onDone: () => {
-      csHandle?.dispose()
-      csHandle = null
-      host.remove()
-      // 시간 종료 = 예산 소진과 동일 상태 (기획서 §2) — 기존 게이트가 수사 정리를 연다
-      ui.game = timeUp(ui.game)
-      syncChapter()
-      render()
+      void curtainSwap({
+        title: '제 2 막 — 경찰서',
+        sub: '강력 3팀 · 다섯 사람이 불려 왔다',
+        play: playAny,
+        onClosed: () => {
+          csHandle?.dispose()
+          csHandle = null
+          host.remove()
+          // 시간 종료 = 예산 소진과 동일 상태 (기획서 §2) — 기존 게이트가 수사 정리를 연다
+          ui.game = timeUp(ui.game)
+          syncChapter()
+          enterStation()
+          render()
+        },
+      })
     },
   }).then((hd) => {
     csOpening = false
     loading.remove()
     if (!hd) {
       host.remove()
+      ready?.()
       return fallback()
     }
     csHandle = hd
     syncSceneState()
+    ready?.()      // 무대가 다 섰다 — 커튼은 여기서 열린다
   })
 }
 
@@ -930,6 +964,125 @@ function journalBlock(): HTMLElement {
   wrap.appendChild(pendingBlock())
   return wrap
 }
+
+/* ─────────── 인벤토리 — I 키로 펼치는 수사일지 (R3) ─────────── */
+/**
+ * **I = 인벤토리.** 수사일지가 책처럼 펼쳐진다.
+ *
+ * ## 왜 모달인가 — 그리고 왜 "책" 이어야 하나
+ * 우면의 `.nb-journal` 은 항상 떠 있는 요약이고, 그것으로 충분한 순간이 대부분이다.
+ * 그런데 제2막의 기본 화면이 **경찰서 3D**가 되면서(enterStation) 일지가 화면에서
+ * 사라지는 시간이 생겼다 — 걷는 동안 "내가 뭘 했더라" 를 볼 데가 없다.
+ * 게임에서 그 물건의 이름은 **인벤토리**고, 관습적인 열쇠는 I 다.
+ *
+ * 웹사이트처럼 스크롤되는 패널로 만들면 이 게임이 지켜 온 은유(수첩·기록철·인장)가
+ * 그 순간만 깨진다. 그래서 **양면 스프레드**로 연다: 가죽 표지가 열리고 종이 두 면이
+ * 좌우로 펴진다. 질감은 `public/nb/{leather,paper}.webp` 를 재사용한다 — 3D 수첩
+ * (`journal3d`)이 쓰던 바로 그 텍스처라, DOM 책과 3D 책이 **같은 물건**으로 읽힌다.
+ *
+ * ## 내용은 새로 만들지 않는다
+ * 좌면은 `journalLines`(기존 일지 그대로), 우면은 이미 손에 쥔 것(가방·모순·남은 후보)이다.
+ * 새 정보를 여기서 주면 인벤토리가 아니라 보상 화면이 된다 (openCaseReview 와 같은 원칙).
+ */
+let bookEl: HTMLElement | null = null
+
+function closeBook(): void {
+  if (!bookEl) return
+  const el = bookEl
+  bookEl = null
+  el.classList.add('shut')
+  play('paper')
+  setTimeout(() => el.remove(), 320)
+}
+
+function openBook(): void {
+  if (bookEl) return closeBook()
+
+  const ov = h('div', 'bookov')
+  const book = h('div', 'book')
+
+  /* 좌면 — 수사 일지 */
+  const left = h('div', 'book-page bp-l')
+  left.appendChild(h('div', 'book-cap', '수사 일지'))
+  const lines = journalLines(CASE, ui.journey, journalStatements())
+  if (lines.length === 0) {
+    left.appendChild(h('div', 'book-empty', '아직 적을 것이 없다. 기록을 조회하거나 사람을 만나야 한다.'))
+  }
+  const body = h('div', 'book-scroll')
+  for (const l of lines) {
+    const row = h('div', `jl${l.spent ? ' spent' : ''}${l.stamp ? ` st-${l.stamp}` : ''}`)
+    row.appendChild(h('span', 'jl-mark', l.spent ? '│' : ''))
+    const b = h('div', 'jl-body')
+    b.appendChild(h('span', 'jl-t', l.text))
+    if (l.note) b.appendChild(h('span', 'jl-note', l.note))
+    row.appendChild(b)
+    body.appendChild(row)
+  }
+  left.appendChild(body)
+
+  /* 우면 — 지금 손에 쥔 것 */
+  const right = h('div', 'book-page bp-r')
+  right.appendChild(h('div', 'book-cap', '확보한 기록'))
+  const bag = h('div', 'book-scroll')
+  const held = ui.game.cards.filter((id) => CASE.evidence.some((e) => e.id === id))
+  if (held.length === 0) {
+    bag.appendChild(h('div', 'book-empty', '가방이 비어 있다.'))
+  }
+  for (const id of held) {
+    const e = CASE.evidence.find((x) => x.id === id)!
+    const row = h('div', `book-ev${e.slot === CRIME_SLOT ? ' crime' : ''}`)
+    row.appendChild(h('b', undefined, labelOfKind(e.kind)))
+    row.appendChild(h('span', undefined, `${SLOT_L(e.slot)} · ${PLACE_L(e.place)}`))
+    bag.appendChild(row)
+  }
+  right.appendChild(bag)
+
+  right.appendChild(h('div', 'book-cap', '수사 현황'))
+  const facts = h('div', 'book-facts')
+  const cands = candidatesFrom(CASE, new Set(ui.game.cards))
+  facts.appendChild(h('div', undefined,
+    `남은 후보 ${cands.length}명 — ${cands.map((s) => CASE.suspects[s].name).join(' · ') || '없음'}`))
+  facts.appendChild(h('div', undefined, `찾아낸 모순 ${ui.game.foundContradictions.length}건`))
+  facts.appendChild(h('div', undefined, `남은 현장 조사 ${Math.max(0, ui.game.investigationsLeft)}회`))
+  right.appendChild(facts)
+
+  book.append(left, h('div', 'book-spine'), right)
+  ov.appendChild(book)
+
+  const hint = h('div', 'book-hint', 'I · Esc · 바깥을 눌러 덮는다')
+  ov.appendChild(hint)
+
+  ov.onclick = (e) => { if (e.target === ov || e.target === hint) closeBook() }
+  document.body.appendChild(ov)
+  bookEl = ov
+  play('paper')
+}
+
+/**
+ * 전역 키 — I 는 인벤토리다.
+ *
+ * **현장(30초)에서는 열리지 않는다**: 시계가 도는 동안 화면을 덮는 물건은 UI 가
+ * 아니라 방해다. 서류 오버레이(브리핑·수사 정리·결과)나 인트로가 떠 있을 때도 마찬가지 —
+ * 그 화면들은 자기 흐름을 갖고 있고, 위에 책이 또 얹히면 무엇을 닫는 키인지 알 수 없다.
+ */
+window.addEventListener('keydown', (e) => {
+  const t = e.target as HTMLElement | null
+  // 입력 중에는 글자다 — 한글 조합 중(isComposing)도 마찬가지
+  if (e.isComposing || t?.isContentEditable) return
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
+
+  if (e.key === 'Escape' && bookEl) { e.preventDefault(); return closeBook() }
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  /**
+   * 자판 자리(`code`)를 먼저 본다 — 한글 입력 상태에서 I 를 누르면 `key` 는 'ㅑ' 다.
+   * `key` 도 함께 받는 이유는 `code` 를 안 채워 주는 환경(일부 IME·자동화 도구)이 있어서다.
+   */
+  if (e.code !== 'KeyI' && e.key !== 'i' && e.key !== 'I' && e.key !== 'ㅑ') return
+  if (csHandle || csOpening) return
+  if (document.querySelector('.overlay, .startpage, .curtain, .intro')) return
+  e.preventDefault()
+  openBook()
+})
 
 /**
  * 세로 인덱스 탭 — 수첩 가장자리에 붙은 색인이다.
@@ -2466,7 +2619,7 @@ function openBriefing(): void {
       ['W A S D · 클릭', '걷는다. 바닥을 클릭하면 그리로 간다'],
       ['E', '가까이 간 기록을 줍는다 — 가방은 다섯 칸'],
       ['V', '조감과 1인칭을 오간다'],
-      ['1 ~ 5', '가방 칸을 확인한다'],
+      ['I', '수사일지를 편다 (현장이 끝난 뒤)'],
     ] as [string, string][]) {
       const row = h('div', 'brf-key')
       row.appendChild(h('kbd', undefined, k))
@@ -2520,13 +2673,21 @@ function openBriefing(): void {
      * 그 폴백 안의 showJournal 은 3D 가 걷히기 시작하는 순간 콜백을 불러 두 연출이
      * 0.45초쯤 겹친다. 에셋이 없어도 콜백은 반드시 한 번 불린다.
      */
-    openCrimeScene(() => {
-      void showJournal(() => {
-        ui.opening = true
-        render()
-        play('paper')
-        setTimeout(() => { ui.opening = false; render() }, 1000)
-      })
+    void curtainSwap({
+      title: '제 1 막 — 현장',
+      sub: `${CASE.venue.name} ${CASE.venue.room} · 통제선 안쪽`,
+      play: playAny,
+      // 커튼이 닫힌 뒤에 현장이 선다 — 로딩 화면을 관객에게 보여주지 않는다
+      onClosed: () => new Promise<void>((done) => {
+        openCrimeScene(() => {
+          void showJournal(() => {
+            ui.opening = true
+            render()
+            play('paper')
+            setTimeout(() => { ui.opening = false; render() }, 1000)
+          })
+        }, done)
+      }),
     })
   }
 
