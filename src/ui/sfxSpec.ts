@@ -18,6 +18,7 @@
 export type SfxKey =
   | 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'creak' | 'doorOpen' | 'filed'
   | 'verdict' | 'type' | 'typebell' | 'page' | 'unlock' | 'ambience'
+  | 'tick' | 'heartbeat' | 'whistle' | 'snap' | 'pickup'
 
 export interface SfxSpec {
   key: SfxKey
@@ -160,6 +161,52 @@ export const SFX: readonly SfxSpec[] = [
       'at night: soft rain wash against a window, very low room rumble, no thunder, ' +
       'no distinct droplets, no events, perfectly steady texture for looping. No music.',
     seconds: 4.5,
+  },
+  {
+    key: 'tick',
+    moment: '현장 수집 30초 카운트다운 (1Hz, 막판 2Hz)',
+    meaning: '시간이 실재한다. 초당 한 번 나므로 아주 작아야 한다',
+    prompt:
+      'One single tick of a mechanical stopwatch, dry sharp metallic click, ' +
+      'extremely short and quiet, close-miked, no ringing, no room tone. No music.',
+    seconds: 0.25,
+  },
+  {
+    key: 'heartbeat',
+    moment: '현장 수집 마지막 5초',
+    meaning: '몸이 먼저 아는 마감 — 한 박(lub-dub), 루프로 반복된다',
+    prompt:
+      'A single human heartbeat, one lub-dub thump, low and muffled as heard from ' +
+      'inside the chest, deep soft thud pair, short, no room tone. No music, no voice.',
+    seconds: 0.8,
+  },
+  {
+    key: 'whistle',
+    moment: '30초 종료 — 감식반 철수',
+    meaning: '수집 챕터의 마침표. 한 번, 단호하게',
+    prompt:
+      'One short sharp blast of a metal police whistle, single burst about half a ' +
+      'second, slight outdoor air, decisive stop, no echo tail, no crowd. No music.',
+    seconds: 1.2,
+  },
+  {
+    key: 'snap',
+    moment: '증거를 수거해 가방(폴라로이드)에 꽂힐 때',
+    meaning: '증거가 기록으로 박제됐다 — 카메라 셔터와 필름 배출',
+    prompt:
+      'A vintage instant camera taking one photo: mechanical shutter clack then the ' +
+      'short motorized whir of film ejecting, close, dry, brief. No music, no voice.',
+    seconds: 1,
+  },
+  {
+    key: 'pickup',
+    moment: '증거품에 손을 대는 순간 (snap 직전)',
+    meaning: '물건을 집었다 — 장갑 낀 손과 비닐 증거봉투',
+    prompt:
+      'A gloved hand picking up a small object and slipping it into a plastic ' +
+      'evidence bag: brief cloth rustle and one crisp plastic bag crinkle. Close, ' +
+      'dry, quick. No music, no voice.',
+    seconds: 0.8,
   },
 ]
 

@@ -16,6 +16,7 @@
 
 type Voice = 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'filed' | 'creak' | 'doorOpen'
   | 'verdict' | 'type' | 'typebell' | 'page' | 'unlock'
+  | 'tick' | 'heartbeat' | 'whistle' | 'snap' | 'pickup'
 
 const KEY = 'nan-alibi:muted'
 
@@ -217,6 +218,8 @@ const cache = new Map<string, HTMLAudioElement>()
  */
 const FILE_VOL: Partial<Record<Voice, number>> = {
   type: 0.28, typebell: 0.5, page: 0.65, paper: 0.7, unlock: 0.8, verdict: 0.9,
+  // 현장 수집 — tick 은 초당 한 번(막판 두 번) 나므로 존재감이 없어야 한다
+  tick: 0.22, heartbeat: 0.55, whistle: 0.75, snap: 0.6, pickup: 0.6,
 }
 
 function playFile(v: Voice): boolean {
@@ -347,6 +350,32 @@ export function play(v: Voice): void {
       tone(t, 620, 0.05, 0.18, 'square')
       tone(t + 0.09, 430, 0.07, 0.16, 'square')
       noise(t + 0.2, 0.3, 0.14, 800)
+      break
+    case 'tick':
+      // 초시계 한 째깍 — 짧고 마른 금속
+      noise(t, 0.015, 0.1, 5200)
+      tone(t, 2200, 0.02, 0.05, 'square')
+      break
+    case 'heartbeat':
+      // 한 박 (lub-dub) — 가슴 안쪽에서 들리는 낮은 둔음 둘
+      tone(t, 55, 0.12, 0.4, 'sine')
+      tone(t + 0.18, 48, 0.16, 0.32, 'sine')
+      break
+    case 'whistle':
+      // 호루라기 한 번 — 두 음이 겹쳐 떨리는 금속 피리
+      tone(t, 2400, 0.5, 0.2, 'square')
+      tone(t + 0.003, 2520, 0.5, 0.16, 'square')
+      break
+    case 'snap':
+      // 폴라로이드 — 셔터 딸깍 + 필름 배출 모터
+      noise(t, 0.03, 0.4, 3600)
+      tone(t + 0.01, 900, 0.03, 0.1, 'square')
+      noise(t + 0.12, 0.4, 0.1, 1500)
+      break
+    case 'pickup':
+      // 증거봉투 — 천 스침 + 비닐 구김 (VARCO 크레딧 소진으로 합성만)
+      noise(t, 0.1, 0.15, 2000)
+      noise(t + 0.12, 0.18, 0.22, 4500)
       break
   }
 }
