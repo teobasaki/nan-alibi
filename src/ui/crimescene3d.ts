@@ -24,7 +24,7 @@ import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
   DEATH_AT, DEATH_ZONE, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
-  phaseAt, pulseAt, remainMs, sceneBlocked, vignetteAt, type ScenePhase,
+  moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, vignetteAt, type ScenePhase,
 } from './sceneRules'
 
 /**
@@ -826,6 +826,31 @@ export async function mountCrimeScene(
       return at
     }
 
+    /**
+     * 마커 노드 구성 집계 — "중복 스폰인가"를 눈이 아니라 숫자로 판정한다.
+     * DEV 훅(`__cs.markerStats()`)으로도 나간다.
+     */
+    const markerStats = (): { bodies: number; halos: number; locks: number; total: number; dup: string[] } => {
+      const seen = new Map<string, number>()
+      let bodies = 0
+      let halos = 0
+      let locks = 0
+      for (const c of markerRoot.children) {
+        const part = c.userData.part as string | undefined
+        if (part === 'halo') halos++
+        else if (part === 'lock') locks++
+        else {
+          bodies++
+          const id = String(c.userData.id)
+          seen.set(id, (seen.get(id) ?? 0) + 1)
+        }
+      }
+      return {
+        bodies, halos, locks, total: markerRoot.children.length,
+        dup: [...seen.entries()].filter(([, n]) => n > 1).map(([id, n]) => `${id}×${n}`),
+      }
+    }
+
     const setMarkers = (list: SceneMarker[]): void => {
       // 부착 마커(벽 cctv·데스크 위)는 재배치하지 않는다 — 설 수 없는 자리가 정상이다
       markers = list.map((m) => (m.mounted ? { ...m } : { ...m, at: spotFor(m.at) }))
@@ -888,6 +913,7 @@ export async function mountCrimeScene(
         }
         g.position.set(m.at[0], my, m.at[1])   // 서사 앵커의 높이 — 벽 cctv 2.2~2.6·데스크 위 1.35
         g.userData.id = m.id
+        g.userData.part = 'body'               // 구성 집계용 꼬리표 (markerStats)
         markerRoot.add(g)
 
         const haloCol = m.sealed ? 0x776a5c : m.crime ? COL.red : COL.amber
@@ -901,6 +927,7 @@ export async function mountCrimeScene(
         halo.position.set(m.at[0], 0.04, m.at[1])
         halo.userData.id = m.id
         halo.userData.col = haloCol            // 근접 시 흰빛으로 바꿨다 되돌릴 기준값
+        halo.userData.part = 'halo'            // 구성 집계용 꼬리표 (markerStats)
         markerRoot.add(halo)
 
         if (m.sealed) {
@@ -909,7 +936,27 @@ export async function mountCrimeScene(
           sp.scale.setScalar(0.42)
           sp.position.set(m.at[0], my + 0.55, m.at[1])
           sp.userData.id = m.id
+          sp.userData.part = 'lock'            // 구성 집계용 꼬리표 (markerStats)
           markerRoot.add(sp)
+        }
+      }
+
+      /**
+       * **구성 불변식** — 마커 1개는 몸통 1 + 발치 링 1 (+봉인이면 자물쇠 1) 이다.
+       * 그래서 `markerRoot.children` 은 **증거 수의 2배 + 봉인 수**가 정상이고,
+       * id 가 2~3번 세어지는 것도 정상이다 (같은 x·z, 다른 y). 이 주석이 없어서
+       * 실플레이 보고가 "중복 스폰"으로 읽혔다 — 이제 숫자로 잠근다.
+       * 진짜 중복(같은 id 의 몸통 2개)은 아래가 잡는다.
+       */
+      if (import.meta.env.DEV) {
+        const s = markerStats()
+        const dupIds = [...new Set(list.map((m) => m.id))].length !== list.length
+        if (s.bodies !== list.length || s.halos !== list.length || dupIds) {
+          console.warn(`[현장] 마커 불변식 위반 — 증거 ${list.length} · 몸통 ${s.bodies} · ` +
+            `링 ${s.halos} · 자물쇠 ${s.locks}${dupIds ? ' · 입력 id 중복' : ''}`)
+        } else {
+          console.info(`[현장] 마커 ${list.length}개 = 몸통 ${s.bodies} + 링 ${s.halos} + ` +
+            `자물쇠 ${s.locks} → 노드 ${s.total} (불변식 통과)`)
         }
       }
     }
@@ -1252,6 +1299,18 @@ export async function mountCrimeScene(
     let raf = 0
     let alive = true
     const clock = new THREE.Clock()
+    /**
+     * **속도는 상태다** — 입력이 아니라. 실제 속도(curSpeed)를 램프로 밀고,
+     * 이동·클립 가중치·발소리 전부 이 하나를 본다. 입력이 끊긴 프레임에도
+     * curSpeed 가 남아 미끄러지듯 서고, 그 값이 0 이 되면 대기 클립이 올라온다 —
+     * "정지했는데 계속 달린다"(실플레이)의 근본 수리다: 클립 상태를 **입력 플래그가
+     * 아니라 몸의 속도**가 정한다.
+     */
+    let curSpeed = 0
+    /** DEV 프레임 통계 누적 (2초 창) */
+    let frames = 0
+    let statAcc = 0
+    const lastDir = new THREE.Vector3(0, 0, 1)
     const dir = new THREE.Vector3()
     const camFwd = new THREE.Vector3()
     const camRight = new THREE.Vector3()
@@ -1323,27 +1382,38 @@ export async function mountCrimeScene(
 
         const bx = actor.position.x
         const bz = actor.position.z
-        const moving = dir.lengthSq() > 0
+        const wantsMove = dir.lengthSq() > 0
+        if (wantsMove) lastDir.copy(dir)
+        /**
+         * 시점별 상한 + 가감속 램프 (sceneRules 의 순수 함수가 산수를 소유한다).
+         * 1인칭은 시야가 좁아 같은 3.4 도 과속으로 읽힌다 → 2.4 로 누른다.
+         * 조감(V)은 방이 다 보이므로 클립 속도 그대로.
+         */
+        const topSpeed = moveSpeedFor(moveSpeed, firstPerson)
+        curSpeed = rampTo(curSpeed, wantsMove && !locked ? topSpeed : 0, simSec)
+        const moving = curSpeed > 0.05
         if (moving) {
           // 실시간을 0.05s 조각으로 나눠 민다 — 프레임 드랍에도 속도가 참이고 벽은 안 뚫린다
           let rem = simSec
           while (rem > 1e-4) {
             const st = Math.min(0.05, rem)
             rem -= st
-            const step = moveSpeed * st
-            const nx = actor.position.x + dir.x * step
-            const nz = actor.position.z + dir.z * step
+            const step = curSpeed * st
+            const nx = actor.position.x + lastDir.x * step
+            const nz = actor.position.z + lastDir.z * step
             // 축 분리 — 벽에 비스듬히 닿으면 미끄러진다 (explore3d 와 같은 이유).
             // 격자(갤러리 벽·조각상·의자)와 분석 상자를 같은 판정이 본다.
-            if (dir.x !== 0 && !blockedAt(nx, actor.position.z)) actor.position.x = nx
-            if (dir.z !== 0 && !blockedAt(actor.position.x, nz)) actor.position.z = nz
+            if (lastDir.x !== 0 && !blockedAt(nx, actor.position.z)) actor.position.x = nx
+            if (lastDir.z !== 0 && !blockedAt(actor.position.x, nz)) actor.position.z = nz
           }
           /**
            * 1인칭에서 **키 이동은 몸이 기준**(A/D 가 조향)이지만, **클릭 이동은 목표가
            * 기준**이다 — 몸을 돌리지 않으면 시선은 그대로인 채 옆걸음으로 미끄러진다.
            */
           const byKeys = fwd !== 0 || side !== 0
-          const want = firstPerson && byKeys ? actor.rotation.y : Math.atan2(dir.x, dir.z)
+          // 활강(입력 없이 감속 중)에는 lastDir 을 본다 — dir 이 0 이면 atan2(0,0)=0 이라
+          // 몸이 +Z 로 홱 돌아간다 (램프를 넣으며 새로 생긴 함정)
+          const want = firstPerson && byKeys ? actor.rotation.y : Math.atan2(lastDir.x, lastDir.z)
           let d = want - actor.rotation.y
           while (d > Math.PI) d -= Math.PI * 2
           while (d < -Math.PI) d += Math.PI * 2
@@ -1351,7 +1421,7 @@ export async function mountCrimeScene(
         }
         if (goal) {
           const moved = Math.hypot(actor.position.x - bx, actor.position.z - bz)
-          stuckT = moved < moveSpeed * simSec * 0.5 ? stuckT + simSec : 0
+          stuckT = moved < topSpeed * simSec * 0.5 ? stuckT + simSec : 0
           if (stuckT > 0.4) { goal = null; stuckT = 0 }
         } else stuckT = 0
         // 집기가 끝났다 — 클립을 내린다 (weight 복귀는 아래 블렌딩이 맡는다)
@@ -1361,21 +1431,27 @@ export async function mountCrimeScene(
           if (!idleAction) walk?.setEffectiveWeight(1)
         }
         /**
-         * 상태 → 클립 블렌딩. 대기 클립이 있으면 세 상태(집기/이동/대기)를
-         * weight 로 섞는다 — 걷기 0프레임(A포즈) 정지는 "리깅 안 된" 몸으로 읽혔다.
-         * 대기 클립이 없는 배포에서는 예전 규칙(정지=0프레임) 그대로다.
+         * 상태 → 클립 블렌딩. **판정 기준은 입력이 아니라 실제 속도(curSpeed)다** —
+         * 입력 플래그로 정하면 클릭 목표·잠금·키 이벤트 유실 중 하나만 어긋나도
+         * 달리는 자세로 서 있게 된다("계속 달린다"의 정체). 속도가 0 이면 몸도 0 이다.
+         * 가중치 램프는 이동 램프와 같은 시간상수(rampTau)를 써서 발과 몸이 함께 선다.
          */
         if (idleAction && walk) {
-          const k = Math.min(1, simSec * 8)
-          const tW = pickingUp ? 0 : moving ? 1 : 0
-          const tI = pickingUp ? 0 : moving ? 0 : 1
+          const frac = topSpeed > 0 ? Math.min(1, curSpeed / topSpeed) : 0
+          const tW = pickingUp ? 0 : frac
+          const tI = pickingUp ? 0 : 1 - frac
           walk.paused = false
-          walk.setEffectiveWeight(walk.getEffectiveWeight() + (tW - walk.getEffectiveWeight()) * k)
-          idleAction.setEffectiveWeight(idleAction.getEffectiveWeight() + (tI - idleAction.getEffectiveWeight()) * k)
+          walk.setEffectiveWeight(rampTo(walk.getEffectiveWeight(), tW, simSec))
+          idleAction.setEffectiveWeight(rampTo(idleAction.getEffectiveWeight(), tI, simSec))
+          /**
+           * 클립 재생 속도를 실제 속도에 맞춘다 — 3.4 클립을 2.4 로 걸으면
+           * 발이 미끄러진다. 서면 0 이 되지만 그때는 weight 도 0 이라 안 보인다.
+           */
+          walk.timeScale = moveSpeed > 0 ? Math.max(0.35, curSpeed / moveSpeed) : 1
         } else if (walk) {
           walk.paused = !moving && !pickingUp
+          walk.timeScale = moveSpeed > 0 ? Math.max(0.35, curSpeed / moveSpeed) : 1
         }
-        mixer?.update(simSec)
 
         /* 근접 판정 — 가장 가까운 것 (nearestWithin 재사용) */
         const nowNear = nearestWithin(markers, actor.position.x, actor.position.z, SCENE_FX.pickRadius)
@@ -1463,6 +1539,13 @@ export async function mountCrimeScene(
         }
       }
 
+      /**
+       * **믹서는 국면 밖에서 돈다.** 예전엔 collect 안에 있어서 훑기 5초 동안
+       * 대기 클립이 0프레임에 얼어 있었다 — 오빗 카메라가 도는 내내 A포즈에 가까운
+       * 몸을 비추던 것의 정체다. 종료(화이트아웃) 중에도 몸은 숨을 쉰다.
+       */
+      mixer?.update(simSec)
+
       // 훑기만 조감이다 — 종료 국면(화이트아웃 뒤)에도 시점이 튀지 않아야 한다
       if (firstPerson && phase !== 'survey') {
         /* 집는 동안 시선이 숙는다 — 몸이 안 보이는 1인칭에서는 카메라가 그 몸짓을 진다 */
@@ -1481,6 +1564,23 @@ export async function mountCrimeScene(
         actor.visible = true
         renderer.render(scene, camera)
       }
+
+      /**
+       * 프레임 원가 — 버벅임 보고가 오면 **그림인지 아닌지**를 이 줄이 가른다.
+       * 2초마다 한 번만 찍는다 (로그가 프레임을 먹으면 관측이 원인이 된다).
+       */
+      if (import.meta.env.DEV) {
+        frames++
+        statAcc += gap
+        if (statAcc >= 2) {
+          const fps = frames / statAcc
+          console.info(`[현장] ${fps.toFixed(0)}fps · ${(1000 / fps).toFixed(1)}ms/f · ` +
+            `드로우콜 ${renderer.info.render.calls} · 삼각형 ${(renderer.info.render.triangles / 1000).toFixed(0)}k · ` +
+            `지오 ${renderer.info.memory.geometries} · 텍스처 ${renderer.info.memory.textures}`)
+          frames = 0
+          statAcc = 0
+        }
+      }
     }
     // 개발 중에만 씬을 밖에서 들여다본다 — 3D 는 콘솔 없이는 원인을 못 찾는다 (explore3d 의 __ex 와 같은 이유)
     if (import.meta.env.DEV) {
@@ -1488,7 +1588,32 @@ export async function mountCrimeScene(
         scene, actor, markerRoot, camera, moveSpeed, blockedAt,
         hasPickupClip: Boolean(pickupAction),
         hasIdleClip: Boolean(idleAction),
-        // 집기 실측용 — "재생 안 된다" 류 보고는 눈이 아니라 weight 로 판정한다
+        markerStats,
+        // 입력이 들어왔는가 — "안 움직인다" 가 입력인지 이동인지 가른다 (키 잠김 회귀 포함)
+        keysNow: () => [...keys],
+        phaseNow: () => phase,
+        /**
+         * **지금 몸이 무엇을 하고 있는가** — 애니메이션 회귀는 눈이 아니라 이 숫자로 본다.
+         * "정지했는데 달린다" 류 보고가 오면 speed·walkW·idleW 세 값이 곧 진단이다.
+         */
+        animState: () => ({
+          speed: +curSpeed.toFixed(3),
+          topSpeed: +moveSpeedFor(moveSpeed, firstPerson).toFixed(2),
+          clipSpeed: moveSpeed,
+          firstPerson,
+          walkW: +(walk?.getEffectiveWeight() ?? -1).toFixed(3),
+          idleW: +(idleAction?.getEffectiveWeight() ?? -1).toFixed(3),
+          pickupRunning: pickupAction?.isRunning() ?? false,
+          walkTimeScale: +(walk?.timeScale ?? 0).toFixed(2),
+        }),
+        // 렌더 부하 — 버벅임의 원인이 그림인지 아닌지를 가른다
+        renderStats: () => ({
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          programs: renderer.info.programs?.length ?? -1,
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+        }),
         pickupState: () => ({
           running: pickupAction?.isRunning() ?? false,
           idleW: idleAction?.getEffectiveWeight() ?? -1,

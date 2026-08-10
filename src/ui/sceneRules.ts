@@ -45,6 +45,17 @@ export const SCENE_FX = {
   /** 이동 속도 m/s — 걷기 클립일 때 (explore3d 와 같은 빠른 걸음) */
   speed: 2.2,
   /**
+   * **1인칭 상한 속도 m/s.** 같은 3.4 라도 1인칭이 더 빠르게 느껴진다 —
+   * 시야가 좁아 화면 가장자리를 스치는 상대속도가 커지기 때문이다(실플레이 "너무 빠르다").
+   * 조감(V)은 방 전체가 보이므로 클립 속도(3.4)를 그대로 쓴다.
+   */
+  fpSpeed: 2.4,
+  /**
+   * 가감속 램프의 시간상수(초). 급출발·급정지가 프레임 드랍처럼 읽히던 체감의 수리 —
+   * 이 값 동안 목표 속도의 63%에 닿는다. 클립 가중치도 같은 램프를 탄다.
+   */
+  rampTau: 0.15,
+  /**
    * 달리기 클립일 때의 이동 속도 m/s. 30초 압박에 걷기는 태평하다 —
    * 30초 × 3.4 ≈ 100m 주행이라 12×9m 방에서 가방 5칸이 유일한 상한이 된다.
    * 클립이 없으면 걷기+2.2 로 떨어진다 (발이 미끄러지면 안 된다).
@@ -358,4 +369,31 @@ export function spawnAnchored(list: readonly { id: string; kind: EvKind }[]): Ma
     out.set(it.id, { at: [x, z], y: over > 0 ? undefined : anchor.y })
   }
   return out
+}
+
+/* ─────────── 이동 체감 — 시점별 상한 + 가감속 램프 (실플레이 피드백) ───────────
+ * 3D 씬은 테스트가 못 닿으므로, **속도를 정하는 산수만** 순수 함수로 떼어 게이트가 보게 한다
+ * (nearestWithin·spawnAnchored 와 같은 이유, 같은 문법).
+ */
+
+/**
+ * 시점별 이동 상한. 클립이 정한 속도(걷기 2.2·달리기 3.4)를 **1인칭에서만** fpSpeed 로 누른다.
+ * 클립보다 빠르게는 절대 만들지 않는다 — 발이 미끄러지면 속도가 거짓말이 된다.
+ */
+export function moveSpeedFor(clipSpeed: number, firstPerson: boolean): number {
+  return firstPerson ? Math.min(clipSpeed, SCENE_FX.fpSpeed) : clipSpeed
+}
+
+/**
+ * 지수 접근 램프 — dt 가 들쭉날쭉해도 **시간상수(tau)가 결과를 정한다**.
+ * 선형 가속(속도 += a·dt)은 프레임이 처지면 한 프레임에 목표를 뛰어넘어
+ * 급출발이 그대로 남는다. `1 - exp(-dt/tau)` 는 어떤 dt 에도 단조 수렴한다.
+ */
+export function rampTo(cur: number, target: number, dtSec: number, tauSec = SCENE_FX.rampTau): number {
+  if (dtSec <= 0) return cur
+  if (tauSec <= 0) return target
+  const k = 1 - Math.exp(-dtSec / tauSec)
+  const next = cur + (target - cur) * k
+  // 부동소수 꼬리가 영원히 남지 않게 — 정지는 진짜 0 이어야 대기 클립으로 넘어간다
+  return Math.abs(target - next) < 1e-3 ? target : next
 }

@@ -9,7 +9,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   SCENE_FX, phaseAt, remainMs, pulseAt, vignetteAt, timeUp, swapField, bagIds,
-  sceneBlocked, spawnFor, spawnAnchored, DEATH_AT, SCENE_START, SCENE_PLACE_AT,
+  sceneBlocked, spawnFor, spawnAnchored, moveSpeedFor, rampTo,
+  DEATH_AT, SCENE_START, SCENE_PLACE_AT,
 } from '../src/ui/sceneRules'
 import { generateValidCase } from '../src/engine/validate'
 import { availableEvidence, createGame, fieldDone, lookupEvidence } from '../src/engine/game'
@@ -209,5 +210,62 @@ describe('개연성 배치 — kind 서사 앵커 (개편 라운드, 사용자 �
         expect(d).toBeGreaterThan(0.6)
       }
     }
+  })
+})
+
+describe('이동 체감 — 시점별 상한과 가감속 램프 (실플레이 "너무 빠르다")', () => {
+  it('1인칭은 2.4 로 눌리고 조감은 클립 속도 그대로다', () => {
+    expect(moveSpeedFor(SCENE_FX.runSpeed, true)).toBe(SCENE_FX.fpSpeed)
+    expect(moveSpeedFor(SCENE_FX.runSpeed, false)).toBe(SCENE_FX.runSpeed)
+  })
+
+  it('클립보다 빠르게는 만들지 않는다 — 걷기(2.2)는 1인칭에서도 2.2 다', () => {
+    expect(moveSpeedFor(SCENE_FX.speed, true)).toBe(SCENE_FX.speed)
+  })
+
+  it('램프는 시간상수만큼에 63%에 닿고, 넘어서지 않는다', () => {
+    const v = rampTo(0, 3.4, SCENE_FX.rampTau)
+    expect(v).toBeGreaterThan(3.4 * 0.6)
+    expect(v).toBeLessThan(3.4 * 0.66)
+  })
+
+  it('dt 가 커도 목표를 넘지 않는다 — 프레임 급락에도 과속이 없다', () => {
+    expect(rampTo(0, 3.4, 5)).toBeLessThanOrEqual(3.4)
+    expect(rampTo(3.4, 0, 5)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('정지는 진짜 0 이 된다 — 꼬리가 남으면 대기 클립이 안 올라온다', () => {
+    const step = (v0: number, sec: number): number => {
+      let v = v0
+      for (let i = 0; i < Math.round(sec / 0.016); i++) v = rampTo(v, 0, 0.016)
+      return v
+    }
+    // 0.3초(시간상수 2배)면 시작 속도의 15% 아래 — 발이 실질적으로 멎는다
+    expect(step(2.4, 0.3)).toBeLessThan(2.4 * 0.15)
+    // 그리고 1.5초 안에 정확히 0 이 된다 (스냅 임계 1e-3)
+    expect(step(2.4, 1.5)).toBe(0)
+  })
+
+  it('dt 0 은 값을 바꾸지 않는다 (탭 정지 프레임)', () => {
+    expect(rampTo(1.7, 3.4, 0)).toBe(1.7)
+  })
+})
+
+describe('마커 구성 — 한 증거는 한 자리다 (중복 스폰 회귀 잠금)', () => {
+  it('증거 하나당 좌표 하나 — id 가 겹치지 않는다', () => {
+    for (const c of [CASE, generateValidCase(7).case, gc001Case()]) {
+      const list = c.evidence.map((e) => ({ id: e.id, kind: e.kind }))
+      const spots = spawnAnchored(list)
+      expect(spots.size).toBe(list.length)
+      expect(new Set(list.map((x) => x.id)).size).toBe(list.length)
+    }
+  })
+
+  it('두 번 불러도 자리가 늘지 않는다 — 재진입이 배치를 쌓지 않는다', () => {
+    const list = CASE.evidence.map((e) => ({ id: e.id, kind: e.kind }))
+    const a = spawnAnchored(list)
+    const b = spawnAnchored(list)
+    expect(b.size).toBe(a.size)
+    for (const [id, sp] of a) expect(b.get(id)).toEqual(sp)
   })
 })
