@@ -56,9 +56,9 @@ CC-BY 계열이면 저작자 표기로 충족된다. NC(비상업)·ND(변경 �
 | 캐릭터 **8종** (`manager` · `security` · `investor` · `expartner` · `appraiser` · `secretary` · `housekeeping` · `nephew`) | Meshy (multi-image-to-3d + rigging) | 레퍼런스 이미지는 OpenAI `gpt-image-2` 로 생성. 착석 자세는 Blender 헤드리스(`scripts/pose-seated.py`), 팔 자세 보정은 `scripts/fix-arms.mjs` |
 | 걷기 동작 | Mixamo 클립을 자체 리타게팅 (`scripts/retarget.py`) | 다리 축 보정은 런타임에서 한다 (ADR 021) |
 | 인물 레퍼런스 이미지 (`public/refs/`, `docs/refs/`) | OpenAI `gpt-image-2` | 3D 생성 입력용 |
-| 인트로 · 엔딩 패널 (`public/intro/`, `public/outro/`) | OpenAI 이미지 생성 | 그림이 없어도 색면 폴백으로 동작 |
+| 인트로 · 엔딩 만화 패널 (`public/intro/`, `public/outro/`) | ChatGPT(OpenAI) 이미지 생성 — 팀 계정 세션에서 생성 | 호텔 12장 + 골든 케이스 10장(`public/intro/gc001/`). 그림이 없어도 색면 폴백으로 동작 |
 | 효과음 | Web Audio API 합성 (`src/ui/sound.ts`) | 외부 음원 파일 없음 |
-| 음성 | Web Speech API (브라우저 내장) | 외부 TTS API 미사용 |
+| 음성 | Supertone TTS API (`src/ui/tts/supertone.ts`, 심문 대사) | 키가 없으면 Web Speech API(브라우저 내장) 폴백 (`src/ui/voice.ts`) |
 
 ## 오픈소스
 

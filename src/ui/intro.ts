@@ -17,7 +17,7 @@
  */
 
 import { CRIME_SLOT, SLOT_LABEL, SUSPECTS, type CaseFile } from '../types'
-import { buildComicPage, type ComicPanel } from './comicPage'
+import { buildComicPage, type ComicPageHandle, type ComicPanel } from './comicPage'
 import { play } from './sound'
 import { josa } from '../josa'
 
@@ -34,29 +34,96 @@ for (const [path, url] of Object.entries(FILES)) {
 }
 
 /**
- * 페이지 배치 — 다섯 칸이 한 페이지에 쌓인다.
- * 0(호텔)은 상단 전폭, 2(발견)는 이 페이지의 **머니샷**이라 크게,
- * 4(다섯 중 하나)는 마지막이라 넓게 깔린다.
+ * 시드 사건(호텔) 발단 — 3페이지. gc001 과 같은 감정 문법을 탄다:
+ * 평온→위화감 / 충격 / 호기심. 한 페이지에 다 넣었을 때
+ * "너무 몰아넣었다"는 지적을 받았고, 페이지가 곧 감정 단락이 되도록 갈랐다.
+ * 그림은 다섯 장 그대로 — 충격 페이지는 **스플래시**(전면 한 칸)로 세운다.
  */
-function panels(c: CaseFile): ComicPanel[] {
+function hotelPages(c: CaseFile): ComicPageDef[] {
   const five = SUSPECTS.map((s) => c.suspects[s].job).join(' · ')
   return [
-    { area: 'p0', img: PANEL_URL.get('0'), key: '어젯밤', corner: 'tl', tilt: -0.8,
-      line: `어젯밤, ${c.venue.name}.` },
-    { area: 'p1', img: PANEL_URL.get('1'), key: SLOT_LABEL[CRIME_SLOT], corner: 'tl', tilt: 0.9, bam: '치지직',
-      line: `${SLOT_LABEL[CRIME_SLOT]}. 12층 복도의 불이 반쯤 나가 있었다.` },
-    { area: 'p2', img: PANEL_URL.get('2'), key: c.venue.room, corner: 'bl', tilt: -1.2, bam: '쿵—',
-      line: `${c.venue.room}에서 ${c.victim.title} ${josa(c.victim.name, '이/가')} 숨진 채 발견됐다.` },
-    { area: 'p3', img: PANEL_URL.get('3'), key: '다섯', corner: 'tr', tilt: 0.7,
-      line: `호텔에 남아 있던 다섯 사람 — ${five}.` },
-    { area: 'p4', img: PANEL_URL.get('4'), key: '한 명', corner: 'br', tilt: -0.6, bam: '?!',
-      line: '다섯 모두 그 시간엔 다른 곳에 있었다고 말한다. 그중 한 명이 범인이다.' },
+    { // 1면 — 평온함이 식어 간다 (종이는 2열 그리드 — 전폭 칸은 두 토큰으로 스팬)
+      rows: ['p0 p0', 'p1 p1'], heights: '54% 46%',
+      panels: [
+        { area: 'p0', img: PANEL_URL.get('0'), key: '어젯밤', corner: 'tl', tilt: -0.8,
+          line: `어젯밤, ${c.venue.name}. 비가 막 그친 밤이었다.`, fx: ['kb-in', 'rain'] },
+        { area: 'p1', img: PANEL_URL.get('1'), key: SLOT_LABEL[CRIME_SLOT], corner: 'bl', tilt: 0.9, bam: '치지직',
+          line: `${SLOT_LABEL[CRIME_SLOT]}. 12층 복도의 불이 반쯤 나가 있었다.`, fx: ['kb-in', 'flicker'] },
+      ] },
+    { // 2면 — 충격. 스플래시 한 칸이 페이지 전체를 먹는다.
+      rows: ['p2 p2'], heights: '100%',
+      panels: [
+        { area: 'p2', img: PANEL_URL.get('2'), key: c.venue.room, corner: 'bl', tilt: -1.2, bam: '쿵—',
+          line: `${c.venue.room}. ${c.victim.title} ${josa(c.victim.name, '이/가')} 숨진 채 발견됐다.`, fx: ['kb-in', 'pulse'] },
+      ] },
+    { // 3면 — 호기심. 다섯 그림자와 사건 파일.
+      rows: ['p3 p3', 'p4 p4'], heights: '50% 50%',
+      panels: [
+        { area: 'p3', img: PANEL_URL.get('3'), key: '다섯', corner: 'tr', tilt: 0.7,
+          line: `호텔에 남아 있던 사람은 다섯 — ${five}.`, fx: ['kb-left', 'smoke'] },
+        { area: 'p4', img: PANEL_URL.get('4'), key: '한 명', corner: 'br', tilt: -0.6, bam: '?!',
+          line: '다섯 모두 그 시간엔 다른 곳에 있었다고 말한다. 그중 한 명이 범인이다.', fx: ['kb-out'] },
+      ] },
   ]
 }
 
-/** 칸 사이 호흡. 첫 칸만 조금 길다 — 제목을 읽는 시간이다. */
-const HOLD_FIRST = 2900
-const HOLD = 2500
+/**
+ * ## 골든 케이스 001 — 「옮겨진 상자의 사각」 (`?case=gc001`)
+ * 팀의 고정 시나리오(라음 사립 갤러리)는 시드 생성 사건이 아니라 **작성된 사건**이다.
+ * 그 발단 카툰은 감정선이 계약이다: 평온함 → 위화감 → 충격 → 호기심 (팀 UX 문서).
+ * 한 페이지에 다 넣으면 감정이 섞이므로 **페이지 셋으로 갈라** 페이지가 넘어갈 때
+ * 감정도 넘어가게 한다. 그림 10장은 `public/intro/gc001/`, 프롬프트 정본은
+ * `docs/content/GC001-발단카툰-프롬프트.md`.
+ */
+const GC_FILES = import.meta.glob('/public/intro/gc001/*.webp', {
+  eager: true, query: '?url', import: 'default',
+}) as Record<string, string>
+const GC_URL = new Map<string, string>()
+for (const [path, url] of Object.entries(GC_FILES)) {
+  const name = path.split('/').pop()?.replace(/\.\w+$/, '')
+  if (name) GC_URL.set(name, (url as string).replace(/^\/public/, ''))
+}
+
+interface ComicPageDef { rows: string[]; heights: string; panels: ComicPanel[] }
+
+/** 골든 케이스 발단 — 페이지가 곧 감정 단락이다 */
+function gc001Pages(): ComicPageDef[] {
+  const g = (n: number): string | undefined => GC_URL.get(String(n))
+  return [
+    { // 1면 — 평온함. 따뜻한 광량, 기울기 거의 0.
+      rows: ['p0 p0', 'p1 p2'], heights: '52% 48%',
+      panels: [
+        { area: 'p0', img: g(0), key: '저녁', corner: 'tl', tilt: -0.4, fx: ['kb-in'],
+          line: '라음 사립 갤러리. 폐관을 앞둔 저녁이었다.' },
+        { area: 'p1', img: g(1), key: '전시홀', corner: 'bl', tilt: 0.4, fx: ['kb-left'],
+          line: '메인 전시홀은 여느 날과 같았다. 모든 것이 제자리에 있었다.' },
+        { area: 'p2', img: g(2), key: '이상 없음', corner: 'br', tilt: -0.5, fx: ['kb-in'],
+          line: '20:40 — 폐관 전 점검. 전시 받침대, 이상 없음.' },
+      ] },
+    { // 2면 — 위화감. 조명이 식고 칸이 기운다.
+      rows: ['p3 p4', 'p5 p5'], heights: '48% 52%',
+      panels: [
+        { area: 'p3', img: g(3), key: '파티션', corner: 'tl', tilt: 1.1, fx: ['kb-right'], bam: '끼익',
+          line: '21:03. 파티션이 움직였다. 아무도 이유를 말하지 않았다.' },
+        { area: 'p4', img: g(4), key: '반입문', corner: 'tr', tilt: -0.9, fx: ['kb-in', 'flicker'],
+          line: '21:04. 반입문이 열렸다 — 열렸다는 기록뿐, 누가 지나갔는지는 남지 않았다.' },
+        { area: 'p5', img: g(5), key: '상자', corner: 'bl', tilt: 0.8, fx: ['kb-left'], bam: '드르륵',
+          line: '21:09. 예정에 없던 상자가 움직였고, 카메라에 좁은 시야가 열렸다.' },
+      ] },
+    { // 3면 — 충격, 그리고 호기심. 단일 광원 → 램프 아래 클로즈업.
+      rows: ['p6 p6', 'p7 p8', 'p9 p9'], heights: '42% 29% 29%',
+      panels: [
+        { area: 'p6', img: g(6), key: '21:21', corner: 'tl', tilt: -1.2, fx: ['kb-in', 'pulse'], bam: '……!',
+          line: '21:21. 관장 한라온이 전시 받침대 옆에서 발견됐다.' },
+        { area: 'p7', img: g(7), key: '지직', corner: 'bl', tilt: 0.9, fx: ['flicker'], bam: '지직',
+          line: '21:15까지 그의 목소리가 확인됐다. 21:18, 카메라에는 얼굴 없는 누군가가 찍혔다.' },
+        { area: 'p8', img: g(8), key: '다섯', corner: 'br', tilt: -0.6, fx: ['kb-left', 'smoke'],
+          line: '폐관 뒤 접근할 수 있었던 사람은 다섯 — 운영·큐레이터·운송·보존·보안.' },
+        { area: 'p9', img: g(9), key: '?', corner: 'br', tilt: 0.5, fx: ['kb-in'], bam: '?!',
+          line: '받침대는 사고처럼 보였다. 그러나 라벨은 새것이었다 — 수사가 시작된다.' },
+      ] },
+  ]
+}
 
 /**
  * `?introhold=1` — 자동 진행을 끄고 클릭으로만 넘긴다.
@@ -71,29 +138,43 @@ const HOLD_MANUAL = new URLSearchParams(location.search).has('introhold')
  * 그 뒤 흰빛으로 타올라 브리핑으로 넘어간다.
  */
 export function playIntro(c: CaseFile): Promise<void> {
+  // 골든 케이스 경로 — 시드 사건이 아니라 작성된 사건의 발단이다
+  if (new URLSearchParams(location.search).get('case') === 'gc001') {
+    return playComicBook(gc001Pages(), '옮겨진 상자의 사각')
+  }
+  return playComicBook(hotelPages(c), c.title)
+}
+
+
+/**
+ * 만화책 재생 — **페이지 여러 장을 넘긴다.**
+ * 한 페이지 안에서는 칸이 쌓이고(만화의 시간), 페이지가 다 차면
+ * 종이가 넘어간다(단락의 시간). 감정 단락 하나 = 페이지 하나.
+ */
+function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
   return new Promise((resolve) => {
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const total = pages.reduce((n, p) => n + p.panels.length, 0)
+
     const ov = document.createElement('div')
     ov.className = 'intro comic'
 
-    const page = buildComicPage(panels(c), ['p0 p0', 'p1 p2', 'p3 p4'], '36% 36% 28%')
-
     const bar = document.createElement('div')
     bar.className = 'intro-bar'
-    for (let i = 0; i < page.count; i++) bar.appendChild(document.createElement('i'))
+    for (let i = 0; i < total; i++) bar.appendChild(document.createElement('i'))
 
     const skip = document.createElement('button')
     skip.className = 'intro-skip'
     skip.textContent = '건너뛰기 (Esc)'
 
-    const title = document.createElement('div')
-    title.className = 'intro-title'
-    title.textContent = c.title
+    const cap = document.createElement('div')
+    cap.className = 'intro-title'
+    cap.textContent = title
 
-    ov.append(page.el, title, bar, skip)
-    document.body.appendChild(ov)
-
-    let idx = -1
+    let handle: ComicPageHandle | null = null
+    let pageIdx = -1
+    let panelIdx = -1     // 현재 페이지 안에서의 칸 번호
+    let shown = 0         // 전체 진행 (점 표시용)
     let timer = 0
     let done = false
 
@@ -102,26 +183,51 @@ export function playIntro(c: CaseFile): Promise<void> {
       done = true
       clearTimeout(timer)
       removeEventListener('keydown', onKey)
-      ov.classList.add('out')     // 흰빛으로 타오르며 브리핑으로 넘어간다
+      ov.classList.add('out')
       setTimeout(() => { ov.remove(); resolve() }, 700)
     }
 
-    const show = (i: number): void => {
-      if (i >= page.count) {
-        // 완성된 페이지를 한 박자 보여 주고 나간다
-        if (!HOLD_MANUAL) timer = window.setTimeout(finish, still ? 400 : 1500)
+    const nextPage = (): void => {
+      pageIdx += 1
+      if (pageIdx >= pages.length) {
+        if (!HOLD_MANUAL) timer = window.setTimeout(finish, still ? 400 : 1600)
         return
       }
-      idx = i
-      page.reveal(i)
-      Array.from(bar.children).forEach((d, k) => d.classList.toggle('on', k <= i))
+      const def = pages[pageIdx]!
+      const fresh = buildComicPage(def.panels, def.rows, def.heights)
+      if (handle) {
+        // 종이가 넘어간다 — 이전 페이지는 왼쪽으로 젖혀지며 사라진다
+        const old = handle.el
+        old.classList.add('page-out')
+        setTimeout(() => old.remove(), still ? 0 : 650)
+        fresh.el.classList.add('page-in')
+      }
+      handle = fresh
+      panelIdx = -1
+      ov.insertBefore(fresh.el, cap)
+      step()
+    }
+
+    const step = (): void => {
+      if (!handle) return
+      panelIdx += 1
+      if (panelIdx >= handle.count) {
+        // 페이지가 찼다 — 한 박자 보여주고 넘긴다
+        // 수동 모드(introhold)에서는 클릭이 nextPage 를 부른다
+        if (!HOLD_MANUAL) timer = window.setTimeout(nextPage, still ? 500 : 1500)
+        return
+      }
+      handle.reveal(panelIdx)
+      shown += 1
+      Array.from(bar.children).forEach((d, k) => d.classList.toggle('on', k < shown))
       play('paper')
-      if (!HOLD_MANUAL) timer = window.setTimeout(() => show(i + 1), still ? 900 : (i === 0 ? HOLD_FIRST : HOLD))
+      if (!HOLD_MANUAL) timer = window.setTimeout(step, still ? 850 : 2400)
     }
 
     const next = (): void => {
       clearTimeout(timer)
-      show(idx + 1)
+      if (handle && panelIdx >= handle.count - 1 && panelIdx !== -1) nextPage()
+      else step()
     }
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') finish()
@@ -131,6 +237,8 @@ export function playIntro(c: CaseFile): Promise<void> {
     ov.onclick = (e) => { if (e.target !== skip) next() }
     skip.onclick = (e) => { e.stopPropagation(); finish() }
 
-    show(0)
+    ov.append(cap, bar, skip)
+    document.body.appendChild(ov)
+    nextPage()
   })
 }

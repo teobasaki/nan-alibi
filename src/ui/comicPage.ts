@@ -36,6 +36,13 @@ export interface ComicPanel {
   corner?: 'tl' | 'tr' | 'bl' | 'br'
   /** 이 칸이 드러날 때 낼 소리 */
   voice?: string
+  /**
+   * 칸 속 모션. 정지 그림은 삽화이고, **그림 안에서 무언가 움직여야 장면**이 된다.
+   * 그림 자체는 못 움직이므로 **카메라와 공기**를 움직인다 —
+   * 느린 줌·팬(카메라), 형광등 플리커·빗줄기·담배 연기·맥동(공기).
+   * 배경을 6% 크게 깔아 팬 여백을 확보한다(.cbg).
+   */
+  fx?: ('kb-in' | 'kb-out' | 'kb-left' | 'kb-right' | 'flicker' | 'rain' | 'smoke' | 'pulse')[]
 }
 
 export interface ComicPageHandle {
@@ -64,7 +71,18 @@ export function buildComicPage(
     cell.style.gridArea = p.area
     cell.style.setProperty('--tilt', `${p.tilt ?? 0}deg`)
     if (p.img) {
-      cell.style.backgroundImage = `url(${p.img})`
+      // 그림은 별도 레이어(.cbg)에 깐다 — transform 으로 카메라를 움직이기 위해서다.
+      // 칸 자체를 움직이면 테두리·서술 상자까지 흔들린다.
+      const bg = document.createElement('div')
+      bg.className = 'cbg ' + (p.fx ?? []).filter((f) => f.startsWith('kb-')).join(' ')
+      bg.style.backgroundImage = `url(${p.img})`
+      cell.appendChild(bg)
+      for (const f of p.fx ?? []) {
+        if (f.startsWith('kb-')) continue
+        const fx = document.createElement('div')
+        fx.className = `cfx ${f}`
+        cell.appendChild(fx)
+      }
     } else {
       cell.classList.add('noimg')
       const big = document.createElement('span')

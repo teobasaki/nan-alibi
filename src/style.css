@@ -1299,6 +1299,74 @@ body::after {
 /* 수첩 안 스크롤바도 잉크빛으로 */
 .nb .nb-page::-webkit-scrollbar-thumb { background: rgba(90,60,20,.35); }
 
+/* ── 칸 속 모션 (comicPage.ts 의 fx) ───────────────────────────
+ * 정지 그림은 삽화이고, 그림 안에서 무언가 움직여야 장면이 된다.
+ * 그림 자체는 못 움직이므로 카메라(.cbg 의 느린 줌·팬)와
+ * 공기(빗줄기·플리커·연기·맥동)를 움직인다.
+ */
+.cpanel .cbg {
+  position: absolute; inset: -6%;              /* 팬 여백 — 6% 크게 깔아야 가장자리가 안 빈다 */
+  background-size: cover; background-position: center;
+}
+.cpanel.on .cbg.kb-in    { animation: kbIn 9s ease-out forwards; }
+.cpanel.on .cbg.kb-out   { animation: kbOut 9s ease-out forwards; }
+.cpanel.on .cbg.kb-left  { animation: kbLeft 10s linear forwards; }
+.cpanel.on .cbg.kb-right { animation: kbRight 10s linear forwards; }
+@keyframes kbIn    { from { transform: scale(1); }    to { transform: scale(1.12); } }
+@keyframes kbOut   { from { transform: scale(1.12); } to { transform: scale(1); } }
+@keyframes kbLeft  { from { transform: translateX(2.5%) scale(1.06); } to { transform: translateX(-2.5%) scale(1.06); } }
+@keyframes kbRight { from { transform: translateX(-2.5%) scale(1.06); } to { transform: translateX(2.5%) scale(1.06); } }
+
+.cfx { position: absolute; inset: 0; pointer-events: none; }
+/* 형광등 플리커 — 밝기가 잘게 떨린다 */
+.cfx.flicker { background: rgba(255, 236, 190, .07); animation: fxFlicker 2.3s steps(1) infinite; }
+@keyframes fxFlicker {
+  0%, 100% { opacity: 0; } 7% { opacity: 1; } 9% { opacity: 0; }
+  11% { opacity: .7; } 13% { opacity: 0; } 54% { opacity: 0; } 56% { opacity: .5; } 58% { opacity: 0; }
+}
+/* 빗줄기 — 대각선 줄무늬가 흘러내린다 */
+.cfx.rain {
+  background: repeating-linear-gradient(
+    112deg, transparent 0 7px, rgba(220, 228, 240, .14) 7px 8px, transparent 8px 16px);
+  animation: fxRain .5s linear infinite; opacity: .5;
+}
+@keyframes fxRain { from { background-position: 0 0; } to { background-position: -18px 34px; } }
+/* 담배 연기 — 뿌연 덩어리가 천천히 흐른다 */
+.cfx.smoke {
+  background: radial-gradient(38% 30% at 30% 62%, rgba(230, 224, 210, .12), transparent 70%);
+  filter: blur(6px); animation: fxSmoke 11s ease-in-out infinite alternate;
+}
+@keyframes fxSmoke { from { transform: translate(-4%, 2%) scale(1); } to { transform: translate(6%, -6%) scale(1.18); } }
+/* 맥동 — 인장색 비네트가 숨쉰다. 발견·최후 통첩의 칸 */
+.cfx.pulse {
+  box-shadow: inset 0 0 0 0 rgba(179, 55, 44, 0);
+  animation: fxPulse 2.6s ease-in-out infinite;
+}
+@keyframes fxPulse {
+  0%, 100% { box-shadow: inset 0 0 34px 2px rgba(179, 55, 44, 0); }
+  50% { box-shadow: inset 0 0 44px 10px rgba(179, 55, 44, .22); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cpanel .cbg, .cfx { animation: none !important; }
+}
+
+/* ── 페이지 넘김 (playComicBook) — 감정 단락이 넘어가는 순간 ── */
+.cpage.page-out {
+  animation: pageOut .62s cubic-bezier(.5, 0, .8, .4) forwards;
+  transform-origin: left center;
+  position: absolute;                /* 다음 페이지와 겹쳐 넘어간다 */
+  z-index: 2;
+}
+@keyframes pageOut {
+  to { transform: perspective(1600px) rotateY(-72deg) translateX(-4%); opacity: 0; }
+}
+.cpage.page-in { animation: pageIn .5s .18s ease-out backwards; }
+@keyframes pageIn { from { opacity: 0; transform: scale(.985); } }
+@media (prefers-reduced-motion: reduce) {
+  .cpage.page-out, .cpage.page-in { animation: none; }
+  .cpage.page-out { display: none; }
+}
+
 /* ─────────── ADR 022 — 챕터 UX 신규 클래스 (기존 규칙 수정 금지 구역과 무관한 추가분) ─────────── */
 
 /* 시작 페이지 — 게임은 자동으로 시작되지 않는다. 어두운 로비에서 사건번호를 받아 든다. */
@@ -1331,6 +1399,15 @@ body::after {
   padding: 13px 44px; cursor: pointer; transition: background .2s, color .2s;
 }
 .start-go:hover, .start-go:focus-visible { background: var(--amber); color: #16110f; }
+
+/* 골든 케이스 진입 — 주 동선(사건 시작)을 뺏지 않는 각주형 버튼 */
+.start-alt {
+  display: block; margin: 16px auto 0; padding: 6px 10px;
+  font: inherit; font-size: 12.5px; letter-spacing: .08em;
+  color: var(--muted); background: none; border: none; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 4px;
+}
+.start-alt:hover, .start-alt:focus-visible { color: var(--amber); }
 
 /* 챕터 게이트 안내 — 방금 막힌 이유를 말하는 한 줄. 코치(다음 행동)와 역할이 다르다. */
 .gatenote {

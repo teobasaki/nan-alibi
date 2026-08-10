@@ -2082,6 +2082,15 @@ function showStartPage(): void {
     void playIntro(CASE).then(openBriefing)
   }
   box.appendChild(go)
+  // 골든 케이스 001 진입 — 시드 사건이 아니라 작성된 사건(라음 사립 갤러리)의
+  // 발단 카툰으로 연다. 본게임 데이터 연결 전까지는 발단만 gc001 이다.
+  const onGc = new URLSearchParams(location.search).get('case') === 'gc001'
+  const alt = h('button', 'start-alt',
+    onGc ? '시드 사건으로 돌아가기' : '골든 케이스 001 — 옮겨진 상자의 사각') as HTMLButtonElement
+  alt.onclick = () => {
+    location.href = onGc ? location.pathname : `${location.pathname}?case=gc001`
+  }
+  box.appendChild(alt)
   ov.appendChild(box)
   document.body.appendChild(ov)
   queueMicrotask(() => go.focus())

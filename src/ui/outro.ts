@@ -48,22 +48,22 @@ function panels(c: CaseFile, culprit: SuspectId, correct: boolean): ComicPanel[]
     const g = (m: string, f: string): string | undefined => PANEL_URL.get(m) ?? PANEL_URL.get(f)
     return [
       { area: 'p0', img: g('m0', '0'), key: '남았다', corner: 'tl', tilt: 0.8,
-        line: '조서에 서명이 없었다.', voice: 'creak' },
+        line: '조서에 서명이 없었다.', voice: 'creak', fx: ['kb-in'] },
       { area: 'p1', img: g('m1', '1'), key: '미제', corner: 'bl', tilt: -0.7,
-        line: '사건은 미제로 편철됐다. 다섯은 각자의 밤으로 돌아갔다.' },
+        line: '사건은 미제로 편철됐다. 다섯은 각자의 밤으로 돌아갔다.', fx: ['kb-left'] },
       { area: 'p2', img: g('m2', '2'), key: '그중 하나', corner: 'br', tilt: 0.6, bam: '…',
-        line: '그중 하나는 오늘도 잠을 잘 잘 것이다.', voice: 'filed' },
+        line: '그중 하나는 오늘도 잠을 잘 잘 것이다.', voice: 'filed', fx: ['kb-out', 'rain'] },
     ]
   }
   return [
     { area: 'p0', img: PANEL_URL.get('0'), key: '무너졌다', corner: 'tl', tilt: -0.9,
-      line: `${josa(who.name, '은/는')} 더 말하지 않았다.`, voice: 'creak' },
+      line: `${josa(who.name, '은/는')} 더 말하지 않았다.`, voice: 'creak', fx: ['kb-in', 'flicker'] },
     { area: 'p1', img: PANEL_URL.get('1'), key: '수갑', corner: 'tr', tilt: 1.0, bam: '철컥',
-      line: '손목에 금속이 닿는 소리가 방을 채웠다.', voice: 'stamp' },
+      line: '손목에 금속이 닿는 소리가 방을 채웠다.', voice: 'stamp', fx: ['kb-in', 'pulse'] },
     { area: 'p2', img: PANEL_URL.get('2'), key: '복도', corner: 'bl', tilt: -0.6,
-      line: `${who.job} ${josa(who.name, '이/가')} 복도로 끌려 나갔다. 등 뒤에서 문이 닫혔다.`, voice: 'doorOpen' },
+      line: `${who.job} ${josa(who.name, '이/가')} 복도로 끌려 나갔다. 등 뒤에서 문이 닫혔다.`, voice: 'doorOpen', fx: ['kb-out'] },
     { area: 'p3', img: PANEL_URL.get('3'), key: '끝', corner: 'br', tilt: 0.5,
-      line: `${c.venue.name} 1204호의 불이 꺼졌다.` },
+      line: `${c.venue.name} 1204호의 불이 꺼졌다.`, fx: ['kb-in', 'rain'] },
   ]
 }
 
