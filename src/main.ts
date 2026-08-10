@@ -7,7 +7,8 @@
  */
 
 import './style.css'
-import { generateValidCase } from './engine/validate'
+import { generateValidCase, validateCase } from './engine/validate'
+import { gc001Case, GC001_CASE_NO } from './data/gc001'
 import {
   availableEvidence, claimCardId, connect, createGame, fieldDone, interview, lockedRecords,
   lookupEvidence, presentEvidence, presentReveal, submit, talksLeft,
@@ -133,14 +134,33 @@ const app = document.querySelector<HTMLDivElement>('#app')!
  * `generateValidCase` 가 최대 40회까지 재시도할 수 있었다. 풀은 그 재시도를 0회로 못 박는다.
  * `?seed=` 로 들어온 값은 그대로 존중한다 — 데모·재현·버그 신고 경로다.
  */
-const seed = Number(new URLSearchParams(location.search).get('seed')) || (() => {
+/**
+ * 고정 사건 진입 (GC001 계약 §3) — `?case=gc001` 은 생성기를 우회한다.
+ * 수제 사건도 검증기는 그대로 지난다: 통과 못 하면 시작조차 못 하는 것이 맞다 —
+ * 조용히 잘못된 사건을 내보내는 것보다 낫다 (generateValidCase 와 같은 철학).
+ */
+const IS_GC001 = new URLSearchParams(location.search).get('case') === 'gc001'
+
+const seed = IS_GC001 ? 1 : Number(new URLSearchParams(location.search).get('seed')) || (() => {
   const buf = new Uint32Array(1)
   crypto.getRandomValues(buf)
   return pickPoolSeed(buf[0]! / 2 ** 32)
 })()
 
-const generated = generateValidCase(seed)
+const generated = IS_GC001
+  ? (() => {
+      const c = gc001Case()
+      const validation = validateCase(c)
+      if (!validation.ok) {
+        throw new Error(`GC-001 검증 실패: ${validation.violations.map((v) => v.code).join(', ')}`)
+      }
+      return { case: c, validation, attempts: 1 }
+    })()
+  : generateValidCase(seed)
 const CASE: CaseFile = generated.case
+
+/** 서류·시작 페이지에 찍히는 사건번호 — 고정 사건은 시드가 아니라 케이스 번호를 쓴다 */
+const CASE_NO = IS_GC001 ? GC001_CASE_NO : String(CASE.seed).padStart(5, '0')
 
 /**
  * 월드 라벨 축약 (GC001 계약 §1) — 이 파일의 라벨 소비는 전부 이 둘을 지난다.
@@ -453,8 +473,10 @@ function exploreRoom(): HTMLElement {
       },
       onPick: (id) => {
         // **규칙은 engine 이 정한다.** 여기서는 조회를 시도만 한다.
-        if (ui.game.investigationsLeft <= 0 || ui.busy) return
-        if (!availableEvidence(ui.game).some((e) => e.id === id)) return
+        // 예산 0 이어도 해금 기록(requires>0)은 무료다 — 보드 버튼과 같은 규칙 (ADR 023 §2)
+        const ev = availableEvidence(ui.game).find((e) => e.id === id)
+        if (ui.busy || !ev) return
+        if (ui.game.investigationsLeft <= 0 && ev.requires.length === 0) return
         play('paper')
         mark({ k: 'lookup', ev: id })
         act(() => lookupEvidence(ui.game, id))
@@ -1164,12 +1186,22 @@ function board(): HTMLElement {
     // 범행 시각 기록만이 사람을 지운다. 그 사실을 **조회 전에** 밝힌다 —
     // 규칙을 아는 것과 목록에서 알아보는 것은 다르다 (자동 리뷰 major/onboarding).
     const label = `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}`
-    // 검시 소견은 범행 시각 기록이지만 사람을 지우지 못한다 — '후보 소거' 로 적으면 거짓말이 된다
-    const use = e.kind === 'autopsy' ? `${WEAPON_AXIS} 판독` : e.slot === CRIME_SLOT ? '후보 소거' : '해금·교차검증'
+    // 검시 소견은 범행 시각 기록이지만 사람을 지우지 못한다 — '후보 소거' 로 적으면 거짓말이 된다.
+    // 인물을 담지 않은 기록(gc001 의 위치 비고정 통화 등)도 마찬가지다: 정황일 뿐 소거가 아니다.
+    const use = e.kind === 'autopsy' ? `${WEAPON_AXIS} 판독`
+      : e.slot === CRIME_SLOT ? (e.subjects.length ? '후보 소거' : '정황 확인')
+      : '해금·교차검증'
     // 같은 시각·장소 기록이 두 장이면 조회 전에는 **완전히 똑같아 보여** 선택이 동전 던지기가 된다.
     // 기록번호를 붙여 구분한다 — 내용을 흘리지 않으면서 "다른 문서" 임을 알린다 (자동 리뷰 minor/fairness).
-    const b = h('button', undefined, `[${e.id}] ${label} — ${use} (조사 1회)`) as HTMLButtonElement
-    b.disabled = ui.game.investigationsLeft <= 0 || ui.busy
+    /**
+     * **예산 소진 후에도 해금 기록(requires>0)은 열려 있어야 한다.**
+     * 엔진은 그 조회를 무료로 허용하는데(ADR 023 §2) 버튼이 일괄 비활성이면
+     * 통찰 보너스가 화면에서만 죽는다 — gc001 실플레이에서 실제로 밟은 버그다.
+     */
+    const free = ui.game.investigationsLeft <= 0 && e.requires.length > 0
+    const b = h('button', undefined,
+      `[${e.id}] ${label} — ${use} (${free ? '무료 — 자물쇠 값은 치렀다' : '조사 1회'})`) as HTMLButtonElement
+    b.disabled = ui.busy || (ui.game.investigationsLeft <= 0 && e.requires.length === 0)
     b.onclick = () => { play('paper'); mark({ k: 'lookup', ev: e.id }); act(() => lookupEvidence(ui.game, e.id)) }
     focusKey(b, `lookup:${e.id}`)
     into.appendChild(b)
@@ -1870,7 +1902,8 @@ function renderResultSheet(
    */
   const retry = h('button', undefined, '같은 사건 다시') as HTMLButtonElement
   retry.onclick = () => {
-    const target = `${location.pathname}?seed=${CASE.seed}`
+    // 고정 사건은 ?case= 로 돌아온다 — seed 로 바꾸면 생성기가 다른 사건을 만든다 (GC001 계약 §3)
+    const target = IS_GC001 ? `${location.pathname}?case=gc001` : `${location.pathname}?seed=${CASE.seed}`
     // 같은 URL 이면 href 대입이 항상 재로드를 보장하지 않는다 — reload 로 못박는다
     if (location.pathname + location.search === target) location.reload()
     else location.href = target
@@ -1896,7 +1929,7 @@ function renderResultSheet(
  */
 function fileHeader(stamp: string, cold = false): HTMLElement {
   const hd = h('div', 'filehd')
-  hd.appendChild(h('div', 'kicker', `사건번호 ${String(CASE.seed).padStart(5, '0')} · 강력 3팀`))
+  hd.appendChild(h('div', 'kicker', `사건번호 ${CASE_NO} · 강력 3팀`))
   hd.appendChild(h('div', `stamp${cold ? ' cold' : ''}`, stamp))
   return hd
 }
@@ -1952,7 +1985,7 @@ function openBriefing(): void {
   const st = stats()
   if (st.plays > 0) {
     sheet.appendChild(h('div', 'tally',
-      `통산 ${st.plays}판 중 ${st.solved}건 해결 · 최고 ${st.best}점. 이번 판은 사건번호 ${String(CASE.seed).padStart(5, '0')} 입니다.`))
+      `통산 ${st.plays}판 중 ${st.solved}건 해결 · 최고 ${st.best}점. 이번 판은 사건번호 ${CASE_NO} 입니다.`))
   }
 
   const go = h('button', undefined, '수사를 시작한다') as HTMLButtonElement
@@ -2109,7 +2142,7 @@ onStage(() => { if (ui.active) render() })
 function showStartPage(): void {
   const ov = h('div', 'startpage')
   const box = h('div', 'startbox')
-  box.appendChild(h('div', 'start-kicker', `사건번호 ${String(CASE.seed).padStart(5, '0')} · 강력 3팀`))
+  box.appendChild(h('div', 'start-kicker', `사건번호 ${CASE_NO} · 강력 3팀`))
   box.appendChild(h('h1', 'start-title', 'FIVE ALIBIS'))
   box.appendChild(h('div', 'start-sub', '다섯 사람이 남아 있었고, 다섯 개의 알리바이가 있다. 하나는 거짓이다.'))
   const go = h('button', 'start-go', '사건 시작') as HTMLButtonElement
