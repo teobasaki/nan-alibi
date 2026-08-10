@@ -1,0 +1,66 @@
+{
+  "cctv": "/public/props/thumbs/cctv.webp",
+  "reel": "/public/props/thumbs/reel.webp",
+  "call": "/public/props/thumbs/call.webp",
+  "receipt": "/public/props/thumbs/receipt.webp",
+  "autopsy": "/public/props/thumbs/autopsy.webp",
+  "keycard": "/public/props/thumbs/keycard.webp",
+  "crate": "/public/props/thumbs/crate.webp",
+  "$meta": {
+    "generated": "2026-08-10T12:46:01Z",
+    "generator": "scripts/render-props.py (Blender EEVEE)",
+    "size": [
+      512,
+      512
+    ],
+    "format": "webp (RGBA, 알파 배경)",
+    "lens": "55mm / 36mm sensor (전 소품 공통)",
+    "fill": 0.8,
+    "lighting": "SUN 3등(키/필/림) · 카메라 기준 고정 · 거리 감쇠 없음",
+    "fairness": "소품 공정성 7A.7 — 렌즈·조명·프레임 점유율 전 소품 동일. 방위각만 소품별.",
+    "publicPath": "경로는 vite glob 키 형태다. 정적 서빙 경로는 props/thumbs/<키>.webp.",
+    "kindModels": {
+      "cctv": [
+        "cctv",
+        "reel"
+      ],
+      "call": [
+        "call"
+      ],
+      "receipt": [
+        "receipt"
+      ],
+      "autopsy": [
+        "autopsy"
+      ],
+      "keycard": [
+        "keycard"
+      ]
+    },
+    "kindLabels": {
+      "keycard": "수정 라벨 기록",
+      "receipt": "작업 기록",
+      "cctv": "카메라 기록",
+      "call": "통화 기록",
+      "autopsy": "현장 판정"
+    },
+    "notes": {
+      "cctv": "1970s 보안 카메라",
+      "reel": "필름 릴",
+      "call": "앤티크 다이얼 전화기",
+      "receipt": "서류 뭉치",
+      "autopsy": "왕진 가방",
+      "keycard": "금속 상자",
+      "crate": "운송 상자 (증거품 아님 · 지형 소품)"
+    },
+    "nonEvidence": [
+      "crate"
+    ],
+    "noThumb": {
+      "flag": "증거 깃발 — 파일 에셋이 아니라 씬이 프리미티브로 세운다. kind 풀을 넘어선 k번째 증거가 이걸 입는다."
+    },
+    "excluded": {
+      "fallscene": "현장 사망 지점 표시물 — 수거되는 증거품이 아니라 수첩 카드가 없다. 정본 §4(유혈·신체 묘사 금지)에도 걸린다."
+    }
+  }
+}
