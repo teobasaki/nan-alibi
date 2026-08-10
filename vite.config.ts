@@ -91,6 +91,14 @@ export default defineConfig({
   base: './',                 // 절대 바꾸지 말 것. GitHub Pages 흰 화면 원인 1위
   plugins: [pagesFunctions()],
   build: { outDir: 'dist' },
+  server: {
+    fs: {
+      // 캐스팅 룸(casting.html — dev 전용)이 다운로드 폴더의 후보 캐릭터를
+      // /@fs/ 로 직접 읽는다. public/ 에 복사하면 54MB FBX 가 배포에 실리므로
+      // 여기서만 허용한다. 빌드에는 casting.html 이 포함되지 않는다.
+      allow: ['.', '/Users/teo/Downloads'],
+    },
+  },
   test: {
     environment: 'happy-dom',
     include: ['tests/**/*.test.ts'],
