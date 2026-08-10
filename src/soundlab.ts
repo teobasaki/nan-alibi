@@ -36,7 +36,7 @@ function playUrl(url: string, btn: HTMLButtonElement, vol = 1): Promise<void> {
   })
 }
 
-interface Row { key: string; varcoBtn: HTMLButtonElement; comfyBtn: HTMLButtonElement; abBtn: HTMLButtonElement; miss: HTMLElement }
+interface Row { key: string; varcoBtn: HTMLButtonElement; comfyBtn: HTMLButtonElement; comfy2Btn: HTMLButtonElement; abBtn: HTMLButtonElement; miss: HTMLElement }
 const table: Row[] = []
 
 for (const s of SFX) {
@@ -58,6 +58,12 @@ for (const s of SFX) {
   c.disabled = true
   c.onclick = () => void playUrl(COMFY(s.key), c, 0.8)   // 원본 라우드니스가 제각각이라 살짝 눌러 시작
 
+  // 시드 변형 (comfy-<키>-s2.wav) — 로컬 재생성은 공짜라 후보를 여럿 두고 귀로 고른다
+  const c2 = document.createElement('button')
+  c2.textContent = '▶ s2'
+  c2.disabled = true
+  c2.onclick = () => void playUrl(COMFY(s.key).replace('.wav', '-s2.wav'), c2, 0.8)
+
   const ab = document.createElement('button')
   ab.className = 'ab'
   ab.textContent = 'A/B'
@@ -72,10 +78,10 @@ for (const s of SFX) {
   miss.className = 'miss'
   miss.textContent = 'ComfyUI 생성 대기 중'
 
-  btns.append(v, c, miss, ab)
+  btns.append(v, c, c2, miss, ab)
   row.appendChild(btns)
   rows.appendChild(row)
-  table.push({ key: s.key, varcoBtn: v, comfyBtn: c, abBtn: ab, miss })
+  table.push({ key: s.key, varcoBtn: v, comfyBtn: c, comfy2Btn: c2, abBtn: ab, miss })
 
   // VARCO 쪽도 없으면(생성 실패분) 표시
   void fetch(VARCO(s.key), { method: 'HEAD' }).then((r) => {
@@ -88,10 +94,14 @@ async function refresh(): Promise<void> {
   await Promise.all(table.map(async (r) => {
     try {
       // vite 는 없는 경로에 index.html 폴백(200)을 준다 — content-type 으로 진짜 오디오만 인정
-      const res = await fetch(COMFY(r.key), { method: 'HEAD' })
-      const ok = res.ok && !(res.headers.get('content-type') ?? '').includes('html')
+      const isAudio = async (url: string): Promise<boolean> => {
+        const res = await fetch(url, { method: 'HEAD' })
+        return res.ok && !(res.headers.get('content-type') ?? '').includes('html')
+      }
+      const ok = await isAudio(COMFY(r.key))
       r.comfyBtn.disabled = !ok
       r.abBtn.disabled = !ok
+      r.comfy2Btn.disabled = !(await isAudio(COMFY(r.key).replace('.wav', '-s2.wav')))
       r.miss.textContent = ok ? '' : 'ComfyUI 생성 대기 중'
     } catch { /* 대기 유지 */ }
   }))
