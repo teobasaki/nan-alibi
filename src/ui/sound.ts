@@ -16,7 +16,7 @@
 
 type Voice = 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'filed' | 'creak' | 'doorOpen'
   | 'verdict' | 'type' | 'typebell' | 'page' | 'unlock'
-  | 'tick' | 'heartbeat' | 'whistle' | 'snap' | 'pickup'
+  | 'tick' | 'heartbeat' | 'whistle' | 'snap' | 'pickup' | 'curtain'
 
 const KEY = 'nan-alibi:muted'
 
@@ -376,6 +376,12 @@ export function play(v: Voice): void {
       // 증거봉투 — 천 스침 + 비닐 구김 (VARCO 크레딧 소진으로 합성만)
       noise(t, 0.1, 0.15, 2000)
       noise(t + 0.12, 0.18, 0.22, 4500)
+      break
+    case 'curtain':
+      // 커튼 — 낮게 쓸리는 무거운 천 (저역 잡음이 부풀었다 가라앉는다)
+      noise(t, 0.55, 0.28, 600)
+      noise(t + 0.15, 0.5, 0.18, 1100)
+      tone(t + 0.02, 70, 0.6, 0.08, 'sine')
       break
   }
 }

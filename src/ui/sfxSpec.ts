@@ -18,7 +18,7 @@
 export type SfxKey =
   | 'stamp' | 'open' | 'deny' | 'paper' | 'solved' | 'creak' | 'doorOpen' | 'filed'
   | 'verdict' | 'type' | 'typebell' | 'page' | 'unlock' | 'ambience'
-  | 'tick' | 'heartbeat' | 'whistle' | 'snap' | 'pickup'
+  | 'tick' | 'heartbeat' | 'whistle' | 'snap' | 'pickup' | 'curtain'
 
 export interface SfxSpec {
   key: SfxKey
@@ -207,6 +207,16 @@ export const SFX: readonly SfxSpec[] = [
       'evidence bag: brief cloth rustle and one crisp plastic bag crinkle. Close, ' +
       'dry, quick. No music, no voice.',
     seconds: 0.8,
+  },
+  {
+    key: 'curtain',
+    moment: '막 전환 — 커튼이 닫히거나 열릴 때 (연극 3막 구조)',
+    meaning: '한 막이 끝나고 다음 막이 시작된다. 무겁고 부드러운 천',
+    prompt:
+      'A heavy velvet theater curtain sweeping closed: deep soft fabric whoosh ' +
+      'with a low cloth rumble, about one second, ending with a gentle settle. ' +
+      'No rings jingling, no squeaks. No music, no voice, no ambience.',
+    seconds: 1.2,
   },
 ]
 
