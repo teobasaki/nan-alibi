@@ -20,24 +20,24 @@ import type { PlaceId } from '../src/types'
 
 const CASE = generateValidCase(36).case
 
-describe('국면 전이 — 훑기 5.0s → 수집 30.0s → 종료 (기획서 ⑥-①)', () => {
+describe('국면 전이 — 훑기 12.0s → 수집 30.0s → 종료 (기획서 ⑥-①)', () => {
   it('0ms 는 훑기다', () => expect(phaseAt(0, false)).toBe('survey'))
-  it('4999ms 까지 훑기다', () => expect(phaseAt(4999, false)).toBe('survey'))
-  it('정확히 5000ms 에 수집이 시작된다', () => expect(phaseAt(5000, false)).toBe('collect'))
-  it('34999ms 까지 수집이다', () => expect(phaseAt(34999, false)).toBe('collect'))
-  it('정확히 35000ms(5s+30.0s)에 끝난다', () => expect(phaseAt(35000, false)).toBe('done'))
+  it('훑기 끝 직전까지 훑기다', () => expect(phaseAt(SCENE_FX.surveyMs - 1, false)).toBe('survey'))
+  it('정확히 훑기 종료 시점에 수집이 시작된다', () => expect(phaseAt(SCENE_FX.surveyMs, false)).toBe('collect'))
+  it('수집 끝 직전까지 수집이다', () => expect(phaseAt(SCENE_FX.surveyMs + SCENE_FX.collectMs - 1, false)).toBe('collect'))
+  it('정확히 훑기+30.0s 에 끝난다', () => expect(phaseAt((SCENE_FX.surveyMs + SCENE_FX.collectMs), false)).toBe('done'))
 
   it('calm 은 시계가 없다 — 언제나 수집이다 (⑥-⑦)', () => {
     expect(phaseAt(0, true)).toBe('collect')
-    expect(phaseAt(35000, true)).toBe('collect')
+    expect(phaseAt((SCENE_FX.surveyMs + SCENE_FX.collectMs), true)).toBe('collect')
     expect(phaseAt(9_999_999, true)).toBe('collect')
   })
 
   it('잔여 시간은 훑기 중 만땅, 수집 중 감소, 종료 후 0', () => {
     expect(remainMs(0)).toBe(SCENE_FX.collectMs)
-    expect(remainMs(5000)).toBe(30000)
-    expect(remainMs(20000)).toBe(15000)
-    expect(remainMs(35000)).toBe(0)
+    expect(remainMs(SCENE_FX.surveyMs)).toBe(30000)
+    expect(remainMs(SCENE_FX.surveyMs + 15000)).toBe(15000)
+    expect(remainMs((SCENE_FX.surveyMs + SCENE_FX.collectMs))).toBe(0)
     expect(remainMs(99999)).toBe(0)
   })
 })
@@ -215,13 +215,19 @@ describe('개연성 배치 — kind 서사 앵커 (개편 라운드, 사용자 �
 })
 
 describe('이동 체감 — 시점별 상한과 가감속 램프 (실플레이 "너무 빠르다")', () => {
-  it('1인칭은 2.4 로 눌리고 조감은 클립 속도 그대로다', () => {
+  it('1인칭 상한은 fpSpeed 로 묶이고 조감은 클립 속도 그대로다', () => {
     expect(moveSpeedFor(SCENE_FX.runSpeed, true)).toBe(SCENE_FX.fpSpeed)
     expect(moveSpeedFor(SCENE_FX.runSpeed, false)).toBe(SCENE_FX.runSpeed)
   })
 
-  it('클립보다 빠르게는 만들지 않는다 — 걷기(2.2)는 1인칭에서도 2.2 다', () => {
-    expect(moveSpeedFor(SCENE_FX.speed, true)).toBe(SCENE_FX.speed)
+  /**
+   * 옛 규칙("클립보다 빠르게는 만들지 않는다")은 **3인칭에서만 참이었다** — 몸이 보이니까.
+   * 1인칭은 몸이 화면에 없어 발과 속도가 어긋나도 안 보이고, 느린 것만 보인다.
+   * 사용자 실플레이가 "너무 느리다" 로 판정해 상한을 풀었다.
+   */
+  it('1인칭은 클립 속도에 매이지 않는다 — 어느 클립이든 fpSpeed 다', () => {
+    expect(moveSpeedFor(SCENE_FX.speed, true)).toBe(SCENE_FX.fpSpeed)
+    expect(moveSpeedFor(SCENE_FX.runSpeed, true)).toBe(SCENE_FX.fpSpeed)
   })
 
   it('램프는 시간상수만큼에 63%에 닿고, 넘어서지 않는다', () => {
@@ -256,7 +262,7 @@ describe('이동 체감 — 시점별 상한과 가감속 램프 (실플레이 "
     expect(clipRateFor(SCENE_FX.runSpeed, true)).toBeCloseTo(SCENE_FX.fpSpeed / SCENE_FX.runSpeed, 10)
     // 조감·걷기는 1 — 클립이 곧 속도다
     expect(clipRateFor(SCENE_FX.runSpeed, false)).toBe(1)
-    expect(clipRateFor(SCENE_FX.speed, true)).toBe(1)
+    expect(clipRateFor(SCENE_FX.speed, true)).toBeCloseTo(SCENE_FX.fpSpeed / SCENE_FX.speed, 10)
     // 클립 정보가 없어도 0 나누기가 없다
     expect(clipRateFor(0, true)).toBe(1)
   })

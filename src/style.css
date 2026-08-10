@@ -558,6 +558,13 @@ body::after {
 }
 .intro-skip:hover { color: var(--ink); }
 
+/* 손으로 넘기는 만화라, 넘기는 법을 아래에 조용히 적어 둔다 */
+.intro-adv {
+  position: fixed; left: 0; right: 0; bottom: 14px; z-index: 41;
+  text-align: center; font-size: 12px; letter-spacing: .06em; color: var(--muted);
+  opacity: .75; pointer-events: none;
+}
+
 /* ══════════════════════════════════════════════════════════════
    만화 페이지 — 종이 한 장 위에 칸이 쾅쾅 박힌다 (comicPage.ts)
    컷 전환은 만화의 시간이 아니다. 먼저 나온 칸이 남아 있어야

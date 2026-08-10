@@ -784,7 +784,8 @@ function openCrimeScene(fallback: () => void, ready?: () => void): void {
           // 시간 종료 = 예산 소진과 동일 상태 (기획서 §2) — 기존 게이트가 수사 정리를 연다
           ui.game = timeUp(ui.game)
           syncChapter()
-          enterStation()
+          // 제2막의 첫 화면은 카드 월이다 — 경찰서 3D 는 [경찰서] 로 들어간다 (사용자 지시 ⑦)
+          ui.wall = true
           render()
         },
       })
@@ -1839,19 +1840,31 @@ function openCaseReview(): void {
     }
   }
 
-  // ④ 핵심 단서 요약 — 상태를 읽어 그릴 뿐, 판정은 하지 않는다
+  /**
+   * ④ 수사 상황 — **숫자만 남긴다** (2026-08-10 사용자 지시: "너무 길다").
+   * 무엇을 해야 하는지 설명하는 문단은 걷어냈다. 다음 화면이 카드 월이고
+   * 거기 사람이 다섯 장 펼쳐져 있으면, 무엇을 하는지는 보면 안다.
+   */
   const cands = candidatesFrom(CASE, new Set(ui.game.cards))
   sheet.appendChild(h('label', undefined, '수사 상황'))
   sheet.appendChild(h('div', 'tally',
-    `남은 후보 ${cands.length}명 · 찾아낸 인장 ${ui.game.foundContradictions.length}건 · ` +
-    `아직 안 맞춰본 조합 ${pendingPairs(ui.game).length}건`))
-  sheet.appendChild(h('p', undefined,
-    '이제 카드 월에서 사람을 골라 심문한다. 한 사람과의 대화는 10회가 상한이다 — 다 쓸 필요는 없다. ' +
-    '기록과 어긋난 진술이 있는 사람부터 캐묻는 것이 보통 빠르다.'))
+    `남은 후보 ${cands.length}명 · 인장 ${ui.game.foundContradictions.length}건`))
 
-  const go = h('button', undefined, '심문 시작') as HTMLButtonElement
+  const go = h('button', undefined, '용의자를 만난다') as HTMLButtonElement
   go.style.marginTop = '12px'
-  go.onclick = () => { play('paper'); fadeOut(ov); render() }
+  /**
+   * **제2막은 카드 월로 연다** (사용자 지시 ⑦ — "경찰서 바로 뜨지 마라").
+   * 경찰서 3D 를 기본으로 두면 플레이어는 빈 복도에 떨어져 무엇을 할지 모른다.
+   * 다섯 장이 펼쳐진 카드 월은 그 자체가 안내다 — 읽고, 고르고, 취조실로 간다.
+   * 경찰서를 걷고 싶으면 카드 월의 [경찰서] 버튼으로 언제든 갈 수 있다.
+   */
+  go.onclick = () => {
+    play('paper')
+    ui.explore = null
+    ui.wall = true
+    fadeOut(ov)
+    render()
+  }
   sheet.appendChild(go)
 
   ov.appendChild(sheet)
@@ -2579,24 +2592,17 @@ function openBriefing(): void {
   const box = h('div', 'brf-body')
   box.appendChild(h('h2', undefined, '당신이 할 일'))
   const ol = h('ol', 'steps')
+  /**
+   * **네 줄로 줄였다** (2026-08-10 사용자 지시 — "짧고 직관적으로").
+   * 여섯 항목에 두세 줄씩 붙던 설명은 아무도 읽지 않는다. 지금 필요한 것만 남기고,
+   * 나머지(대조 방법·잠긴 기록·보너스)는 **그 순간 그 자리에서** 화면이 말한다.
+   * 브리핑은 규칙서가 아니라 출발 신호다.
+   */
   for (const [t, d] of [
-    ['현장을 밟는다 — 30초, 가방 다섯 칸',
-      `감식반이 철수하기 전에 현장의 기록을 주워 담는다. ${josa(AUTOPSY_NAME, '은/는')} ${josa(WEAPON_AXIS, '을/를')}, ` +
-      `${SLOT_L(CRIME_SLOT)} 기록은 사람을 말한다 — 다 들 수 없으니, 무엇을 포기할지 고르는 것이 곧 수사다.`],
-    ['기록으로 후보를 지운다 — 이게 승리 경로다',
-      `${SLOT_L(CRIME_SLOT)} 기록에 현장이 아닌 곳으로 찍힌 사람은 소거된다. ` +
-      '표 위의 "남은 후보" 가 줄어드는 걸로 확인하라. 진술은 거짓일 수 있어 사람을 지우지 못한다.'],
-    ['호루라기가 울리면 심문이 열린다',
-      `수사를 정리한 뒤 카드 월에서 사람을 고른다. 다섯 사람 각각과 대화 ${TALK_CAP}회까지 — 상한이지 의무가 아니다. ` +
-      '심문하면 그 사람의 나머지 시각이 표에 채워지고, 관계를 캐물으면 저마다의 사정이 드러난다.'],
-    ['기록과 진술을 맞춰 붉은 인장을 찍는다',
-      '기록 한 장과 표의 칸 하나를 누르면 대조된다. 어긋나면 인장이 찍힌다. 대조는 무료이고, ' +
-      '인장은 누구를 의심할지 정하는 근거다.'],
-    ['(선택) 증거를 들이밀어 잠긴 기록을 연다',
-      '흔들리면 자물쇠가 풀린다. 헛짚으면 그 사람과의 대화 1회만 잃는다. ' +
-      '잠긴 현장 기록을 열면 통찰 보너스 +10 — 범인을 맞히는 데 필수는 아니다.'],
-    ['범인·동기·도구를 지목한다',
-      '누가(60점) · 왜(15점) · 무엇으로(15점). 세 가지가 모두 맞아야 사건이 완전히 닫힌다.'],
+    ['현장에서 30초 — 가방은 다섯 칸', '다 못 줍는다. 무엇을 버릴지 고르는 게 수사다.'],
+    ['기록으로 사람을 지운다', '기록은 거짓말을 못 한다. "남은 후보"가 줄어드는 걸 보라.'],
+    ['다섯 명을 심문한다', `한 사람당 ${TALK_CAP}번까지 물을 수 있다.`],
+    ['범인·동기·도구를 지목한다', '60점 · 15점 · 15점.'],
   ] as [string, string][]) {
     const li = h('li')
     li.appendChild(h('b', undefined, t))
@@ -2612,14 +2618,13 @@ function openBriefing(): void {
     const box = h('div', 'brf-body')
     box.appendChild(h('h2', undefined, `${SCENE_FX.collectMs / 1000}초의 현장 — 조작`))
     box.appendChild(h('p', undefined,
-      '막이 오르면 곧바로 현장이다. 처음 5초는 카메라가 한 바퀴 돌며 ' +
-      '무엇이 어디 있는지 이름표로 보여준다 — 그동안 무엇을 주울지 정해 둔다.'))
+      '들어가면 먼저 카메라가 현장을 한 바퀴 돌며 무엇이 어디 있는지 보여준다. ' +
+      '시계는 그 뒤 당신이 시작을 누를 때부터 흐른다.'))
     const keys = h('div', 'brf-keys')
     for (const [k, d] of [
-      ['W A S D · 클릭', '걷는다. 바닥을 클릭하면 그리로 간다'],
-      ['E', '가까이 간 기록을 줍는다 — 가방은 다섯 칸'],
-      ['V', '조감과 1인칭을 오간다'],
-      ['I', '수사일지를 편다 (현장이 끝난 뒤)'],
+      ['W A S D', '걷는다'],
+      ['마우스', '둘러본다 (화면을 한 번 클릭하면 시점이 잡힌다)'],
+      ['E', '가까이 간 기록을 줍는다'],
     ] as [string, string][]) {
       const row = h('div', 'brf-key')
       row.appendChild(h('kbd', undefined, k))
@@ -2719,22 +2724,12 @@ function openBriefing(): void {
     sheet.appendChild(h('div', 'brf-hint',
       step < PAGES.length - 1 ? '스페이스 · 엔터 · 아무 곳이나 클릭하면 넘어간다' : ''))
 
-    /* 마지막 장에서만 시계가 돈다 — 3·2·1, 그리고 막이 오른다 */
-    if (step === PAGES.length - 1) {
-      let n = 3
-      const cd = h('div', 'brf-cd', String(n))
-      sheet.appendChild(cd)
-      play('tick')
-      ticker = window.setInterval(() => {
-        n--
-        if (n <= 0) { cd.textContent = '막이 오른다'; cd.classList.add('go'); return enter() }
-        cd.textContent = String(n)
-        cd.classList.remove('beat')
-        void cd.offsetWidth       // 리플로우 — 같은 애니메이션을 다시 돌리려면 필요하다
-        cd.classList.add('beat')
-        play('tick')
-      }, 1000)
-    }
+    /**
+     * **3·2·1 카운트다운은 없앴다** (2026-08-10 사용자 지시).
+     * 마지막 장에서 시계가 저절로 돌면, 조작법을 읽는 중에 막이 올라간다 —
+     * 읽을 시간을 주려고 만든 화면이 읽을 시간을 뺏고 있었다.
+     * 이제 [지금 들어간다] 를 누를 때만 들어간다. 시작 시점은 플레이어가 쥔다.
+     */
     queueMicrotask(() => go.focus())
   }
 

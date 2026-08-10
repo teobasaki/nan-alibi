@@ -132,11 +132,14 @@ function gc001Pages(): ComicPageDef[] {
 }
 
 /**
- * `?introhold=1` — 자동 진행을 끄고 클릭으로만 넘긴다.
- * 제출 영상을 찍을 때 내레이션에 맞춰 손으로 페이지를 넘기기 위한 스위치다.
- * (검증 스크린샷에도 쓴다 — 자동 진행은 셔터보다 빠르다.)
+ * **인트로는 손으로 넘긴다** (2026-08-10 사용자 지시).
+ *
+ * 예전엔 1.5~2.4초마다 자동으로 넘어갔다. 읽는 속도는 사람마다 다른데 화면이 먼저
+ * 가버리니, 문장을 놓친 채 다음 컷을 보게 된다 — 만화는 읽는 매체이지 재생되는
+ * 매체가 아니다. 이제 클릭·스페이스·엔터로만 넘어간다.
+ * `?introauto=1` 은 옛 자동 진행 — 시연 영상 녹화용으로만 남긴다.
  */
-const HOLD_MANUAL = new URLSearchParams(location.search).has('introhold')
+const HOLD_MANUAL = !new URLSearchParams(location.search).has('introauto')
 
 /**
  * 인트로를 재생한다. 끝나거나 건너뛰면 resolve.
@@ -172,6 +175,11 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
     const skip = document.createElement('button')
     skip.className = 'intro-skip'
     skip.textContent = '건너뛰기 (Esc)'
+
+    // 손으로 넘기는 만큼, 넘기는 법을 화면이 말한다 — 안 그러면 멈춘 줄 안다
+    const advHint = document.createElement('div')
+    advHint.className = 'intro-adv'
+    advHint.textContent = '클릭 · 스페이스로 다음 칸'
 
     const cap = document.createElement('div')
     cap.className = 'intro-title'
@@ -244,7 +252,7 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
     ov.onclick = (e) => { if (e.target !== skip) next() }
     skip.onclick = (e) => { e.stopPropagation(); finish() }
 
-    ov.append(cap, bar, skip)
+    ov.append(cap, bar, skip, advHint)
     document.body.appendChild(ov)
     nextPage()
   })

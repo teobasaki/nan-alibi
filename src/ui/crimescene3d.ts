@@ -220,7 +220,6 @@ const FALLSCENE_URL = (Object.values(
 const ACTOR_HEIGHT = 1.78
 const EYE_HEIGHT = 1.64
 const MARK_Y = 0.8
-const TURN = 2.4
 /** 증거품 실모델의 목표 최대 치수(m) — 0.5m 급 소품 × 과장 1.6배 규칙 */
 const PROP_TARGET = 0.85
 /**
@@ -977,6 +976,8 @@ export async function mountCrimeScene(
 
     /** 훑기가 끝났는가 — 끝난 뒤의 setMarkers(수거 갱신)는 라벨을 다시 세우지 않는다 */
     let surveyOver = calm
+    /** 훑기에서 지금 짚고 있는 기록의 순번 — 캡션을 구간마다 한 번만 바꾼다 */
+    let surveySeg = -1
     const clearHintLabels = (): void => {
       for (const c of [...markerRoot.children]) {
         if (c.userData.part !== 'label') continue
@@ -1384,6 +1385,34 @@ export async function mountCrimeScene(
     addEventListener('blur', clearKeys)
     document.addEventListener('visibilitychange', onVis)
 
+    /**
+     * **마우스로 둘러본다** (사용자 지시 — "360도로 마우스 돌리면서 wasd 로 이동").
+     *
+     * 화면을 한 번 클릭하면 포인터 락이 잡히고, 그 뒤 마우스 이동이 곧 시선이다.
+     * 좌우는 몸(actor.rotation.y)을 돌리고 — 그래야 W 가 늘 보는 쪽으로 간다 —
+     * 상하는 `lookPitch` 에 쌓아 렌더에서 시선 높이로 푼다. 위아래는 ±60° 로 묶는다
+     * (그 너머는 목이 꺾인 그림이고, 바닥의 기록을 보는 데 60° 면 충분하다).
+     * 락이 안 잡히는 환경(iframe·권한 거부)에서는 드래그로도 같은 일을 한다.
+     */
+    let lookPitch = 0
+    const PITCH_MAX = Math.PI / 3
+    const MOUSE_SENS = 0.0022
+    let dragging = false
+    const applyLook = (dx: number, dy: number): void => {
+      if (phase !== 'collect') return
+      actor.rotation.y -= dx * MOUSE_SENS
+      lookPitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, lookPitch + dy * MOUSE_SENS))
+    }
+    const onMouseMove = (e: MouseEvent): void => {
+      if (document.pointerLockElement === renderer.domElement) applyLook(e.movementX, e.movementY)
+      else if (dragging) applyLook(e.movementX, e.movementY)
+    }
+    const onMouseDown = (): void => { dragging = true }
+    const onMouseUp = (): void => { dragging = false }
+    addEventListener('mousemove', onMouseMove)
+    addEventListener('mouseup', onMouseUp)
+    renderer.domElement.addEventListener('mousedown', onMouseDown)
+
     const ray = new THREE.Raycaster()
     const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
     let goal: THREE.Vector3 | null = null
@@ -1416,6 +1445,12 @@ export async function mountCrimeScene(
     }
     renderer.domElement.addEventListener('click', onClick)
     renderer.domElement.style.cursor = 'pointer'
+    // 첫 클릭에 포인터 락을 잡는다 — 실패해도(권한 거부·iframe) 드래그 경로가 남는다
+    renderer.domElement.addEventListener('click', () => {
+      if (phase === 'collect' && document.pointerLockElement !== renderer.domElement) {
+        void (renderer.domElement.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {})
+      }
+    })
 
     /* ── 시계 — sceneRules 의 상태기계를 그대로 돌린다 ── */
     /**
@@ -1533,10 +1568,34 @@ export async function mountCrimeScene(
       if (!ended) phase = phaseAt(elapsed, calm)
       if (phase === 'done' && !ended) { endScene('time'); }
 
-      /* 훑기 — 카메라가 현장을 한 바퀴, 마커 전부 점멸 + 이름표 (기획서 §3 · 승인 UX ②) */
+      /**
+       * **훑기 — 한 바퀴 돌며 기록을 하나씩 짚어 준다** (사용자 지시: "너무 빠르다,
+       * 각 물품 줌인해서 가벼운 설명").
+       *
+       * 예전엔 5초에 360°를 돌기만 했다 — 빠르고, 무엇을 봤는지 남지 않았다.
+       * 이제 기록 수만큼 구간을 나눠 **한 구간에 하나씩** 카메라가 그 물건 쪽으로
+       * 붙었다 떨어지며(줌 인/아웃) 이름을 캡션으로 말한다. 회전은 그대로 한 바퀴라
+       * 방의 전모도 함께 남는다 — 전모와 개별은 둘 다 필요하다.
+       */
       if (phase === 'survey') {
         const k = elapsed / SCENE_FX.surveyMs
-        placeCam(camAngle0 + k * Math.PI * 2)
+        const n = Math.max(1, markers.length)
+        const seg = Math.min(n - 1, Math.floor(k * n))
+        const inSeg = k * n - seg                              // 0→1, 한 물건에 머무는 동안
+        const m = markers[seg]
+        // 구간 중앙에서 가장 가까이 붙는다 — 0 에서 시작해 1 에서 다시 멀어지는 종 모양
+        const zoom = Math.sin(Math.PI * inSeg)
+        const tx = m ? CX + (m.at[0] - CX) * 0.55 * zoom : CX
+        const tz = m ? CZ + (m.at[1] - CZ) * 0.55 * zoom : CZ
+        const ang = camAngle0 + k * Math.PI * 2
+        const r = CAM_R * (1 - 0.42 * zoom)
+        camera.position.set(tx + Math.cos(ang) * r, 15 - 5.5 * zoom, tz + Math.sin(ang) * r)
+        camera.lookAt(tx, 0, tz)
+        if (m && seg !== surveySeg) {
+          surveySeg = seg
+          caption.textContent = m.label
+          caption.classList.add('on')
+        }
         const blink = 0.75 + 0.45 * Math.sin(k * Math.PI * 10)
         for (const g of markerRoot.children) {
           if (g.userData.part === 'label') continue          // 이름표는 점멸하지 않는다 — 읽는 물건이다
@@ -1563,10 +1622,16 @@ export async function mountCrimeScene(
         const side = locked ? 0 : keyNum('KeyD', 'ArrowRight') - keyNum('KeyA', 'ArrowLeft')
         dir.set(0, 0, 0)
         if (firstPerson) {
-          // 조향도 이동과 **같은 시계**(simSec)를 탄다 — dt(0.05 캡)로 돌리면 프레임이
-          // 처질 때 몸은 실시간으로 가는데 시선만 늦게 돌아 곡선 궤적이 덜컥거린다
-          if (side !== 0) actor.rotation.y -= side * TURN * simSec
-          if (fwd !== 0) dir.set(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y)).multiplyScalar(fwd)
+          /**
+           * **A/D 는 이제 조향이 아니라 게걸음이다.** 방향은 마우스가 쥔다 —
+           * 키로 몸을 돌리던 시절엔 "좌우로밖에 시야가 안 된다" 는 말이 정확했다.
+           * 앞뒤(W/S)는 보는 쪽, 좌우(A/D)는 그 직각. FPS 의 표준 문법 그대로다.
+           */
+          if (fwd !== 0 || side !== 0) {
+            const sy = Math.sin(actor.rotation.y)
+            const cy = Math.cos(actor.rotation.y)
+            dir.set(sy * fwd + cy * side, 0, cy * fwd - sy * side)
+          }
         } else if (fwd !== 0 || side !== 0) {
           camera.getWorldDirection(camFwd)
           camFwd.y = 0
@@ -1613,14 +1678,19 @@ export async function mountCrimeScene(
            * 1인칭에서 **키 이동은 몸이 기준**(A/D 가 조향)이지만, **클릭 이동은 목표가
            * 기준**이다 — 몸을 돌리지 않으면 시선은 그대로인 채 옆걸음으로 미끄러진다.
            */
+          /**
+           * **1인칭에서 몸의 방향은 마우스만 정한다.** 이동 방향으로 몸을 돌리면
+           * 게걸음(A/D)에 시선이 끌려가 화면이 저절로 돌아간다. 클릭 이동일 때만
+           * 목표 쪽으로 몸을 돌린다 — 그때는 플레이어가 그리로 가겠다고 말한 것이다.
+           */
           const byKeys = fwd !== 0 || side !== 0
-          // 활강(입력 없이 감속 중)에는 lastDir 을 본다 — dir 이 0 이면 atan2(0,0)=0 이라
-          // 몸이 +Z 로 홱 돌아간다 (램프를 넣으며 새로 생긴 함정)
-          const want = firstPerson && byKeys ? actor.rotation.y : Math.atan2(lastDir.x, lastDir.z)
-          let d = want - actor.rotation.y
-          while (d > Math.PI) d -= Math.PI * 2
-          while (d < -Math.PI) d += Math.PI * 2
-          actor.rotation.y += d * Math.min(1, simSec * 12)
+          if (!(firstPerson && byKeys)) {
+            const want = Math.atan2(lastDir.x, lastDir.z)
+            let d = want - actor.rotation.y
+            while (d > Math.PI) d -= Math.PI * 2
+            while (d < -Math.PI) d += Math.PI * 2
+            actor.rotation.y += d * Math.min(1, simSec * 12)
+          }
         }
         if (goal) {
           const moved = Math.hypot(actor.position.x - bx, actor.position.z - bz)
@@ -1776,9 +1846,15 @@ export async function mountCrimeScene(
           eyeY = EYE_HEIGHT - PICKUP_EYE_DIP * Math.sin(Math.PI * p)
         }
         eye.position.set(actor.position.x, eyeY, actor.position.z)
+        /**
+         * **상하 시선 — 마우스가 정한다.** 예전엔 좌우만 돌아 바닥의 기록을 볼 수 없었다.
+         * `lookPitch` 는 마우스 이동이 쌓아 둔 각(라디안)이고, 집는 동안의 숙임(dip)은
+         * 그 위에 더해진다 — 둘은 다른 원인이라 더해야 둘 다 산다.
+         */
         eyeFwd.set(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y))
         const dip = EYE_HEIGHT - eyeY
-        eye.lookAt(eyeTo.copy(eye.position).add(eyeFwd).setY(eyeY - dip * 1.6))
+        const drop = Math.tan(lookPitch) + dip * 1.6
+        eye.lookAt(eyeTo.copy(eye.position).add(eyeFwd).setY(eyeY - drop))
         actor.visible = false
         renderer.render(scene, eye)
       } else {
@@ -1884,7 +1960,11 @@ export async function mountCrimeScene(
         removeEventListener('blur', clearKeys)
         document.removeEventListener('visibilitychange', onVis)
         removeEventListener('resize', onResize)
+        removeEventListener('mousemove', onMouseMove)
+        removeEventListener('mouseup', onMouseUp)
         renderer.domElement.removeEventListener('click', onClick)
+        // 씬을 떠나면서 시점 락을 쥐고 있으면 다음 화면에서 마우스가 사라진다
+        if (document.pointerLockElement === renderer.domElement) document.exitPointerLock()
         mixer?.stopAllAction()
         renderer.dispose()
         host.replaceChildren()
