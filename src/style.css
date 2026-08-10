@@ -1814,3 +1814,28 @@ body::after {
   background: radial-gradient(circle at 35% 30%, #e0b25a, #8a5f22 72%);
   width: 22px; height: 22px; left: -11px; top: -11px;
 }
+
+/* ═══════════ 현장 수거 직관 표시 (개편 라운드 — 신규 클래스만) ═══════════ */
+/* 수거 토스트 — 가방 바로 위. 힌트바(cs-hint)와 겹치지 않게 한 뼘 위에 선다 */
+.cs-toast {
+  position: absolute; bottom: 138px; left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  padding: 7px 18px; border-radius: 5px; font-size: 14px; letter-spacing: .3px;
+  font-family: var(--serif); color: #f0e8d8;
+  background: rgba(24, 17, 12, .92); border: 1px solid #d8cfc0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  opacity: 0; transition: opacity .18s ease-out, transform .18s ease-out;
+  pointer-events: none; white-space: nowrap;
+}
+.cs-toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* 슬롯 안 kind 아이콘 + 약칭 — 아이콘이 없으면 슬롯은 기존 약칭 텍스트 그대로다 */
+.cs-sicon {
+  display: block; width: 34px; height: 30px;
+  background-size: contain; background-position: center; background-repeat: no-repeat;
+}
+.cs-scap { display: block; font-size: 10px; font-weight: 600; line-height: 1.1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-toast { transition: opacity .18s ease-out; transform: translateX(-50%); }
+}

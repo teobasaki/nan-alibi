@@ -57,12 +57,23 @@ export interface SceneHandlers {
   onDone(reason: 'time' | 'exit'): void
 }
 
+/** 가방 한 칸의 표시 정보 — 라벨은 월드 어휘를 지나 main 이 만들어 넘긴다 */
+export interface BagItem {
+  kind: string
+  /** 슬롯 약칭 (kind 아이콘이 없을 때 보인다) */
+  short: string
+  /** hover 툴팁·1~5키 확인용 전체 이름 */
+  full: string
+}
+
 export interface CrimeScene {
   dispose(): void
   /** 남은 증거품 갱신 — 주운 것은 사라지고, 스왑으로 내려놓은 것은 되살아난다 */
   setMarkers(list: SceneMarker[]): void
-  /** 가방 표시 갱신 — 폴라로이드가 꽂힌다 */
-  setBag(labels: string[], capacity: number): void
+  /** 가방 표시 갱신 — 폴라로이드가 꽂힌다. 칸마다 아이콘/약칭 + 툴팁 */
+  setBag(items: BagItem[], capacity: number): void
+  /** 수거 토스트 — "확보 — 카메라 기록 · 21:16" 이 1.5초 뜬다 (무엇을 얻었는지의 직관) */
+  toast(text: string): void
   /** 스왑 시간 비용 등 — 시계에 ms 를 얹는다 */
   addPenalty(ms: number): void
   /**
@@ -215,6 +226,11 @@ const TAPE_RIBBON_H = 0.3
 /** keycard 메탈 박스의 잿빛 틴트 — futuristic 톤을 무대(불 꺼진 갤러리)에 맞춰 누른다 */
 const KEYCARD_TINT = 0x8a8478
 const KEYCARD_TINT_K = 0.6
+/**
+ * 1인칭 수거 시선 하강(m) — 몸이 안 보이는 시점에서는 카메라가 "숙인다"를 진다.
+ * pickup 잠금(0.45s) 동안 사인 곡선으로 내려갔다 돌아온다. 모션 축소면 없다.
+ */
+const PICKUP_EYE_DIP = 0.38
 
 /** 씬 팔레트 — style.css 의 세계(불 꺼진 갤러리)와 같은 계열 */
 const COL = {
@@ -373,6 +389,18 @@ export async function mountCrimeScene(
       const n = bakeWalls(room)
       if (import.meta.env.DEV) {
         console.info(`[현장] 갤러리 격자 ${GW}x${GH} · 막힌 칸 ${n} · ${Math.round(performance.now() - t0)}ms`)
+        /**
+         * 충돌 **역방향 검증** — "걸을 수 없는 곳이 정말 막혔는가". 도달성 probe(전부
+         * 닿는가)는 격자가 통째로 비어도 통과해 버린다 — 조인 재활성·노드 개명으로
+         * 베이크가 조용히 죽는 사고는 이 줄이 잡는다. 좌표는 GLB 노드 실측+오프셋.
+         */
+        const holes: string[] = []
+        if (!blockedAt(9.4, -0.1)) holes.push('조각상(9.4,-0.1)')
+        // 벤치 좌표는 정점 클러스터 실측 — 노드 원점(벤치 사이 빈 바닥)을 찍으면 오탐이다
+        if (!blockedAt(-2.0, 5.0)) holes.push('벤치(-2.0,5.0)')
+        if (!blockedAt(3.4, -1.2)) holes.push('파티션(3.4,-1.2)')
+        if (holes.length) console.warn(`[현장] 충돌 역검증 실패 — 뚫림: ${holes.join(' · ')}`)
+        else console.info('[현장] 충돌 역검증 통과 — 조각상·벤치·파티션 막힘')
       }
     } else {
       /* ── 폴백 — 프리미티브 방. 에셋이 없어도 게임은 선다 ── */
@@ -940,6 +968,20 @@ export async function mountCrimeScene(
       noteT = window.setTimeout(() => noteEl.classList.remove('on'), 2400)
     }
 
+    /* 수거 토스트 — 힌트바(안내)와 자리가 다르다: 가방 바로 위에서 "얻었다"를 말한다 */
+    const toastEl = document.createElement('div')
+    toastEl.className = 'cs-toast'
+    hud.appendChild(toastEl)
+    let toastT = 0
+    const toast = (text: string): void => {
+      toastEl.textContent = text
+      toastEl.classList.remove('on')
+      void toastEl.offsetWidth                    // 연속 수거에도 매번 다시 떠오른다
+      toastEl.classList.add('on')
+      clearTimeout(toastT)
+      toastT = window.setTimeout(() => toastEl.classList.remove('on'), SCENE_FX.toastMs)
+    }
+
     const exitBtn = document.createElement('button')
     exitBtn.className = 'cs-exit'
     exitBtn.textContent = calm ? '수집을 마친다' : '먼저 철수한다'
@@ -962,16 +1004,30 @@ export async function mountCrimeScene(
       caption.classList.add('on')
     }
 
-    const setBag = (labels: string[], capacity: number): void => {
+    const setBag = (items: BagItem[], capacity: number): void => {
       bagEl.replaceChildren()
       const had = bagEl.dataset.n ? Number(bagEl.dataset.n) : 0
       for (let i = 0; i < capacity; i++) {
+        const it = items[i]
         const slot = document.createElement('div')
-        slot.className = `cs-slot${labels[i] ? ' full' : ''}${labels[i] && i >= had ? ' fresh' : ''}`
-        if (labels[i]) slot.textContent = labels[i]!
+        slot.className = `cs-slot${it ? ' full' : ''}${it && i >= had ? ' fresh' : ''}`
+        if (it) {
+          slot.title = it.full                     // hover 툴팁 — 담긴 기록의 전체 이름
+          const icon = ICON_BY_KIND.get(it.kind)
+          if (icon) {
+            const im = document.createElement('i')
+            im.className = 'cs-sicon'
+            im.style.backgroundImage = `url(${icon})`
+            slot.appendChild(im)
+            const cap = document.createElement('b')
+            cap.className = 'cs-scap'
+            cap.textContent = it.short
+            slot.appendChild(cap)
+          } else slot.textContent = it.short       // 아이콘 미도착이면 약칭이 본선이다
+        }
         bagEl.appendChild(slot)
       }
-      bagEl.dataset.n = String(labels.length)
+      bagEl.dataset.n = String(items.length)
     }
 
     /**
@@ -1082,6 +1138,14 @@ export async function mountCrimeScene(
         if (e.code === 'Escape') { const f = swapChoose; closeSwap(); f(null); e.preventDefault(); return }
       }
       if (phase !== 'collect') return          // 훑기·종료 중엔 조작 불가
+      // 1~5 — 가방 칸 확인. 스왑이 떠 있으면 위에서 이미 소비됐다 (내려놓기 선택이 먼저다)
+      const dg = /^Digit([1-5])$/.exec(e.code)
+      if (dg) {
+        const slot = bagEl.children[Number(dg[1]) - 1] as HTMLElement | undefined
+        note(slot?.title ? `가방 ${dg[1]}칸 — ${slot.title}` : `가방 ${dg[1]}칸 — 비어 있다`)
+        e.preventDefault()
+        return
+      }
       if (e.code === 'KeyE' || e.code === 'Space') {
         if (near) { handlers.onPick(near); e.preventDefault() }
         return
@@ -1158,6 +1222,12 @@ export async function mountCrimeScene(
       lockUntil = elapsedMs + SCENE_FX.pickupLockMs
       pickingUp = true
       walk?.setEffectiveWeight(0)
+      /**
+       * **대기 클립도 즉시 0 으로 누른다** — 걸어두면 블렌딩이 0.25초에 걸쳐 내리는
+       * 동안 idle 1 + pickup 1 이 반반 섞여 집는 동작이 묽어진다 (실측 —
+       * "pickup 이 재생 안 된다"로 보였다. 대기 클립이 없던 시절의 배선 잔재).
+       */
+      idleAction?.setEffectiveWeight(0)
       pickupAction.reset().play()
     }
 
@@ -1395,9 +1465,16 @@ export async function mountCrimeScene(
 
       // 훑기만 조감이다 — 종료 국면(화이트아웃 뒤)에도 시점이 튀지 않아야 한다
       if (firstPerson && phase !== 'survey') {
-        eye.position.set(actor.position.x, EYE_HEIGHT, actor.position.z)
+        /* 집는 동안 시선이 숙는다 — 몸이 안 보이는 1인칭에서는 카메라가 그 몸짓을 진다 */
+        let eyeY = EYE_HEIGHT
+        if (!REDUCED && pickingUp) {
+          const p = Math.min(1, Math.max(0, 1 - (lockUntil - elapsedMs) / SCENE_FX.pickupLockMs))
+          eyeY = EYE_HEIGHT - PICKUP_EYE_DIP * Math.sin(Math.PI * p)
+        }
+        eye.position.set(actor.position.x, eyeY, actor.position.z)
         const f = new THREE.Vector3(Math.sin(actor.rotation.y), 0, Math.cos(actor.rotation.y))
-        eye.lookAt(eye.position.clone().add(f).setY(EYE_HEIGHT))
+        const dip = EYE_HEIGHT - eyeY
+        eye.lookAt(eye.position.clone().add(f).setY(eyeY - dip * 1.6))
         actor.visible = false
         renderer.render(scene, eye)
       } else {
@@ -1411,6 +1488,12 @@ export async function mountCrimeScene(
         scene, actor, markerRoot, camera, moveSpeed, blockedAt,
         hasPickupClip: Boolean(pickupAction),
         hasIdleClip: Boolean(idleAction),
+        // 집기 실측용 — "재생 안 된다" 류 보고는 눈이 아니라 weight 로 판정한다
+        pickupState: () => ({
+          running: pickupAction?.isRunning() ?? false,
+          idleW: idleAction?.getEffectiveWeight() ?? -1,
+          walkW: walk?.getEffectiveWeight() ?? -1,
+        }),
         teleport: (x: number, z: number) => { actor.position.x = x; actor.position.z = z },
         time: () => elapsedMs,
         skip: (ms: number) => { elapsedMs += ms },
@@ -1433,6 +1516,7 @@ export async function mountCrimeScene(
     return {
       setMarkers,
       setBag,
+      toast,
       addPenalty: (ms) => { elapsedMs += ms },
       flyFrom,
       playPickup,
@@ -1442,6 +1526,7 @@ export async function mountCrimeScene(
         alive = false
         cancelAnimationFrame(raf)
         clearTimeout(noteT)
+        clearTimeout(toastT)
         removeEventListener('keydown', onDown)
         removeEventListener('keyup', onUp)
         removeEventListener('blur', clearKeys)

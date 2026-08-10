@@ -657,7 +657,11 @@ function syncSceneState(): void {
   csHandle.setBag(
     bagIds(ui.game).map((id) => {
       const e = CASE.evidence.find((x) => x.id === id)!
-      return labelOfKind(e.kind)
+      return {
+        kind: e.kind,
+        short: labelOfKind(e.kind),
+        full: `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}`,
+      }
     }),
     FIELD_BUDGET,
   )
@@ -691,6 +695,7 @@ function onScenePick(id: string): void {
       playAny('pickup')
       csHandle.playPickup()    // 몸이 숙여 집는다 — 0.45s 이동 잠금
       csHandle.flyFrom(id)     // 착지 프레임이 snap 을 낸다
+      csHandle.toast(`확보 — ${labelOfKind(ev.kind)} · ${SLOT_L(ev.slot)} ${PLACE_L(ev.place)}`)
       syncSceneState()
     })
     return
@@ -700,6 +705,8 @@ function onScenePick(id: string): void {
   playAny('pickup')
   csHandle.playPickup()        // 몸이 숙여 집는다 — 0.45s 이동 잠금
   csHandle.flyFrom(id)         // 포물선 착지가 snap(폴라로이드 찰칵)을 낸다
+  // 무엇을 얻었는지가 그 순간 화면에 서야 한다 — 라벨은 월드 어휘를 지난다
+  csHandle.toast(`확보 — ${labelOfKind(ev.kind)} · ${SLOT_L(ev.slot)} ${PLACE_L(ev.place)}`)
   syncSceneState()
 }
 
