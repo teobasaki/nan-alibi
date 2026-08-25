@@ -20,9 +20,9 @@ type EvKind = Evidence['kind']
 /** 연출·밸런스 상수 — **체감 조정은 전부 여기서** (RESULT_FX/TYPE_FX 와 같은 규약) */
 export const SCENE_FX = {
   /**
-   * 훑기(카메라 오빗, 조작 불가) 길이. 5초는 **너무 빨랐다** — 한 바퀴 도는 데
-   * 급해서 무엇을 봤는지 남지 않았다(사용자 실플레이). 기록 하나씩 짚어 주는
-   * 연출로 바꾸면서 12초로 늘렸다 — 기록 9건 기준 한 물건에 1.3초씩이다.
+   * 훑기(조작 불가) 길이. 5초는 **너무 빨랐다** — 한 바퀴 도는 데 급해서 무엇을
+   * 봤는지 남지 않았다(사용자 실플레이). 12초로 늘렸고, 지금은 그 12초가
+   * **`SURVEY_CUTS` 4컷 × 3초**다 (컷 수로 나누므로 여기를 바꾸면 컷 길이가 따라간다).
    * 시계는 이 뒤에 플레이어가 시작을 누를 때부터 흐르므로, 늘려도 30초는 안 깎인다.
    */
   surveyMs: 12000,
@@ -164,6 +164,12 @@ export const GALLERY_OFFSET: readonly [number, number, number] = [1.5, 0.6, 0]
 
 export const SCENE_ROOM = { minX: -8.6, maxX: 10.9, minZ: -7.2, maxZ: 7.2 } as const
 
+/** 홀 중심 — 갤러리 서관 홀은 원점 중심이 아니다. 조감 카메라·훑기 마지막 컷이 여기를 본다. */
+export const SCENE_CENTER: readonly [number, number] = [
+  (SCENE_ROOM.minX + SCENE_ROOM.maxX) / 2,
+  (SCENE_ROOM.minZ + SCENE_ROOM.maxZ) / 2,
+]
+
 /** 벽에서 이만큼 물러선 안쪽만 걷는다 */
 const MARGIN = 0.5
 
@@ -214,6 +220,131 @@ export const DEATH_ZONE = { x: 8.0, z: 1.0, hx: 1.5, hz: 1.3 } as const
 
 /** 플레이어 시작 위치 — 출입문(+z 벽) 쪽 */
 export const SCENE_START: readonly [number, number] = [2.0, 5.6]
+
+/* ─────────── 훑기 — 시네마틱 4컷 (팀 실플레이 피드백 2-2-(2)) ───────────
+ *
+ * **버린 것: 한 바퀴 오빗 + 증거 이름 자막.** 12초 동안 카메라가 계속 돌고 화면
+ * 한가운데의 자막이 증거 이름으로 빠르게 바뀌던 연출은, 정보를 많이 준 게 아니라
+ * **아무것도 안 남겼다** — 팀원 실플레이 판정: "카메라가 튀고, 무엇을 해야 할지
+ * 모른 채 30초를 맞는다". 회전은 멀미를 주고, 개별 증거 이름은 12초 안에 못 외운다.
+ *
+ * **대신: 고정된 4컷.** 컷 안에서만 카메라가 천천히 밀고(줌) 옮긴다(패닝).
+ * 컷과 컷 사이는 **하드컷**이다 — 보간하지 않는다. 그래서 흔들림·바운스가 원천적으로 없다.
+ * 훑기 구간은 **정보를 주지 않는 구간**으로 못박는다: 증거 이름표도, 마커 점멸도 없다.
+ * 자막은 컷당 한 줄, **장소만** 말한다 (증거 이름 금지 — 그건 수집 중 근접 힌트의 몫).
+ *
+ * 좌표는 이 파일의 실측값을 쓴다 — 마지막 컷은 `SCENE_CENTER`,
+ * 3컷은 `DEATH_AT`, 2컷은 서·동 상자 더미(SCENE_BOXES)를 잇는 선이다.
+ *
+ * ## 카메라 규약 (씬이 이 표를 그대로 먹는다)
+ * 카메라 위치 = `보는 지점 + (cos angle, 0, sin angle) × 반지름`, 높이 `height`.
+ * **정사영이라 거리는 크기를 안 바꾼다** — 줌은 `camera.zoom` 이 진다 (1 = 수집 화각).
+ * 그래서 `angle` 은 방위(어느 쪽에서 보는가), `height` 는 부감의 깊이만 정한다.
+ *
+ * ## 화면 좌우 = 방위각의 함수
+ * 시선이 `-(cos a, sin a)` 이므로 **화면 왼쪽 = `(-sin a, cos a)`** 이다.
+ * 2컷의 "좌측 패닝" 은 `to - from` 을 그 벡터에 맞춰 놓은 것이다 (a≈1.62 → 거의 -x).
+ * 이 산수를 씬에 두면 부호 하나에 패닝 방향이 뒤집히고 3D 는 테스트가 못 닿는다.
+ */
+export interface SurveyCut {
+  /** 컷이 시작할 때 카메라가 보는 지점 (XZ) */
+  from: readonly [number, number]
+  /** 컷이 끝날 때 보는 지점. from 과 같으면 고정 프레임이다 */
+  to: readonly [number, number]
+  /** 정사영 배율 [시작, 끝] — 1 이 수집 카메라와 같은 화각. 커지면 줌인, 작아지면 줌아웃 */
+  zoom: readonly [number, number]
+  /** 방위각(rad) — **컷 안에서 고정.** 이 값이 바뀌는 곳이 곧 하드컷이다 */
+  angle: number
+  /** 카메라 높이(m) — 낮을수록 홀 안에 선 눈에 가깝다 */
+  height: number
+  /** 자막 한 줄 — 장소만. **증거 이름 금지** */
+  caption: string
+}
+
+/**
+ * 네 컷. `SCENE_FX.surveyMs`(12s)를 넷으로 나눠 컷당 3초다 — 컷 수를 바꾸면
+ * 길이도 따라 나뉘므로 surveyMs 를 손대도 이 표는 그대로 산다.
+ */
+export const SURVEY_CUTS: readonly SurveyCut[] = [
+  {
+    // ① 입구 — 홀 북쪽에서 출입문(+z 벽)을 마주 보고 천천히 밀고 들어간다.
+    // x≈5.4 는 실측으로 고른 값이다: 갤러리 모델의 양문(+z 벽)과 큐레이터
+    // 데스크(SCENE_BOXES 6.6, 5.2)가 그 언저리라, 화면 한가운데에 "들어온 문" 이 선다.
+    from: [4.8, 1.4], to: [5.4, 4.6],
+    zoom: [1.02, 1.6], angle: -1.42, height: 14,
+    caption: '통제선 안쪽 — 홀 입구',
+  },
+  {
+    /**
+     * ② 흩어진 구역 — 동쪽 상자 더미에서 서쪽 수장고 쪽으로 **화면 왼쪽으로** 훑는다.
+     *
+     * 배율 1.85 는 취향이 아니라 **벽 안에 머물기 위한 값**이다. 처음엔 1.3 으로
+     * 넓게 잡고 x=7.2 → -6.0 을 훑었는데, 16:9 에서 가로 시야가 20.5m 라 홀
+     * (19.5m)보다 넓어 **서쪽 끝에서 벽 밖 검은 공백이 화면 3분의 1**을 먹었다(실측).
+     * 시야를 14.4m 로 좁히면 시작 프레임의 오른끝이 x=10.8(벽 10.9),
+     * 끝 프레임의 왼끝이 x=-8.6(벽 -8.6) — 3초 동안 동에서 서까지 다 지나면서
+     * 공백은 한 프레임도 없다.
+     */
+    // 높이 10 은 네 컷 중 가장 낮다 — 부감이 얕아 바닥 대신 물건과 벽이 화면에 든다
+    from: [3.6, -2.8], to: [-1.4, -3.05],
+    zoom: [1.85, 1.85], angle: 1.62, height: 10,
+    caption: '흩어진 자취 · 홀 북편',
+  },
+  {
+    // ③ 발견 지점 — 조각상(9.4, -0.1) 반대편에서 DEATH_AT 을 향해 붙는다
+    from: [8.5, 0.3], to: [DEATH_AT[0], DEATH_AT[1]],
+    zoom: [1.5, 2.15], angle: 2.47, height: 12,
+    caption: '발견 지점 · 조각상 아래',
+  },
+  {
+    // ④ 전경 — 천천히 물러나 **수집 카메라(zoom 1 · camAngle0)에 정확히 착지한다.**
+    // 훑기→수집 전환에서 시점이 튀지 않는 이유가 이 한 줄이다.
+    from: [4.6, -1.4], to: [SCENE_CENTER[0], SCENE_CENTER[1]],
+    zoom: [1.6, 1.0], angle: Math.PI / 4, height: 15,
+    caption: '30초 뒤 감식반이 철수한다',
+  },
+]
+
+/** 지금 몇 번째 컷의 어디인가 — `t` 는 컷 안의 0→1 진행도 */
+export interface SurveyShot {
+  index: number
+  t: number
+  cut: SurveyCut
+}
+
+/**
+ * 경과 시간 → 컷. 컷 경계에서 **정확히 다음 컷의 t=0 으로 갈아탄다**(하드컷).
+ * 훑기가 끝난 뒤(또는 넘긴 뒤) 불리면 마지막 컷의 끝(t=1)에 물린다.
+ */
+export function surveyShotAt(elapsedMs: number, cuts: readonly SurveyCut[] = SURVEY_CUTS): SurveyShot {
+  const n = cuts.length
+  const k = Math.max(0, Math.min(1, elapsedMs / SCENE_FX.surveyMs))
+  const index = Math.min(n - 1, Math.floor(k * n))
+  const t = Math.min(1, k * n - index)
+  return { index, t, cut: cuts[index]! }
+}
+
+/**
+ * 컷 **안에서만** 쓰는 완화 곡선 — smoothstep. 단조 증가라 되돌아오지 않는다
+ * (사인 종 모양이던 옛 훑기는 구간마다 붙었다 떨어지길 반복해 "바운스" 로 읽혔다).
+ * 양 끝의 속도가 0 이라 하드컷 직전·직후에 카메라가 멎어 있어 전환이 깨끗하다.
+ */
+export function cutEase(t: number): number {
+  const x = Math.max(0, Math.min(1, t))
+  return x * x * (3 - 2 * x)
+}
+
+/** 컷의 t 지점에서 카메라가 보는 지점과 배율 — 씬은 이 결과를 그대로 먹는다 */
+export function cutFrameAt(cut: SurveyCut, t: number): { at: [number, number]; zoom: number } {
+  const e = cutEase(t)
+  return {
+    at: [
+      cut.from[0] + (cut.to[0] - cut.from[0]) * e,
+      cut.from[1] + (cut.to[1] - cut.from[1]) * e,
+    ],
+    zoom: cut.zoom[0] + (cut.zoom[1] - cut.zoom[0]) * e,
+  }
+}
 
 /**
  * 장소(PlaceId 0~4) → 방 안 앵커. **규칙이 아니라 배치다** — 어느 기록이 어느

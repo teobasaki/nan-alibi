@@ -23,9 +23,9 @@ import { groundIt, measuredHeight } from './skinBounds'
 import { nearestWithin, unrollLegs } from './explore3d'
 import { play } from './sound'
 import {
-  DEATH_AT, FLAG_KEY, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START,
-  clipRateFor, moveDirFor, moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked, variantFor, vignetteAt,
-  VARIANT, type ScenePhase,
+  DEATH_AT, FLAG_KEY, GALLERY_OFFSET, SCENE_BOXES, SCENE_FX, SCENE_ROOM, SCENE_START, SURVEY_CUTS,
+  clipRateFor, cutFrameAt, moveDirFor, moveSpeedFor, phaseAt, pulseAt, rampTo, remainMs, sceneBlocked,
+  surveyShotAt, variantFor, vignetteAt, VARIANT, type ScenePhase,
 } from './sceneRules'
 
 /**
@@ -930,17 +930,15 @@ export async function mountCrimeScene(
      * 마커 노드 구성 집계 — "중복 스폰인가"를 눈이 아니라 숫자로 판정한다.
      * DEV 훅(`__cs.markerStats()`)으로도 나간다.
      */
-    const markerStats = (): { bodies: number; halos: number; locks: number; labels: number; total: number; dup: string[] } => {
+    const markerStats = (): { bodies: number; halos: number; locks: number; total: number; dup: string[] } => {
       const seen = new Map<string, number>()
       let bodies = 0
       let halos = 0
       let locks = 0
-      let labels = 0
       for (const c of markerRoot.children) {
         const part = c.userData.part as string | undefined
         if (part === 'halo') halos++
         else if (part === 'lock') locks++
-        else if (part === 'label') labels++
         else {
           bodies++
           const id = String(c.userData.id)
@@ -948,58 +946,20 @@ export async function mountCrimeScene(
         }
       }
       return {
-        bodies, halos, locks, labels, total: markerRoot.children.length,
+        bodies, halos, locks, total: markerRoot.children.length,
         dup: [...seen.entries()].filter(([, n]) => n > 1).map(([id, n]) => `${id}×${n}`),
       }
     }
 
     /**
-     * **훑기 라벨 힌트** (승인 UX ②) — 5초 오빗 동안 증거 위치마다 이름표가 뜬다.
-     * 훑기는 "무엇을 포기할지"를 고르는 시간인데, 실루엣만 돌면 무엇이 어디 있는지를
-     * 몸이 익히기 전에 시계가 돈다. 라벨은 훑기가 끝나는 순간 함께 걷힌다 —
-     * 수집 중에는 근접 힌트바가 같은 정보를 말하므로 화면을 어지럽힐 이유가 없다.
-     * 캔버스 스프라이트(웹폰트 0)는 explore3d 의 이름표와 같은 문법이다.
+     * **훑기 이름표는 걷어냈다** (팀 실플레이 2-2-(2)).
+     *
+     * 한때 훑기 12초 동안 증거마다 캔버스 이름표 스프라이트가 떴다("무엇이 어디 있는지
+     * 몸이 익히게" — 승인 UX ②). 실플레이가 그 전제를 뒤집었다: 이름표 아홉 개와
+     * 빠르게 바뀌는 중앙 자막이 겹치면서, 정보가 남기는커녕 **읽을 수 없는 잡음**이 됐다.
+     * 훑기는 이제 정보를 주지 않는 구간이다 — 장소만 보여 주고, "무엇인지" 는 전부
+     * 수집 중의 근접 힌트바(hintEl)가 진다. 그래서 마커 노드는 몸통·링·자물쇠뿐이다.
      */
-    const makeHintLabel = (text: string): THREE.Sprite => {
-      const c = document.createElement('canvas')
-      c.width = 512
-      c.height = 96
-      const g = c.getContext('2d')!
-      g.fillStyle = 'rgba(13,9,8,.85)'
-      g.beginPath()
-      // roundRect 는 사파리 16 미만에 없다 — 없으면 각진 판으로 선다. 폴백이 본선이다.
-      if (g.roundRect) g.roundRect(4, 16, 504, 64, 12)
-      else g.rect(4, 16, 504, 64)
-      g.fill()
-      g.strokeStyle = '#c8912f'
-      g.lineWidth = 3
-      g.stroke()
-      g.textAlign = 'center'
-      g.textBaseline = 'middle'
-      g.fillStyle = '#e9e1d3'
-      g.font = 'bold 34px "Apple SD Gothic Neo", sans-serif'
-      g.fillText(text, 256, 50, 480)
-      const tex = new THREE.CanvasTexture(c)
-      tex.colorSpace = THREE.SRGBColorSpace
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }))
-      sp.scale.set(2.6, 0.49, 1)
-      sp.renderOrder = 9
-      return sp
-    }
-
-    /** 훑기가 끝났는가 — 끝난 뒤의 setMarkers(수거 갱신)는 라벨을 다시 세우지 않는다 */
-    let surveyOver = calm
-    /** 훑기에서 지금 짚고 있는 기록의 순번 — 캡션을 구간마다 한 번만 바꾼다 */
-    let surveySeg = -1
-    const clearHintLabels = (): void => {
-      for (const c of [...markerRoot.children]) {
-        if (c.userData.part !== 'label') continue
-        const sp = c as THREE.Sprite
-        sp.material.map?.dispose()
-        sp.material.dispose()
-        markerRoot.remove(c)
-      }
-    }
 
     const setMarkers = (list: SceneMarker[]): void => {
       // 부착 마커(벽 cctv·데스크 위)는 재배치하지 않는다 — 설 수 없는 자리가 정상이다
@@ -1007,8 +967,6 @@ export async function mountCrimeScene(
       list = markers
       for (const c of markerRoot.children) {
         const m = c as THREE.Mesh
-        // 이름표는 자기 캔버스 텍스처를 갖는다 — 재질만 버리면 그림이 GPU 에 남는다
-        if (c.userData.part === 'label') (c as unknown as THREE.Sprite).material.map?.dispose()
         m.geometry?.dispose?.()
         ;((m as unknown as { material?: THREE.Material }).material)?.dispose?.()
         // 실모델 마커 — 지오메트리는 프로토와 공유라 두고, 복제한 재질만 버린다
@@ -1119,15 +1077,6 @@ export async function mountCrimeScene(
           sp.userData.part = 'lock'            // 구성 집계용 꼬리표 (markerStats)
           markerRoot.add(sp)
         }
-
-        // 훑기 중에만 — 증거 이름표 (승인 UX ②). 봉인 자물쇠보다 위에 띄운다.
-        if (!surveyOver) {
-          const lb = makeHintLabel(m.label)
-          lb.position.set(m.at[0], my + (m.sealed ? 0.95 : 0.75), m.at[1])
-          lb.userData.id = m.id
-          lb.userData.part = 'label'
-          markerRoot.add(lb)
-        }
       }
 
       /**
@@ -1235,8 +1184,9 @@ export async function mountCrimeScene(
     caption.className = 'cs-caption'
     host.appendChild(caption)
 
+    // 첫 프레임 전에 1컷 자막을 세워 둔다 — tick 이 덮어쓰기 전에 한 프레임 비는 것을 막는다
     if (!calm) {
-      caption.textContent = '현장을 훑는다 — 무엇을 들고 나올 것인가'
+      caption.textContent = SURVEY_CUTS[0]!.caption
       caption.classList.add('on')
     }
 
@@ -1484,6 +1434,8 @@ export async function mountCrimeScene(
      * 뒤로 가 있는 동안은 시계가 멎는다.
      */
     let elapsedMs = 0
+    /** 훑기에서 지금 몇 번째 컷인가 — 자막을 컷마다 딱 한 번만 갈아 끼운다 */
+    let surveyCut = -1
     let lastPulseSec = -1
     let lastHeartAt = 0
     let ended = false
@@ -1590,47 +1542,48 @@ export async function mountCrimeScene(
       if (phase === 'done' && !ended) { endScene('time'); }
 
       /**
-       * **훑기 — 한 바퀴 돌며 기록을 하나씩 짚어 준다** (사용자 지시: "너무 빠르다,
-       * 각 물품 줌인해서 가벼운 설명").
+       * **훑기 — 고정된 4컷** (팀 실플레이 2-2-(2)).
        *
-       * 예전엔 5초에 360°를 돌기만 했다 — 빠르고, 무엇을 봤는지 남지 않았다.
-       * 이제 기록 수만큼 구간을 나눠 **한 구간에 하나씩** 카메라가 그 물건 쪽으로
-       * 붙었다 떨어지며(줌 인/아웃) 이름을 캡션으로 말한다. 회전은 그대로 한 바퀴라
-       * 방의 전모도 함께 남는다 — 전모와 개별은 둘 다 필요하다.
+       * 버린 것: 12초 내내 도는 한 바퀴 오빗 + 증거 이름이 빠르게 바뀌는 자막 +
+       * 마커 점멸. 정보를 많이 준 연출이었는데 **아무것도 안 남았다** —
+       * 카메라가 튀고, 무엇을 해야 할지 모른 채 30초를 맞는다는 것이 판정이었다.
+       *
+       * 이제 컷 안에서만 카메라가 천천히 밀거나 옮기고(`cutFrameAt` 의 smoothstep —
+       * 양 끝 속도 0), 컷과 컷 사이는 **하드컷**이다. 보간이 없으니 흔들림도 없다.
+       * 컷표·산수는 `sceneRules.SURVEY_CUTS` 가 소유한다 (3D 는 테스트가 못 닿으므로
+       * 좌표와 방위 계산은 순수 함수 쪽에 둔다 — moveDirFor 와 같은 이유).
+       *
+       * **정사영은 거리로 줌이 안 된다** — 카메라를 당겨도 크기가 그대로다.
+       * 줌은 `camera.zoom` 이 지고, 마지막 컷이 zoom 1 · camAngle0 으로 착지해
+       * 수집 카메라와 정확히 이어진다.
        */
       if (phase === 'survey') {
-        const k = elapsed / SCENE_FX.surveyMs
-        const n = Math.max(1, markers.length)
-        const seg = Math.min(n - 1, Math.floor(k * n))
-        const inSeg = k * n - seg                              // 0→1, 한 물건에 머무는 동안
-        const m = markers[seg]
-        // 구간 중앙에서 가장 가까이 붙는다 — 0 에서 시작해 1 에서 다시 멀어지는 종 모양
-        const zoom = Math.sin(Math.PI * inSeg)
-        const tx = m ? CX + (m.at[0] - CX) * 0.55 * zoom : CX
-        const tz = m ? CZ + (m.at[1] - CZ) * 0.55 * zoom : CZ
-        const ang = camAngle0 + k * Math.PI * 2
-        const r = CAM_R * (1 - 0.42 * zoom)
-        camera.position.set(tx + Math.cos(ang) * r, 15 - 5.5 * zoom, tz + Math.sin(ang) * r)
-        camera.lookAt(tx, 0, tz)
-        if (m && seg !== surveySeg) {
-          surveySeg = seg
-          caption.textContent = m.label
+        const shot = surveyShotAt(elapsed)
+        const f = cutFrameAt(shot.cut, shot.t)
+        camera.position.set(
+          f.at[0] + Math.cos(shot.cut.angle) * CAM_R,
+          shot.cut.height,
+          f.at[1] + Math.sin(shot.cut.angle) * CAM_R,
+        )
+        camera.lookAt(f.at[0], 0, f.at[1])
+        if (camera.zoom !== f.zoom) {
+          camera.zoom = f.zoom
+          camera.updateProjectionMatrix()
+        }
+        // 자막은 컷이 바뀔 때 한 번만 — 장소 한 줄이다 (증거 이름은 훑기에 없다)
+        if (shot.index !== surveyCut) {
+          surveyCut = shot.index
+          caption.textContent = shot.cut.caption
           caption.classList.add('on')
         }
-        const blink = 0.75 + 0.45 * Math.sin(k * Math.PI * 10)
-        for (const g of markerRoot.children) {
-          if (g.userData.part === 'label') continue          // 이름표는 점멸하지 않는다 — 읽는 물건이다
-          if ((g as THREE.Mesh).geometry?.type !== 'RingGeometry') {
-            g.scale.setScalar(((g.userData.baseScale as number) ?? 1) * blink)
-          }
-        }
       } else if (prevPhase === 'survey') {
+        // 마지막 컷이 이미 zoom 1 로 착지해 있지만, 시간이 건너뛰어도(탭 복귀) 여기서 못박는다
+        if (camera.zoom !== 1) {
+          camera.zoom = 1
+          camera.updateProjectionMatrix()
+        }
         placeCam(camAngle0)
         caption.classList.remove('on')
-        // 훑기 이름표는 여기서 걷힌다 — 수집 중에는 근접 힌트바가 그 정보를 잇는다
-        surveyOver = true
-        clearHintLabels()
-        for (const g of markerRoot.children) g.scale.setScalar((g.userData.baseScale as number) ?? 1)
         // 훑기가 끝나는 순간이 조작의 첫 순간이다 — 시점 문법을 여기서 한 번만 말한다
         note('WASD · 클릭으로 이동 · E 로 수거')
       }
@@ -1886,7 +1839,18 @@ export async function mountCrimeScene(
         actor.visible = false
         renderer.render(scene, eye)
       } else {
-        actor.visible = true
+        /**
+         * **훑기 동안 주인공은 없다** (팀 실플레이 2-2-(1)).
+         * 조감 컷에 사람이 서 있으면 플레이어는 그게 자기 몸인 줄 모르고
+         * **"누가 서 있다"** 로 읽는다 — 아직 조작을 시작하지도 않았으므로
+         * 그 사람과 자기를 이을 단서가 없다. 수집이 시작되는 순간(=조작의 첫 순간)
+         * 다시 선다.
+         *
+         * `firstPerson` 이 const 인 지금, 이 else 가 도는 것은 **훑기뿐이다** —
+         * 그래도 조건을 `phase !== 'survey'` 로 적는다. 조감이 돌아오는 날
+         * "수집 중에 몸이 사라지는" 회귀를 이 한 줄이 미리 막는다.
+         */
+        actor.visible = phase !== 'survey'
         renderer.render(scene, camera)
       }
 
