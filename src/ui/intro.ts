@@ -74,7 +74,7 @@ function hotelPages(c: CaseFile): ComicPageDef[] {
 }
 
 /**
- * ## 골든 케이스 001 — 「옮겨진 상자의 사각」 (`?case=gc001`)
+ * ## 골든 케이스 001 — 「갤러리의 사각지대」 (`?case=gc001`)
  * 팀의 고정 시나리오(라음 사립 갤러리)는 시드 생성 사건이 아니라 **작성된 사건**이다.
  * 그 발단 카툰은 감정선이 계약이다: 평온함 → 위화감 → 충격 → 호기심 (팀 UX 문서).
  * 한 페이지에 다 넣으면 감정이 섞이므로 **페이지 셋으로 갈라** 페이지가 넘어갈 때
@@ -100,33 +100,33 @@ function gc001Pages(): ComicPageDef[] {
       rows: ['p0 p0', 'p1 p2'], heights: '52% 48%',
       panels: [
         { area: 'p0', img: g(0), key: '저녁', corner: 'tl', tilt: -0.4, fx: ['kb-in'],
-          line: '라음 사립 갤러리. 폐관을 앞둔 저녁이었다.' },
+          line: '라음 사립 갤러리, 폐관을 앞둔 저녁. 평소와 다를 것이 없었다.' },
         { area: 'p1', img: g(1), key: '전시홀', corner: 'bl', tilt: 0.4, fx: ['kb-left'],
-          line: '메인 전시홀은 여느 날과 같았다. 모든 것이 제자리에 있었다.' },
+          line: '메인 전시홀. 작품도 받침대도 제자리에 있었다.' },
         { area: 'p2', img: g(2), key: '이상 없음', corner: 'br', tilt: -0.5, fx: ['kb-in'],
-          line: '20:40 — 폐관 전 점검. 전시 받침대, 이상 없음.' },
+          line: '20:40, 폐관 전 점검. 받침대까지 확인했고 이상은 없었다.' },
       ] },
     { // 2면 — 위화감. 조명이 식고 칸이 기운다.
       rows: ['p3 p4', 'p5 p5'], heights: '48% 52%',
       panels: [
         { area: 'p3', img: g(3), key: '파티션', corner: 'tl', tilt: 1.1, fx: ['kb-right'], bam: '끼익',
-          line: '21:03. 파티션이 움직였다. 아무도 이유를 말하지 않았다.' },
+          line: '21:03, 파티션이 움직였다. 이유를 아는 사람은 없었다.' },
         { area: 'p4', img: g(4), key: '반입문', corner: 'tr', tilt: -0.9, fx: ['kb-in', 'flicker'],
-          line: '21:04. 반입문이 열렸다 — 열렸다는 기록뿐, 누가 지나갔는지는 남지 않았다.' },
+          line: '21:04, 반입문이 열렸다. 기록은 시각만 남겼다 — 누가 지나갔는지는 모른다.' },
         { area: 'p5', img: g(5), key: '상자', corner: 'bl', tilt: 0.8, fx: ['kb-left'], bam: '드르륵',
-          line: '21:09. 예정에 없던 상자가 움직였고, 카메라에 좁은 시야가 열렸다.' },
+          line: '21:09, 상자 하나가 예정에 없이 자리를 옮겼다. 그 자리에 카메라 사각이 생겼다.' },
       ] },
     { // 3면 — 충격, 그리고 호기심. 단일 광원 → 램프 아래 클로즈업.
       rows: ['p6 p6', 'p7 p8', 'p9 p9'], heights: '42% 29% 29%',
       panels: [
         { area: 'p6', img: g(6), key: '21:21', corner: 'tl', tilt: -1.2, fx: ['kb-in', 'pulse'], bam: '……!',
-          line: '21:21. 관장 한라온이 전시 받침대 옆에서 발견됐다.' },
+          line: '21:21, 관장 한라온이 전시 받침대 옆에서 숨진 채 발견됐다.' },
         { area: 'p7', img: g(7), key: '지직', corner: 'bl', tilt: 0.9, fx: ['flicker'], bam: '지직',
-          line: '21:15까지 그의 목소리가 확인됐다. 21:18, 카메라에는 얼굴 없는 누군가가 찍혔다.' },
+          line: '21:15, 그의 목소리가 마지막으로 남았다. 21:18, 카메라는 얼굴 없는 사람 하나를 담았다.' },
         { area: 'p8', img: g(8), key: '다섯', corner: 'br', tilt: -0.6, fx: ['kb-left', 'smoke'],
-          line: '폐관 뒤 접근할 수 있었던 사람은 다섯 — 운영·큐레이터·운송·보존·보안.' },
+          line: '폐관 뒤에도 안으로 들어갈 수 있었던 사람은 다섯 — 운영·큐레이터·운송·보존·보안.' },
         { area: 'p9', img: g(9), key: '?', corner: 'br', tilt: 0.5, fx: ['kb-in'], bam: '?!',
-          line: '받침대는 사고처럼 보였다. 그러나 라벨은 새것이었다 — 수사가 시작된다.' },
+          line: '받침대는 사고처럼 보였다. 그런데 라벨만 새것이었다. 여기서부터 수사다.' },
       ] },
   ]
 }
@@ -149,7 +149,9 @@ const HOLD_MANUAL = !new URLSearchParams(location.search).has('introauto')
 export function playIntro(c: CaseFile): Promise<void> {
   // 골든 케이스 경로 — 시드 사건이 아니라 작성된 사건의 발단이다
   if (new URLSearchParams(location.search).get('case') === 'gc001') {
-    return playComicBook(gc001Pages(), '옮겨진 상자의 사각')
+    // 제목은 사건 파일에서 받는다 — 여기에 문자열을 박아 두면 사건이 개명될 때
+    // 인트로만 옛 제목을 계속 띄운다 (실제로 「옮겨진 상자의 사각」이 그렇게 남아 있었다).
+    return playComicBook(gc001Pages(), c.title)
   }
   return playComicBook(hotelPages(c), c.title)
 }
@@ -204,7 +206,11 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
     const nextPage = (): void => {
       pageIdx += 1
       if (pageIdx >= pages.length) {
-        if (!HOLD_MANUAL) timer = window.setTimeout(finish, still ? 400 : 1600)
+        // 마지막 페이지 뒤 — 여기서 손을 놓으면 플레이어가 갇힌다 (팀 플레이테스트 1-(1)).
+        // 예전엔 수동 모드에서 아무 일도 안 일어나 Esc 말고는 나갈 길이 없었다.
+        // 손으로 넘기는 중이라면 그 마지막 클릭이 곧 "끝내기" 다.
+        if (HOLD_MANUAL) finish()
+        else timer = window.setTimeout(finish, still ? 400 : 1600)
         return
       }
       const def = pages[pageIdx]!
