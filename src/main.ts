@@ -815,18 +815,36 @@ function openCrimeScene(fallback: () => void, ready?: () => void): void {
         },
       })
     },
-  }).then((hd) => {
-    csOpening = false
-    loading.remove()
-    if (!hd) {
-      host.remove()
-      ready?.()
-      return fallback()
-    }
-    csHandle = hd
-    syncSceneState()
-    ready?.()      // 무대가 다 섰다 — 커튼은 여기서 열린다
   })
+    /**
+     * **거절도 「못 섰다」의 한 형태다.** mountCrimeScene 은 자기 안에서 전부 잡아
+     * `null` 을 주게 돼 있지만, 그 밖(동적 import 실패·데코더 워커 부재)에서 던지면
+     * `.then` 이 아예 안 불린다. 그러면 `csOpening` 이 참으로 남아 **그 세션 내내**
+     * 재진입 가드가 현장을 통째로 스킵했다 — 커튼은 `ready` 없이 열리고 제1막 자리에
+     * 2D 수사 화면이 그대로 드러난다. 거절을 `null` 로 접어 한 갈래로 모은다.
+     */
+    .catch((e: unknown) => {
+      console.error('[현장] 3D 무대가 서지 못했다 — 기록철 흐름으로 되돌린다', e)
+      return null
+    })
+    .then((hd) => {
+      loading.remove()
+      if (!hd) {
+        host.remove()
+        ready?.()
+        return fallback()
+      }
+      csHandle = hd
+      syncSceneState()
+      ready?.()      // 무대가 다 섰다 — 커튼은 여기서 열린다
+    })
+    /**
+     * **가드는 반드시 풀린다.** 예전에는 `.then` 안에서만 풀어서, 위의 어느 경로로든
+     * 프라미스가 `.then` 에 못 닿으면 가드가 영구히 잠겼다. `finally` 는 성공·실패·
+     * 폴백 어느 쪽이든 지난다 (PLAYBOOK #45 — 가드가 열린 채/닫힌 채 죽는 방향을 정하라.
+     * 이 가드는 연타 방지용이므로 **실패 시 열려야** 다음 시도가 가능하다).
+     */
+    .finally(() => { csOpening = false })
 }
 
 /**
@@ -2675,6 +2693,43 @@ function fileHeader(stamp: string, cold = false): HTMLElement {
   return hd
 }
 
+/* ─────────── 브리핑 앞의 암막 (팀 피드백 2-1-(1)) ─────────── */
+/**
+ * **카툰이 걷히는 찰나에 수첩이 맨몸으로 번쩍이던 프레임의 수리.**
+ *
+ * 순서가 이랬다: `.intro.out`(0.7초 — 마지막에 흰빛으로 타면서 opacity 0 으로 간다)
+ * → 인트로 제거 → `openBriefing()` 이 `.overlay`(fadein 0.22초)를 붙인다.
+ * 그 사이 0.3초 남짓 화면에 남는 것은 **로드 직후부터 이미 그려져 있던 수첩**(2D 수사
+ * 화면)이다. 연출이 아니라 그냥 뒤가 비친 것이고, 아직 아무것도 안 한 사람에게
+ * 상황판을 한 프레임 보여주는 것은 누설이기도 하다.
+ *
+ * 고치는 길은 둘이었다 — ① 수첩 렌더를 뒤로 미룬다 ② 브리핑의 어두운 배경을 먼저 깐다.
+ * ①은 `render()` 가 앱 전역의 진입점이라 건드리면 다른 화면들이 같이 흔들린다.
+ * **②를 골랐다**: 카툰이 시작되는 시점에 암막을 미리 깔아 두면 카툰이 타 없어진 뒤에도
+ * 뒤에 있는 것은 수첩이 아니라 암막이다. 인트로 코드(`intro.ts`)를 안 건드린다는 것도 이유다.
+ *
+ * z-index 는 9 — `.overlay`(10) 바로 아래, 정상 흐름인 수첩 바로 위다.
+ * 걷는 것은 브리핑이 제 배경을 다 세운 뒤이고, 걷히는 순간이 안 보이게 0.35초에 걸쳐 지운다.
+ */
+let brfScrim: HTMLElement | null = null
+
+function layBriefingScrim(): void {
+  if (brfScrim) return
+  const el = h('div', 'brf-scrim')
+  el.style.cssText = 'position:fixed;inset:0;z-index:9;background:#08070b;pointer-events:none'
+  document.body.appendChild(el)
+  brfScrim = el
+}
+
+function liftBriefingScrim(): void {
+  const el = brfScrim
+  if (!el) return
+  brfScrim = null
+  el.style.transition = 'opacity .35s ease-out'
+  el.style.opacity = '0'
+  setTimeout(() => el.remove(), 420)
+}
+
 /* ─────────── 오프닝 브리핑 (기획서 §5.1 · 승인 UX ①) ─────────── */
 /**
  * 플레이 테스트 지적: "어디부터 해야 되는지, 뭘 조사해야 되는지 모르겠다."
@@ -2695,6 +2750,8 @@ function openBriefing(): void {
   const sheet = h('div', 'sheet casefile')
   ov.appendChild(sheet)
   document.body.appendChild(ov)
+  // 암막은 브리핑이 다 뜬 뒤에 걷는다 — 그 전에 걷으면 고치려던 그 프레임이 다시 생긴다
+  setTimeout(liftBriefingScrim, 220)
 
   /** 지금 몇 번째 장인가 — 0·1·2 */
   let step = 0
@@ -2707,14 +2764,29 @@ function openBriefing(): void {
   const pageBrief = (): HTMLElement => {
     const box = h('div', 'brf-body')
     box.appendChild(h('h2', undefined, CASE.title))
+    /**
+     * **범행 시각과 발견 시각은 다르다.**
+     *
+     * 이 문장은 `어젯밤 ${범행시각} … 숨진 채 발견됐다` 였다. 한 문장 안에서 범행
+     * 시각을 발견 시각처럼 읽히게 쓴 것이다 — 카툰은 마지막 칸에서 "21:21, 발견됐다"
+     * 라고 말하고 있어서 **브리핑과 카툰이 서로 다른 시각을 말했다.** 추리 게임에서
+     * 두 시각이 어긋나면 플레이어의 격자 전체가 어긋난다 (팀 피드백 2-1-(2)).
+     *
+     * 시각은 하드코딩하지 않는다. 범행은 `CRIME_SLOT`, 발견은 **마지막 칸**이다 —
+     * 다섯 칸 구조는 전역 불변(types.ts §구조)이라 생성 사건에서도 같이 성립한다.
+     */
+    const foundSlot = SLOTS[SLOTS.length - 1]!
     box.appendChild(h('p', undefined,
       `어젯밤 ${SLOT_L(CRIME_SLOT)}, ${CASE.venue.name} ${CASE.venue.room}에서 ` +
-      `${CASE.victim.title} ${josa(CASE.victim.name, '이/가')} 숨진 채 발견됐다. ` +
+      `${CASE.victim.title} ${josa(CASE.victim.name, '이/가')} 목숨을 잃었다. ` +
+      `발견된 것은 ${SLOT_L(foundSlot)} — 범행 ${SLOT_L(CRIME_SLOT)}, 발견 ${SLOT_L(foundSlot)} 이다. ` +
       // 장소 명사를 하드코딩하지 않는다 — 월드 사건(갤러리 등)에서도 같은 문장이 성립해야 한다
       `${CASE.venue.name}에는 다섯 사람이 남아 있었고, 그중 한 명이 범인이다.`))
     box.appendChild(h('p', undefined,
-      '다섯 명 모두 "그 시간엔 다른 곳에 있었다"고 말한다. ' +
-      '그러나 거짓말하는 사람이 곧 범인은 아니다 — 저마다 숨기고 싶은 사정이 따로 있다.'))
+      '다섯 명 모두 "그 시간엔 다른 곳에 있었다"고 말한다.'))
+    // 팀 문안 그대로 — **줄을 바꿔 별도 단락으로** 세운다 (앞 문장에 붙이면 안 읽힌다)
+    box.appendChild(h('p', undefined,
+      '주의: 범인이 아니어도 거짓말을 할 수 있다 — 저마다의 사정은 다르니…'))
     const st = stats()
     if (st.plays > 0) {
       box.appendChild(h('div', 'tally',
@@ -2729,20 +2801,33 @@ function openBriefing(): void {
   box.appendChild(h('h2', undefined, '당신이 할 일'))
   const ol = h('ol', 'steps')
   /**
-   * **네 줄로 줄였다** (2026-08-10 사용자 지시 — "짧고 직관적으로").
-   * 여섯 항목에 두세 줄씩 붙던 설명은 아무도 읽지 않는다. 지금 필요한 것만 남기고,
-   * 나머지(대조 방법·잠긴 기록·보너스)는 **그 순간 그 자리에서** 화면이 말한다.
-   * 브리핑은 규칙서가 아니라 출발 신호다.
+   * **여섯 항목 → 네 항목 → 세 항목.** 이번엔 줄이는 것이 아니라 **갈아 끼운 것**이다
+   * (2026-08-26 팀 문안 2-1-(3)). 네 항목판은 짧기는 했지만 "기록으로 사람을 지운다"
+   * 처럼 **게임 안의 은유**로 적혀 있어서, 처음 온 사람이 손으로 무엇을 하는지는
+   * 여전히 안 보였다. 팀이 써 준 문안은 절차(현장 → 비교·심문 → 결론) 그대로다.
+   *
+   * 문장은 임의로 늘리지 않는다. 숫자만 상수에서 읽는다 — 30초·10회·5개가 코드와
+   * 갈리면 브리핑이 거짓말을 하게 된다.
    */
-  for (const [t, d] of [
-    ['현장에서 30초 — 가방은 다섯 칸', '다 못 줍는다. 무엇을 버릴지 고르는 게 수사다.'],
-    ['기록으로 사람을 지운다', '기록은 거짓말을 못 한다. "남은 후보"가 줄어드는 걸 보라.'],
-    ['다섯 명을 심문한다', `한 사람당 ${TALK_CAP}번까지 물을 수 있다.`],
-    ['범인·동기·도구를 지목한다', '60점 · 15점 · 15점.'],
-  ] as [string, string][]) {
+  for (const [t, ...lines] of [
+    [`현장 조사 ${SCENE_FX.collectMs / 1000}초`,
+      '직접 사건 현장을 돌아다니면서 증거를 수집하세요.',
+      '모든 증거를 줍지는 못합니다. 주요 증거를 수집하세요.'],
+    ['증거 비교 및 용의자 심문',
+      '증거와 기록으로 추리를 진행하세요.',
+      `용의자는 한 명당 ${TALK_CAP}번까지 심문할 수 있습니다.`,
+      '주의: 범인이 아니어도 용의자는 거짓말을 할 수 있습니다.'],
+    ['최종 결론',
+      '추리와 심문 결과를 바탕으로 범인/범행 동기/도구를 지목하세요.'],
+  ] as [string, ...string[]][]) {
     const li = h('li')
     li.appendChild(h('b', undefined, t))
-    li.appendChild(h('span', undefined, d))
+    // 설명이 두세 줄이다 — `.steps span` 은 인라인이라 그냥 붙이면 한 줄로 흘러 붙는다
+    for (const d of lines) {
+      const s = h('span', undefined, d)
+      s.style.display = 'block'
+      li.appendChild(s)
+    }
     ol.appendChild(li)
   }
     box.appendChild(ol)
@@ -2752,10 +2837,15 @@ function openBriefing(): void {
   /* ③ 조작법 + 카운트다운 — 손이 무엇을 누르나 */
   const pageKeys = (): HTMLElement => {
     const box = h('div', 'brf-body')
-    box.appendChild(h('h2', undefined, `${SCENE_FX.collectMs / 1000}초의 현장 — 조작`))
+    /**
+     * **제목과 본문을 팀 문안으로 갈아 끼웠다** (2026-08-26 팀 피드백 2-1-(4)).
+     * 「30초의 현장 — 조작」은 이 게임을 이미 아는 사람의 말이고, 본문은 카메라
+     * 연출을 먼저 설명하느라 **여기서 무엇을 해야 하는지**를 두 번째로 밀어냈다.
+     * 조작키 안내(W A S D · 마우스 · E)는 그대로 둔다 — 그건 손이 바로 쓰는 정보다.
+     */
+    box.appendChild(h('h2', undefined, `현장조사 ${SCENE_FX.collectMs / 1000}초`))
     box.appendChild(h('p', undefined,
-      '들어가면 먼저 카메라가 현장을 한 바퀴 돌며 무엇이 어디 있는지 보여준다. ' +
-      '시계는 그 뒤 당신이 시작을 누를 때부터 흐른다.'))
+      `사건 현장에 들어가 증거품을 수집하세요. ${SCENE_FX.collectMs / 1000}초 내에 조사를 마쳐야 합니다.`))
     const keys = h('div', 'brf-keys')
     for (const [k, d] of [
       ['W A S D', '걷는다'],
@@ -2769,7 +2859,7 @@ function openBriefing(): void {
     }
     box.appendChild(keys)
     box.appendChild(h('p', 'brf-warn',
-      '가방은 다섯 칸뿐이다. 다 들 수 없으니 무엇을 포기할지 고르는 것이 곧 수사다.'))
+      `증거는 최대 ${FIELD_BUDGET}개까지만 수집 가능합니다.`))
     return box
   }
 
@@ -3013,6 +3103,9 @@ function showStartPage(): void {
     wake()          // 이 클릭이 오디오를 깨운다 — 인트로 카툰부터 소리가 살게
     ov.classList.add('leave')
     setTimeout(() => ov.remove(), 380)
+    // 카툰 뒤에 브리핑의 암막을 **미리** 깐다 — 카툰이 타 없어지는 프레임에 수첩이
+    // 맨몸으로 드러나던 것의 수리 (팀 피드백 2-1-(1))
+    layBriefingScrim()
     void playIntro(CASE).then(openBriefing)
   }
   box.appendChild(go)
@@ -3020,7 +3113,7 @@ function showStartPage(): void {
   // 발단 카툰으로 연다. 본게임 데이터 연결 전까지는 발단만 gc001 이다.
   const onGc = new URLSearchParams(location.search).get('case') === 'gc001'
   const alt = h('button', 'start-alt',
-    onGc ? '시드 사건으로 돌아가기' : '골든 케이스 001 — 옮겨진 상자의 사각') as HTMLButtonElement
+    onGc ? '시드 사건으로 돌아가기' : '골든 케이스 001 — 갤러리의 사각지대') as HTMLButtonElement
   alt.onclick = () => {
     location.href = onGc ? location.pathname : `${location.pathname}?case=gc001`
   }
