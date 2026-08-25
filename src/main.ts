@@ -961,14 +961,15 @@ function cueRail(): HTMLElement {
   const contra = ui.game.foundContradictions.length
   const pend = pendingPairs(ui.game).length
 
-  const num = (cls: string, label: string, v: number): HTMLElement => {
+  const num = (cls: string, label: string, sub: string, v: number): HTMLElement => {
     const b = h('div', `cue-num ${cls}${v > 0 ? ' has' : ''}`)
     b.appendChild(h('span', 'cue-k', label))
     b.appendChild(h('span', 'cue-v', String(v)))
+    b.appendChild(h('span', 'cue-desc', sub))
     return b
   }
-  rail.appendChild(num('new', '새 기록', owned))
-  rail.appendChild(num('chg', '어긋난 진술', contra))
+  rail.appendChild(num('new', 'NEW', '새 기록', owned))
+  rail.appendChild(num('chg', 'CHANGED', '어긋난 진술', contra))
   rail.appendChild(h('div', 'cue-sub', pend > 0 ? `안 맞춰본 조합 ${pend}` : '맞출 조합 없음'))
 
   // 우하단 진행 카운터 — 레퍼런스의 두 줄. 우리 수치로 채운다
@@ -1096,9 +1097,35 @@ function openBook(): void {
   const ov = h('div', 'bookov')
   const book = h('div', 'book')
 
+  /**
+   * 수첩의 가장 비싼 상태 — 방금 찾아낸 모순을 양면에 나란히 둔다.
+   *
+   * 레퍼런스는 BEFORE/CURRENT 였지만 이 사건 엔진은 진술을 소급 변경하지 않는다.
+   * 없는 번복을 지어내는 대신, 같은 시각의 **본인 진술 / 객관 기록**을 같은 자리에
+   * 놓는다. 눈은 같은 비교 동선을 타고, 게임의 사실 계약도 깨지지 않는다.
+   */
+  const hit = ui.game.foundContradictions.at(-1)
+  const hitParts = hit?.split('|')
+  const hitEvidence = hitParts ? CASE.evidence.find((e) => e.id === hitParts[0]) : undefined
+  const hitSuspect = hitParts?.[1] as SuspectId | undefined
+  const hitSlot = hitParts ? Number(hitParts[2]) as Slot : undefined
+  const hasComparison = Boolean(
+    hitEvidence && hitSuspect && hitSlot !== undefined && CASE.suspects[hitSuspect],
+  )
+
   /* 좌면 — 수사 일지 */
   const left = h('div', 'book-page bp-l')
-  left.appendChild(h('div', 'book-cap', '수사 일지'))
+  left.appendChild(h('div', 'book-cap', hasComparison ? `${CASE.suspects[hitSuspect!].name}의 진술` : '수사 일지'))
+  if (hasComparison) {
+    const sus = CASE.suspects[hitSuspect!]
+    const compare = h('div', 'book-compare-card previous')
+    compare.appendChild(h('div', 'book-compare-meta', `진술 · ${SLOT_L(hitSlot!)}`))
+    compare.appendChild(h('div', 'book-compare-quote',
+      `“${SLOT_L(hitSlot!)}에는 ${PLACE_L(sus.claim[hitSlot!]!)}에 있었습니다.”`))
+    compare.appendChild(h('div', 'book-compare-source', '출처 · 심문 중 답변'))
+    left.appendChild(compare)
+    left.appendChild(h('div', 'book-cap book-subcap', '수사 일지'))
+  }
   const lines = journalLines(CASE, ui.journey, journalStatements())
   if (lines.length === 0) {
     left.appendChild(h('div', 'book-empty', '아직 적을 것이 없다. 기록을 조회하거나 사람을 만나야 한다.'))
@@ -1117,7 +1144,22 @@ function openBook(): void {
 
   /* 우면 — 지금 손에 쥔 것 */
   const right = h('div', 'book-page bp-r')
-  right.appendChild(h('div', 'book-cap', '확보한 기록'))
+  right.appendChild(h('div', 'book-cap', hasComparison ? '기록 대조' : '확보한 기록'))
+  if (hasComparison) {
+    const compare = h('div', 'book-compare-card current')
+    compare.appendChild(h('div', 'book-compare-meta',
+      `${evLabel(hitEvidence!.id)} · ${SLOT_L(hitEvidence!.slot)}`))
+    compare.appendChild(h('div', 'book-compare-quote',
+      `“${SLOT_L(hitEvidence!.slot)} 기록은 ${PLACE_L(hitEvidence!.place)}을 가리킵니다.”`))
+    compare.appendChild(h('div', 'book-compare-source', '출처 · 확보한 객관 기록'))
+    right.appendChild(compare)
+    const changed = h('div', 'book-change')
+    changed.appendChild(h('span', 'book-change-k', '무엇이 어긋났나'))
+    changed.appendChild(h('span', 'book-change-v',
+      `${CASE.suspects[hitSuspect!].name}의 ${SLOT_L(hitSlot!)} 진술 ↔ ${evLabel(hitEvidence!.id)}`))
+    right.appendChild(changed)
+    right.appendChild(h('div', 'book-cap book-subcap', '확보한 기록'))
+  }
   const bag = h('div', 'book-scroll')
   const held = ui.game.cards.filter((id) => CASE.evidence.some((e) => e.id === id))
   if (held.length === 0) {
@@ -1297,6 +1339,11 @@ function stage(): HTMLElement {
     box.appendChild(roomEl)
   }
 
+  const roomLabel = h('div', 'stage-label')
+  roomLabel.appendChild(h('span', 'stage-room', 'INTERROGATION ROOM 03'))
+  roomLabel.appendChild(h('span', 'stage-rec', '● REC'))
+  box.appendChild(roomLabel)
+
   const p = h('div', 'portrait')
   const shot = portraitFor(slug)
   if (!use3d) {
@@ -1357,9 +1404,13 @@ function stage(): HTMLElement {
 
   const log = h('div', 'log')
   for (const c of ui.chats[s]!) {
-    log.appendChild(h('div', 'bubble q', c.q))
+    const q = h('div', 'bubble q')
+    q.appendChild(h('span', 'bubble-who', 'YOU'))
+    q.appendChild(h('div', 'bubble-text', c.q))
+    log.appendChild(q)
     const a = h('div', `bubble a${c.fallback ? ' fallback' : ''}`)
-    a.appendChild(h('div', undefined, c.a))
+    a.appendChild(h('span', 'bubble-who', sus.name))
+    a.appendChild(h('div', 'bubble-text', c.a))
     if (c.tell !== 'none') a.appendChild(h('div', 'tell', tellLabel(c.tell)))
     /**
      * **조서** — 대사와 분리해 한 줄로 남긴다.
@@ -1375,11 +1426,14 @@ function stage(): HTMLElement {
     }
     log.appendChild(a)
   }
+  if (ui.chats[s]!.length === 0 && !ui.busy) {
+    log.appendChild(h('div', 'dialogue-empty', '질문을 골라 첫 진술을 받아내십시오.'))
+  }
   // **기다림에 이름을 붙인다.** 예전엔 `…` 하나였고, 2초 동안 플레이어는
   // 멈춘 건지 느린 건지 알 수 없었다. 단계가 보이면 같은 2초가 진행 중으로 읽힌다.
   // 그리고 이 칩은 장식이 아니다 — 이 게임에서 LLM 출력은 검증기를 통과해야만
   // 쓰이므로, '진술 검증' 칸이 곧 아키텍처를 화면에 드러낸 것이다.
-  if (ui.busy || pipeStage() !== 'idle') log.appendChild(stageChip())
+  if (ui.busy) log.appendChild(stageChip())
   box.appendChild(log)
   box.appendChild(askBox(s))
   // 좌: 용의자 다섯 · 중앙: 무대와 대화 (UI 레퍼런스 3분할의 왼쪽 두 칸)
@@ -3062,7 +3116,7 @@ function render(): void {
    * 내려가지 않아 격자와 조회 목록이 오늘처럼 계속 동시에 보인다.
    * 사라지는 것은 용의자 열 하나뿐이고 그 폭은 격자로 간다 — 45% → 62%.
    */
-  const nb = h('div', `nb${ui.opening ? ' opening' : ''}`)
+  const nb = h('div', `nb${ui.active ? ' interview' : ''}${ui.opening ? ' opening' : ''}`)
   nb.appendChild(deskOrRoom())
   nb.appendChild(h('div', 'nb-spine'))
   nb.appendChild(rightPage())

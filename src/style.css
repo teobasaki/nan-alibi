@@ -2150,3 +2150,519 @@ body::after {
 @media (prefers-reduced-motion: reduce) {
   .book-page, .bookov.shut .bp-l, .bookov.shut .bp-r { animation: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   취조실 전용 화면 — 수첩의 종이와 절대 섞지 않는다
+
+   기존 구조는 취조실도 .nb 안에 넣은 뒤, 파일 후반의 밝은 종이 변수를 그대로
+   상속했다. 그래서 3D 장면보다 종이 질감과 빈 여백이 먼저 보였다.
+   .interview 는 같은 DOM 을 쓰되 팔레트·표면·비율을 완전히 끊는다.
+   ══════════════════════════════════════════════════════════════ */
+.nb.interview {
+  --bg: #090d10;
+  --panel: #12181d;
+  --panel-2: #192229;
+  --line: #344047;
+  --ink: #ece7dd;
+  --muted: #858f94;
+  --amber: #d39a45;
+  --red: #a73e35;
+  --green: #4f8b72;
+  grid-template-columns: minmax(0, 1fr) 1px 148px;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  background:
+    radial-gradient(ellipse 70% 120% at 54% 38%, rgba(68, 76, 78, .18), transparent 58%),
+    linear-gradient(90deg, #0b1014, #090c0f 72%, #11171b);
+}
+
+/* 후반의 .nb .nb-page 종이 규칙보다 구체적으로 덮는다. */
+.nb.interview .nb-page {
+  background: #0d1216;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ink);
+}
+.nb.interview .nb-page::before {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.018), transparent 20%),
+    repeating-linear-gradient(180deg, transparent 0 2px, rgba(255,255,255,.012) 2px 3px);
+}
+.nb.interview .nb-spine {
+  border: 0;
+  background: #31383d;
+}
+.nb.interview .stage-wrap {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+/* 왼쪽 용의자 레일 — 선택은 청록, 사건 변화만 주황. */
+.nb.interview .srail {
+  flex: 0 0 156px;
+  gap: 4px;
+  padding: 13px 8px;
+  background: rgba(6, 9, 11, .9);
+  border-right: 1px solid #303940;
+}
+.nb.interview .srail::before {
+  content: 'SUSPECTS';
+  display: block;
+  padding: 0 7px 7px;
+  color: #66747c;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .14em;
+}
+.nb.interview .srow {
+  position: relative;
+  gap: 8px;
+  min-height: 55px;
+  padding: 8px 7px;
+  border-radius: 2px;
+}
+.nb.interview .srow:hover:not(:disabled) {
+  background: rgba(83, 132, 158, .09);
+  border-color: rgba(83, 132, 158, .28);
+}
+.nb.interview .srow.on {
+  background: linear-gradient(90deg, rgba(42, 91, 121, .72), rgba(30, 54, 68, .5));
+  border-color: #3a718f;
+  opacity: 1;
+}
+.nb.interview .srow.on::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  background: #74b8db;
+}
+.nb.interview .sface {
+  flex-basis: 32px;
+  width: 32px;
+  height: 38px;
+  border-radius: 2px;
+  border-color: #4b565c;
+  filter: grayscale(.75) contrast(1.16) brightness(.74);
+}
+.nb.interview .sname { color: #e6e4de; font-size: 12.5px; }
+.nb.interview .sjob,
+.nb.interview .sprog { color: #7e898f; font-size: 9.5px; }
+.nb.interview .sprog.has { color: #79adc8; }
+
+/* 중앙은 인물 무대가 주인공이다. 대화는 무대 하단에 겹쳐 놓는다. */
+.nb.interview .stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(360px, 1fr) auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #090d10;
+}
+.nb.interview .room3d {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 52% 36%, #363831 0, #15191b 40%, #07090a 75%);
+}
+.nb.interview .room3d::after {
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.06) 45%, rgba(0,0,0,.88) 100%),
+    radial-gradient(ellipse 70% 108% at 52% 43%, transparent 34%, rgba(0,0,0,.82) 100%);
+}
+.nb.interview .bubble3d { display: none !important; }
+.stage-label { display: none; }
+.nb.interview .stage-label {
+  position: absolute;
+  z-index: 4;
+  top: 14px;
+  left: 17px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(222, 230, 232, .44);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .11em;
+  pointer-events: none;
+}
+.nb.interview .stage-rec { color: #9e4b43; letter-spacing: .05em; }
+
+/* 인물 설명은 별도 종이 블록이 아니라 영상 위의 조용한 캡션이다. */
+.nb.interview .portrait {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  right: 14px;
+  left: 205px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  pointer-events: none;
+}
+.nb.interview .portrait > div {
+  max-width: 420px;
+  padding: 5px 8px;
+  background: rgba(7, 10, 12, .58);
+  border: 1px solid rgba(92, 106, 113, .22);
+  text-align: right;
+}
+.nb.interview .portrait .name {
+  color: #dcd8cf;
+  font-family: var(--serif);
+  font-size: 12px;
+}
+.nb.interview .portrait .hint { display: none; }
+.nb.interview .portrait .talkchip {
+  margin-top: 4px;
+  padding: 2px 7px;
+  color: #7fa8bb;
+  background: rgba(16, 28, 35, .68);
+  border-color: rgba(80, 125, 148, .42);
+  border-radius: 2px;
+  font-size: 9px;
+}
+.nb.interview .portrait .backbtn {
+  margin-left: 0;
+  padding: 6px 9px;
+  color: #aab2b5;
+  background: rgba(7, 10, 12, .7);
+  border-color: rgba(94, 105, 110, .38);
+  pointer-events: auto;
+}
+
+.nb.interview .log {
+  grid-area: 1 / 1;
+  align-self: end;
+  z-index: 3;
+  flex: none;
+  width: min(820px, calc(100% - 36px));
+  max-height: 222px;
+  margin: 0 auto 14px;
+  padding: 0 3px 1px 0;
+  gap: 7px;
+  overflow-y: auto;
+}
+.nb.interview .stage .log::after { display: none; }
+.nb.interview .bubble {
+  width: min(100%, 760px);
+  max-width: none;
+  padding: 10px 13px;
+  border-radius: 2px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.32);
+  font-size: 13.5px;
+  line-height: 1.5;
+  backdrop-filter: blur(4px);
+}
+.nb.interview .bubble.q {
+  align-self: flex-start;
+  color: #e7f0f4;
+  background: rgba(23, 55, 78, .92);
+  border: 1px solid #315e7a;
+}
+.nb.interview .bubble.a {
+  align-self: flex-start;
+  color: #e6e0d7;
+  background: rgba(17, 22, 26, .94);
+  border: 1px solid #333d43;
+  border-left: 2px solid #4f7f99;
+}
+.nb.interview .bubble.a:has(.stmt.fresh) {
+  border-left-color: var(--amber);
+}
+.nb.interview .bubble-who {
+  display: block;
+  margin-bottom: 3px;
+  color: #78b9d9;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+.nb.interview .bubble.a .bubble-who { color: #a7a097; }
+.nb.interview .bubble-text { word-break: keep-all; }
+.nb.interview .bubble .tell { font-size: 10.5px; }
+.nb.interview .bubble .stmt {
+  margin-top: 6px;
+  padding: 4px 7px;
+  font-size: 10px;
+}
+.nb.interview .dialogue-empty {
+  align-self: center;
+  margin-bottom: 7px;
+  padding: 8px 12px;
+  color: rgba(212, 218, 218, .48);
+  background: rgba(7, 10, 12, .56);
+  border: 1px solid rgba(92, 106, 113, .24);
+  font-size: 11px;
+}
+
+/* 하단 질문부 — 기능 설명은 남기되 게임 화면의 리듬으로 압축한다. */
+.nb.interview .ask {
+  grid-area: 2 / 1;
+  position: relative;
+  z-index: 5;
+  margin: 0;
+  padding: 25px 16px 12px;
+  background: linear-gradient(180deg, #11171b, #0b0f12);
+  border-top: 1px solid #30393f;
+}
+.nb.interview .ask::before {
+  content: 'NEXT ACTION';
+  position: absolute;
+  top: 8px;
+  left: 17px;
+  color: #68757c;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .13em;
+}
+.nb.interview .chips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.nb.interview .chip {
+  min-width: 0;
+  padding: 7px 8px;
+  color: #c8c6c0;
+  background: #171d21;
+  border-color: #354047;
+  border-radius: 2px;
+}
+.nb.interview .chip:hover:not(:disabled) {
+  color: #e9f2f5;
+  background: #1b2c36;
+  border-color: #4d809b;
+}
+.nb.interview .chip-q {
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nb.interview .chip-why {
+  max-width: 100%;
+  overflow: hidden;
+  color: #707a7f;
+  font-size: 8.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nb.interview .chip:hover .chip-why { color: #8fb9cc; }
+.nb.interview .askrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
+.nb.interview .askrow input {
+  min-width: 0;
+  padding: 8px 10px;
+  color: #e5e2dc;
+  background: #090d10;
+  border-color: #364047;
+  border-radius: 2px;
+  font-size: 12px;
+}
+.nb.interview .askrow input:focus { border-color: #56839a; }
+.nb.interview .askrow button {
+  padding: 8px 15px;
+  color: #171009;
+  background: #ce9847;
+  border-color: #e0ae65;
+  border-radius: 2px;
+}
+.nb.interview .cost {
+  color: #899398;
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+
+/* 오른쪽 큐 레일은 수첩 내용이 아니라 변화만 알리는 계기판이다. */
+.nb.interview .nb-cue {
+  padding: 13px 9px 10px;
+  gap: 8px;
+  background: #10161a;
+  border-left: 0;
+  box-shadow: none;
+}
+.nb.interview .nb-cue::before { display: none; }
+.nb.interview .cue-book {
+  padding: 12px 5px;
+  color: #b6bdc0;
+  background: #141b20;
+  border-color: #3b474d;
+  border-radius: 2px;
+}
+.nb.interview .cue-book:hover {
+  color: #9fcce1;
+  border-color: #4b7d96;
+}
+.nb.interview .cue-ico { font-size: 25px; }
+.nb.interview .cue-ico-t { font-size: 9px; }
+.nb.interview .cue-num {
+  padding: 10px 0;
+  border-bottom: 1px solid #2b3439;
+}
+.nb.interview .cue-k {
+  color: #78858c;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+}
+.nb.interview .cue-v {
+  color: #a1a9ad;
+  font-family: Georgia, var(--serif);
+  font-size: 25px;
+}
+.nb.interview .cue-desc {
+  color: #68747a;
+  font-size: 8.5px;
+}
+.nb.interview .cue-num.new.has .cue-k,
+.nb.interview .cue-num.new.has .cue-v { color: #6ea9c7; }
+.nb.interview .cue-num.chg.has .cue-k,
+.nb.interview .cue-num.chg.has .cue-v,
+.nb.interview .cue-num.chg.has .cue-desc { color: var(--amber); }
+.nb.interview .cue-sub {
+  color: #6f7a80;
+  font-size: 8.5px;
+  line-height: 1.45;
+}
+.nb.interview .cue-foot {
+  margin-top: auto;
+  color: #939a9c;
+  border-color: #303a3f;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1180px) {
+  .nb.interview { grid-template-columns: minmax(0, 1fr) 1px 118px; }
+  .nb.interview .srail { flex-basis: 124px; }
+  .nb.interview .stage { grid-template-rows: minmax(300px, 1fr) auto; }
+  .nb.interview .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nb.interview .portrait { left: 170px; }
+}
+
+@media (max-width: 900px) {
+  .nb.interview {
+    display: flex;
+    flex-direction: column;
+    min-height: 980px;
+  }
+  .nb.interview .stage-wrap {
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+  .nb.interview .nb-spine { display: none; }
+  .nb.interview .srail {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(112px, 1fr));
+    gap: 5px;
+    padding: 7px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid #303940;
+  }
+  .nb.interview .srail::before { display: none; }
+  .nb.interview .srow { min-height: 49px; }
+  .nb.interview .stage { min-height: 720px; }
+  .nb.interview .portrait { left: 160px; }
+  .nb.interview .nb-cue {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 110px repeat(2, 1fr) minmax(100px, 1.4fr);
+    align-items: center;
+    padding: 8px;
+    border-top: 1px solid #303940;
+  }
+  .nb.interview .cue-book { height: 100%; }
+  .nb.interview .cue-num { padding: 5px 0; border: 0; }
+  .nb.interview .cue-sub { text-align: left; }
+  .nb.interview .cue-foot { display: none; }
+}
+
+@media (max-width: 560px) {
+  .nb.interview { min-height: 1120px; }
+  .nb.interview .portrait { left: 12px; top: 42px; }
+  .nb.interview .portrait > div { display: none; }
+  .nb.interview .stage { min-height: 830px; }
+  .nb.interview .log {
+    width: calc(100% - 20px);
+    max-height: 260px;
+    margin-bottom: 10px;
+  }
+  .nb.interview .chips { grid-template-columns: 1fr; }
+  .nb.interview .askrow { grid-template-columns: 1fr auto; }
+  .nb.interview .cost { grid-column: 1 / -1; }
+  .nb.interview .nb-cue { grid-template-columns: repeat(3, 1fr); }
+  .nb.interview .cue-sub { display: none; }
+}
+
+/* 수첩의 진술/기록 비교 — 번복을 지어내지 않고 실제 모순을 양면으로 읽힌다. */
+.book-subcap { margin-top: 14px; }
+.book-compare-card {
+  padding: 14px 15px;
+  background: rgba(250, 244, 228, .55);
+  border: 1px solid rgba(93, 58, 34, .26);
+}
+.book-compare-card.current {
+  border-left: 3px solid #a77524;
+  background: rgba(248, 236, 205, .66);
+}
+.book-compare-meta {
+  margin-bottom: 11px;
+  color: #756552;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+.book-compare-quote {
+  min-height: 62px;
+  color: #2d2118;
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+.book-compare-card.current .book-compare-quote { color: #855817; }
+.book-compare-source {
+  margin-top: 10px;
+  padding-top: 7px;
+  color: #796a58;
+  border-top: 1px solid rgba(93, 58, 34, .18);
+  font-size: 10.5px;
+}
+.book-change {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  color: #48271f;
+  background: rgba(143, 42, 32, .08);
+  border-left: 3px solid #8f2a20;
+}
+.book-change-k {
+  color: #8f2a20;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .05em;
+}
+.book-change-v { font-size: 12px; line-height: 1.5; }
