@@ -181,7 +181,7 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
     // 손으로 넘기는 만큼, 넘기는 법을 화면이 말한다 — 안 그러면 멈춘 줄 안다
     const advHint = document.createElement('div')
     advHint.className = 'intro-adv'
-    advHint.textContent = '클릭 · 스페이스로 다음 칸'
+    advHint.textContent = '클릭 · 스페이스로 다음 칸  ·  ← 로 뒤로'
 
     const cap = document.createElement('div')
     cap.className = 'intro-title'
@@ -193,6 +193,8 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
     let shown = 0         // 전체 진행 (점 표시용)
     let timer = 0
     let done = false
+    // 뒤로 한 번이라도 넘겼으면 자동 재생을 접는다 (자동은 되돌린 칸을 곧바로 다시 연다)
+    let manual = HOLD_MANUAL
 
     const finish = (): void => {
       if (done) return
@@ -209,7 +211,7 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
         // 마지막 페이지 뒤 — 여기서 손을 놓으면 플레이어가 갇힌다 (팀 플레이테스트 1-(1)).
         // 예전엔 수동 모드에서 아무 일도 안 일어나 Esc 말고는 나갈 길이 없었다.
         // 손으로 넘기는 중이라면 그 마지막 클릭이 곧 "끝내기" 다.
-        if (HOLD_MANUAL) finish()
+        if (manual) finish()
         else timer = window.setTimeout(finish, still ? 400 : 1600)
         return
       }
@@ -235,14 +237,14 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
       if (panelIdx >= handle.count) {
         // 페이지가 찼다 — 한 박자 보여주고 넘긴다
         // 수동 모드(introhold)에서는 클릭이 nextPage 를 부른다
-        if (!HOLD_MANUAL) timer = window.setTimeout(nextPage, still ? 500 : 1500)
+        if (!manual) timer = window.setTimeout(nextPage, still ? 500 : 1500)
         return
       }
       handle.reveal(panelIdx)
       shown += 1
       Array.from(bar.children).forEach((d, k) => d.classList.toggle('on', k < shown))
       play('paper')
-      if (!HOLD_MANUAL) timer = window.setTimeout(step, still ? 850 : 2400)
+      if (!manual) timer = window.setTimeout(step, still ? 850 : 2400)
     }
 
     const next = (): void => {
@@ -250,9 +252,52 @@ function playComicBook(pages: ComicPageDef[], title: string): Promise<void> {
       if (handle && panelIdx >= handle.count - 1 && panelIdx !== -1) nextPage()
       else step()
     }
+    /**
+     * 뒤로 넘기기 (팀 플레이테스트 1-(5)).
+     *
+     * 앞으로 가는 길과 대칭이 아니다 — 앞으로는 "칸을 하나 더 드러낸다" 이지만
+     * 뒤로는 **이미 드러난 칸을 다시 덮는다.** 페이지 경계를 넘을 때만 다시 짓고,
+     * 그때는 그 페이지의 칸을 전부 드러낸 상태로 되돌린다 (플레이어가 방금 본 상태다).
+     * 되돌아간 뒤 자동 재생이 이어지면 방금 덮은 칸이 곧바로 다시 열려 제자리걸음이 되므로,
+     * 뒤로 간 순간부터는 손으로만 넘어간다.
+     */
+    const prev = (): void => {
+      if (!handle) return
+      clearTimeout(timer)
+      manual = true
+      // 자동 재생은 페이지가 다 찬 뒤(panelIdx === count) 한 박자 쉰다 — 그 틈에 눌리면 한 칸 어긋난다
+      if (panelIdx >= handle.count) panelIdx = handle.count - 1
+      if (panelIdx > 0) {
+        handle.hide(panelIdx)
+        panelIdx -= 1
+        shown = Math.max(0, shown - 1)
+      } else if (pageIdx > 0) {
+        const gone = handle.el
+        gone.classList.remove('page-in')
+        gone.classList.add('page-out')
+        setTimeout(() => gone.remove(), still ? 0 : 650)
+
+        pageIdx -= 1
+        const def = pages[pageIdx]!
+        const back = buildComicPage(def.panels, def.rows, def.heights)
+        for (let k = 0; k < back.count; k++) back.reveal(k)
+        handle = back
+        panelIdx = back.count - 1
+        // 진행 점은 앞선 페이지들의 칸 수 + 이 페이지 전부
+        shown = pages.slice(0, pageIdx).reduce((n, pg) => n + pg.panels.length, 0) + back.count
+        ov.insertBefore(back.el, cap)
+        play('page')
+      } else {
+        return                    // 첫 칸이다 — 더 갈 곳이 없다
+      }
+      Array.from(bar.children).forEach((d, k) => d.classList.toggle('on', k < shown))
+      play('paper')
+    }
+
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') finish()
-      else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); next() }
+      else if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); next() }
+      else if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); prev() }
     }
     addEventListener('keydown', onKey)
     ov.onclick = (e) => { if (e.target !== skip) next() }

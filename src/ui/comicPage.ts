@@ -49,6 +49,8 @@ export interface ComicPageHandle {
   el: HTMLElement
   /** i 번째 칸을 드러낸다 (이미 드러난 칸은 그대로) */
   reveal(i: number): void
+  /** i 번째 칸을 다시 덮는다 — 뒤로 넘기기용. 드러나지 않은 칸이면 아무 일도 없다 */
+  hide(i: number): void
   count: number
 }
 
@@ -112,6 +114,10 @@ export function buildComicPage(
     reveal(i: number) {
       const c = els[i]
       if (c) c.classList.add('on')
+    },
+    hide(i: number) {
+      const c = els[i]
+      if (c) c.classList.remove('on')
     },
   }
 }
