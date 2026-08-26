@@ -947,6 +947,10 @@ function sidebarEl(): HTMLElement {
     pick: (id) => {
       const s = id as SuspectId
       if (ui.active === s) return
+      // **대기 중에는 방을 옮기지 않는다.** askBox 의 모든 컨트롤은 `ui.busy` 로 잠기는데
+      // 사이드바만 안 잠겨 있었다. 답을 기다리는 사이 옆방에 들어가면, 도착한 답이
+      // 엉뚱한 사람의 말풍선에 타이핑되고 그 사람의 3D 가 남의 목소리로 말했다.
+      if (ui.busy) { play('deny'); return }
       if (!gatePass()) return
       hush(); stopVoice()
       ui.active = s
@@ -969,7 +973,7 @@ function act2Main(): HTMLElement {
   if (ui.active) return stage()
   if (ui.explore) return exploreRoom()
   if (ui.wall) return cardWallPage()
-  return renderChalkboard(
+  const board = renderChalkboard(
     chalkData(CASE, ui.game, { selected: ui.selected, stampedSeen: ui.stamped }),
     {
       pickCell: (s, t) => pickCard(claimCardId(s as SuspectId, t as Slot)),
@@ -983,6 +987,13 @@ function act2Main(): HTMLElement {
       },
     },
   )
+  // 대조 결과 한 줄은 **맞대본 그 화면에** 있어야 한다. 대조는 칠판에서 일어나는데
+  // `pendnote` 는 취조실 askBox 안에만 그려져 있어서, 정작 맞댄 자리에서는 안 보였다.
+  if (!ui.note) return board
+  const wrap = h('div', 'act2-board')
+  wrap.appendChild(h('div', 'pendnote', ui.note))
+  wrap.appendChild(board)
+  return wrap
 }
 
 function deskOrRoom(): HTMLElement {
@@ -1036,7 +1047,39 @@ function cueRail(): HTMLElement {
   book.onclick = () => { play('page'); openBook() }
   rail.appendChild(book)
 
-  const owned = CASE.evidence.filter((e) => ui.game.cards.includes(e.id)).length
+  /**
+   * **손에 쥔 기록** — 심문 중 증거를 고를 수 있는 유일한 자리.
+   *
+   * 개편 전에는 우면이 `board()` 였고 거기서 카드를 집었다. 우면이 이 큐 레일로
+   * 바뀌면서 심문 중 `pickCard` 에 닿는 경로가 **하나도 남지 않았다** — 취조실에
+   * 들어가기 전에 미리 집어둔 사람만 「들이민다」 버튼을 볼 수 있었다.
+   * 사람부터 고르는 정상 동선을 탄 플레이어에게는 증거 제시 기능이 아예 안 보였다.
+   */
+  const held = CASE.evidence.filter((e) => ui.game.cards.includes(e.id))
+  if (held.length > 0) {
+    const box = h('div', 'cue-hand')
+    box.appendChild(h('div', 'cue-k', '손에 쥔 기록'))
+    for (const e of held) {
+      const on = ui.selected.includes(e.id)
+      const b = h('button', `cue-ev${on ? ' on' : ''}`) as HTMLButtonElement
+      b.appendChild(h('span', 'cue-ev-k', labelOfKind(e.kind)))
+      b.appendChild(h('span', 'cue-ev-t', `${SLOT_L(e.slot)} ${PLACE_L(e.place)}`))
+      b.setAttribute('aria-pressed', String(on))
+      b.title = on ? '누르면 놓는다' : '누르면 집는다'
+      b.disabled = ui.busy
+      focusKey(b, `cueev:${e.id}`)
+      /**
+       * 심문 중 '쥐는' 것은 **한 장**이다. `pickCard` 를 그대로 쓰면 두 장째에서
+       * 대조(`connect`)가 돌아 선택이 비워지는데, 이 자리에서 원하는 건 대조가
+       * 아니라 **교체**다 (들이밀 종이를 바꿔 쥐는 것). 대조는 칠판이 한다.
+       */
+      b.onclick = () => { ui.selected = on ? [] : [e.id]; render() }
+      box.appendChild(b)
+    }
+    rail.appendChild(box)
+  }
+
+  const owned = held.length
   const contra = ui.game.foundContradictions.length
   const pend = pendingPairs(ui.game).length
 
@@ -1884,15 +1927,29 @@ function askBox(s: SuspectId): HTMLElement {
   wrap.appendChild(row)
 
   if (ui.selected.length === 1 && left > 0) {
-    const evId = ui.selected[0]!
-    // 버튼을 조건부로 비활성화하면 **활성화 자체가 정답을 유출한다** (해금 쌍은 범인에게만 있다).
-    // 항상 누를 수 있게 두고, 헛수고의 책임은 플레이어가 진다.
-    const present = h('button', undefined, '선택한 카드를 들이민다 (대화 1회)') as HTMLButtonElement
-    present.disabled = ui.busy
-    present.style.marginTop = '7px'
-    present.onclick = () => { void doPresent(s, evId) }
-    wrap.appendChild(present)
-    wrap.appendChild(h('div', 'hintline', '엉뚱한 상대에게 들이밀면 대화 1회만 소모된다.'))
+    const picked = ui.selected[0]!
+    /**
+     * **들이밀 수 있는 것은 기록뿐이다.**
+     * `ui.selected` 에는 기록(E*)과 진술 카드(C:S3:2 같은 것)가 같이 담긴다. 둘 다
+     * `game.cards` 에 들어 있어서 `presentEvidence` 의 보유 검사를 그냥 통과했고,
+     * 칠판 칸을 하나 집은 채 취조실에 들어가면 **진술 카드가 증거로 제시되어**
+     * 대화 1회가 날아가고 화면에 내부 id 가 샜다. 되돌릴 수 없는 자원이다.
+     */
+    const isRecord = CASE.evidence.some((e) => e.id === picked)
+    if (isRecord) {
+      // 버튼을 조건부로 비활성화하면 **활성화 자체가 정답을 유출한다** (해금 쌍은 범인에게만 있다).
+      // 항상 누를 수 있게 두고, 헛수고의 책임은 플레이어가 진다.
+      // 다만 **무엇을** 들이미는지는 말해야 한다 — 되돌릴 수 없는 1회를 눈감고 쓰게 두지 않는다.
+      const present = h('button', undefined, `${evLabel(picked)} — 들이민다 (대화 1회)`) as HTMLButtonElement
+      present.disabled = ui.busy
+      present.style.marginTop = '7px'
+      present.onclick = () => { void doPresent(s, picked) }
+      wrap.appendChild(present)
+      wrap.appendChild(h('div', 'hintline', '엉뚱한 상대에게 들이밀면 대화 1회만 소모된다.'))
+    } else {
+      wrap.appendChild(h('div', 'hintline',
+        '진술 카드는 들이밀 수 없다 — 기록과 맞대어 보아야 어긋남이 드러난다.'))
+    }
   }
   return wrap
 }
@@ -2032,6 +2089,9 @@ function pickCard(id: string): void {
     const r = connect(ui.game, a, b)
     mark({ k: 'connect', hit: r.contradiction })
     ui.game = r.state
+    // **왜 그런지를 남긴다.** 여태 `r.message` 를 버려서, 맞대본 결과가 소리(인장/거부)로만
+    // 돌아오고 이유가 화면에 한 글자도 안 남았다. 「맞대보기」 버튼 쪽(1867)만 이걸 적고 있었다.
+    ui.note = r.message
     ui.flash = r.contradiction ? b : null
     play(r.contradiction ? 'stamp' : 'deny')
     ui.selected = []
@@ -2141,6 +2201,10 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   // 응답 도착음 (P2-1) — 조서 한 장이 놓이는 소리. 폴백은 아무것도 도착하지 않은 것이다.
   if (!r.fallback) play('paper')
   render()
+  // 답은 `ui.chats[s]` 에 이미 저장됐다. **지금 화면 주인이 s 가 아니면 여기서 멈춘다** —
+  // 타이핑·자막·음성은 전부 '지금 보이는 사람' 의 것이라, 주인이 바뀐 뒤 실행하면
+  // 남의 화면을 덮어쓴다. 위 busy 잠금이 주 방어이고 이건 그물이다.
+  if (ui.active !== s) return
   animateLast(r.reply.speech)
   // 3D 인물 옆에도 띄운다 — 심문 중 눈은 아래 로그가 아니라 얼굴에 가 있다
   say(r.reply.speech)
@@ -2193,6 +2257,7 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   stopFillerTicks()
   ui.selected = []
   render()
+  if (ui.active !== s) return          // doAsk 와 같은 그물
   animateLast(r.reply.speech)
   say(r.reply.speech)
   voiceOut(r.reply, CASE.suspects[s].personaId)
@@ -2261,7 +2326,12 @@ function unlockNote(before: GameState, after: GameState, reveal: PresentReveal):
  */
 function animateLast(text: string): void {
   const bubbles = Array.from(document.querySelectorAll('.bubble.a:not(.stagechip)'))
-  const node = bubbles[bubbles.length - 1]?.firstElementChild
+  // **`.bubble-text` 를 이름으로 집는다.** 답변 말풍선은 `.bubble-who`(이름) 다음에
+  // `.bubble-text`(본문) 순서라, `firstElementChild` 는 **이름 라벨**을 집었다.
+  // 그래서 화자 이름이 지워지고 그 자리에 답변이 타이핑됐다 — 본문은 본문대로
+  // 이미 그려져 있으니 같은 말이 두 번 보였다. DOM 순서에 기대는 선택은
+  // 말풍선 구조가 바뀔 때마다 조용히 어긋난다.
+  const node = bubbles[bubbles.length - 1]?.querySelector('.bubble-text')
   if (node instanceof HTMLElement) typeInto(node, text)
 }
 
@@ -3125,12 +3195,25 @@ function focusKey(el: HTMLElement, key: string): HTMLElement {
  * 아무것도 없으면 상단바로 — 키보드 사용자를 화면 맨 위에 버려두지 않는다.
  */
 function restoreFocus(key: string): void {
-  const exact = app.querySelector<HTMLElement>(`[data-fk="${CSS.escape(key)}"]`)
+  /**
+   * **`app` 안만 뒤지면 안 된다.** 제2막 수첩 드로어는 `document.body` 에 붙어 있어서
+   * 드로어 안에서 무엇을 눌러도 `exact` 도 `sibling` 도 못 찾고, 마지막 폴백이
+   * 상단바의 「최종 추론」으로 포커스를 던졌다 — 키보드 사용자를 파괴적인 버튼 위에
+   * 떨어뜨리는 폴백은 폴백이 아니다.
+   */
+  const find = (sel: string): HTMLElement | null =>
+    app.querySelector<HTMLElement>(sel) ?? document.querySelector<HTMLElement>(`.nbk ${sel}`)
+
+  const exact = find(`[data-fk="${CSS.escape(key)}"]`)
   if (exact) return exact.focus()
 
   const kind = key.split(':')[0]!
-  const sibling = app.querySelector<HTMLElement>(`[data-fk^="${CSS.escape(kind)}:"]`)
+  const sibling = find(`[data-fk^="${CSS.escape(kind)}:"]`)
   if (sibling) return sibling.focus()
+
+  // 드로어가 열려 있으면 그 안에 머문다. 열린 판 밖으로 포커스를 흘리지 않는다.
+  const drawer = document.querySelector<HTMLElement>('.nbk.is-open')
+  if (drawer) return drawer.querySelector<HTMLElement>('button, [tabindex]')?.focus()
 
   app.querySelector<HTMLElement>('[data-fk="submit"]')?.focus()
 }
