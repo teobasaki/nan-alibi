@@ -45,6 +45,10 @@
  * `el.querySelector<HTMLButtonElement>('.crv-next')?.focus()`.
  */
 
+// **스타일은 부품이 들고 다닌다.** 배선하는 쪽에 맡겼더니 실제로 빠뜨렸고,
+// CSS 없이 렌더되어 썸네일이 원본 크기로 화면을 덮고 [다음] 버튼이 밀려났다.
+// 나머지 세 부품(chalkboard·sidebar·drawer)과 같은 규약으로 맞춘다.
+import '../styles/case-review.css'
 import { spawnAnchored } from './sceneRules'
 import {
   kindLabel, placeLabel, slotLabel,
