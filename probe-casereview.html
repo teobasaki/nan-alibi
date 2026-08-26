@@ -1,0 +1,78 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>case review probe (temp)</title>
+<!--
+  부품 단독 하네스 — 「현장 조사 종료」 진열대(`src/ui/caseReview.ts`)만 띄운다.
+  게임 전체에 붙이지 않는다. 배선은 사람이 한다.
+
+  일부러 :root 팔레트를 **정의하지 않는다** — case-review.css 가 제 폴백만으로
+  제대로 서는지(= 프로브·다른 화면에 얹어도 깨지지 않는지)를 함께 본다.
+-->
+<style>
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: #16110f; color: #9a8b80;
+    font: 12px 'Apple SD Gothic Neo', system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  #bar { display: flex; gap: 6px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #3d2b2c; }
+  #bar b { color: #c8912f; font-weight: 500; margin-right: 6px; }
+  #bar button {
+    font: inherit; color: #e9e1d3; background: #2a1c20;
+    border: 1px solid #3d2b2c; border-radius: 4px; padding: 5px 10px; cursor: pointer;
+  }
+  #bar button.on { border-color: #c8912f; color: #c8912f; }
+  #log { margin-left: auto; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  #stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 20px; }
+</style>
+
+<div id="bar">
+  <b>case review probe</b>
+  <button data-v="budget">현장 예산껏 (5건)</button>
+  <button data-v="full">전량 (9건 · 한계 시험)</button>
+  <button data-v="broken">깨진 경로 폴백</button>
+  <button data-v="empty">빈손</button>
+  <span id="log"></span>
+</div>
+<div id="stage"></div>
+
+<script type="module">
+import '/src/styles/case-review.css'
+import { gc001Case } from '/src/data/gc001.ts'
+import { heldRecordsFrom, renderCaseReview } from '/src/ui/caseReview.ts'
+
+const CASE = gc001Case()
+const ALL = CASE.evidence.map((e) => e.id)
+
+const stage = document.getElementById('stage')
+const log = document.getElementById('log')
+
+const VARIANTS = {
+  // 실전 상한 — 현장 예산(FIELD_BUDGET)이 5라 진짜 판에서 보는 건 이 정도다.
+  budget: () => heldRecordsFrom(CASE, ['E1', 'E3', 'E4', 'E7', 'E9']),
+  // 상한을 넘긴 한계 시험 — 스크롤·묶음이 무너지지 않는지만 본다.
+  full: () => heldRecordsFrom(CASE, ALL),
+  // manifest.json 의 값(`/public/props/thumbs/...`)을 그대로 쓰면 나는 사고를 재현한다.
+  // 깨진 이미지가 아니라 '사진 없음' 태그로 내려앉아야 한다.
+  broken: () => heldRecordsFrom(CASE, ALL).map((r, i) =>
+    i % 2 === 0 && r.thumb ? { ...r, thumb: '/public/props/thumbs/nope.webp' } : r),
+  empty: () => [],
+}
+
+let cur = 'budget'
+function draw() {
+  const held = VARIANTS[cur]()
+  stage.replaceChildren(renderCaseReview(held, {
+    next: () => { log.textContent = `next() 호출됨 · ${new Date().toLocaleTimeString('ko-KR')}` },
+  }))
+  const noPhoto = held.filter((r) => !r.thumb).length
+  log.textContent = `${held.length}건 · 사진 없음 ${noPhoto}건 · ${held.map((r) => r.thumb ? r.thumb.split('/').pop() : '—').join(' ')}`
+  for (const b of document.querySelectorAll('#bar button')) b.classList.toggle('on', b.dataset.v === cur)
+}
+
+for (const b of document.querySelectorAll('#bar button')) {
+  b.onclick = () => { cur = b.dataset.v; draw() }
+}
+draw()
+</script>
