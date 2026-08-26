@@ -1198,6 +1198,25 @@ body::after {
 .nb-cap { display: flex; align-items: baseline; gap: 8px; }
 .nb-tally { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--amber); }
 
+/*
+ * ── 인물 — 프로파일링 문서의 자리를 지키는 면 (팀 3-3-(2))
+ * 취조실에서 걷어낸 `관계`·`읽힌 성향` 이 여기 있다. 새 정보를 만들지 않는다.
+ * 색은 팔레트 변수만 쓴다 — 드로어(밝은 종이)와 우면(어두운 판) 양쪽에서 같은 코드가 선다.
+ */
+.nb-people { margin-bottom: 12px; }
+.nbp {
+  padding: 7px 0 8px;
+  border-bottom: 1px dashed var(--line);
+  line-height: 1.5;
+}
+.nbp:last-child { border-bottom: 0; }
+.nbp-n { font-family: var(--serif); font-size: 12.5px; color: var(--ink); }
+.nbp-r, .nbp-p { font-size: 11px; color: var(--muted); word-break: keep-all; }
+.nbp-r { margin-top: 2px; }
+/* 지금 마주 앉아 있는 사람 — 놋쇠 눈금 하나 */
+.nbp.on { padding-left: 8px; border-left: 2px solid var(--amber); }
+.nbp.on .nbp-n { color: var(--amber); }
+
 .jl { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; line-height: 1.5; }
 .jl-mark {
   flex: 0 0 10px; text-align: center; font-family: var(--mono);
@@ -2305,8 +2324,10 @@ body::after {
   margin: 0;
   border: 0;
   border-radius: 0;
+  /* 3D 가 붙기 전·실패 후에도 방은 **먹색**이다 — 예전 올리브(#363831)는
+     팀 3-3-(1) 이 지적한 "갈색 화면" 의 절반이었다 */
   background:
-    radial-gradient(ellipse at 52% 36%, #363831 0, #15191b 40%, #07090a 75%);
+    radial-gradient(ellipse at 52% 36%, #2c3033 0, #14171a 40%, #06080a 75%);
 }
 :is(.nb, .act2).interview .room3d::after {
   background:
@@ -2521,6 +2542,67 @@ body::after {
   color: #899398;
   font-family: var(--mono);
   font-size: 9.5px;
+}
+
+/*
+ * ── 손에 쥔 기록 — 질문 입력 옆 (팀 3-3-(1) 1단계)
+ * 증거 제시는 심문의 일부다. 이 줄이 수첩 안에 있으면 대화 중에 화면을 덮는 물건을
+ * 여닫아야 한다. 칩은 **종류와 시각만** 이고 장소·용도는 title 로 내린다 — 상시 노출 최소화.
+ */
+:is(.nb, .act2).interview .ask-hand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #262e33;
+}
+:is(.nb, .act2).interview .ask-hand-k {
+  color: #6d787e;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .11em;
+}
+:is(.nb, .act2).interview .ask-ev {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 9px;
+  color: #b9bcbb;
+  background: #151b1f;
+  border: 1px solid #313b41;
+  border-radius: 2px;
+  font-size: 10.5px;
+}
+:is(.nb, .act2).interview .ask-ev:hover:not(:disabled) { color: #dfe6e8; border-color: #4d7f9a; }
+:is(.nb, .act2).interview .ask-ev.on {
+  color: #17110a;
+  background: #cf9a48;
+  border-color: #e4b466;
+}
+:is(.nb, .act2).interview .ask-ev-k { font-family: var(--serif); font-size: 11.5px; }
+:is(.nb, .act2).interview .ask-ev-t { font-family: var(--mono); font-size: 9.5px; opacity: .82; }
+/* 들이밀기 버튼과 안내는 이 줄 아래에 붙는다 — askBox 가 순서를 이미 정한다 */
+:is(.nb, .act2).interview .ask .hintline { margin: 6px 0 0; font-size: 10px; color: #6d787e; }
+
+/*
+ * ── 말하는 동안 주변을 낮춘다 (팀 3-3-(1) 2단계)
+ * *"용의자가 답변하는 순간에는 좌측 사이드바나 기타 인터페이스의 명도를 조금 낮추고,
+ * 용의자와 대화 텍스트에만 시선이 집중되도록"* — 요소를 지우는 게 아니라 **빛을 뺀다.**
+ * 대화 로그·무대·질문칩은 건드리지 않는다. 그 셋이 지금 유일하게 중요한 것이다.
+ */
+.act2.answering > :first-child,
+.act2.answering .ask-hand,
+.act2.answering .stage-label {
+  filter: brightness(.62) saturate(.85);
+  transition: filter 260ms ease;
+}
+.act2 > :first-child { transition: filter 320ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .act2.answering > :first-child,
+  .act2.answering .ask-hand,
+  .act2.answering .stage-label { transition: none; }
 }
 
 /* 오른쪽 큐 레일은 수첩 내용이 아니라 변화만 알리는 계기판이다. */

@@ -402,11 +402,19 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
            * 어둡게 만드는 일은 **조명이 한다.** 베이스컬러를 0.42배로 눌렀더니
            * 피부·제복·벽돌·금속이 전부 같은 매트 표면이 되어 재질 구분이 사라졌다
            * (아트 디렉터 리뷰 4번). 색은 살리고 거칠기만 재질에 맞게 준다.
+           *
+           * **다만 채도는 뺀다** (팀 3-3-(1) 1단계). 이 방 에셋은 나무·벽돌이 전부
+           * 갈색 계열이라, 밝기만 낮추면 화면이 통째로 갈색으로 읽힌다 —
+           * *"화면 전체에 갈색·나무 계열의 색상이 많이 사용되고 있다"* 가 그 지적이다.
+           * 휘도를 유지한 채 회색으로 55% 끌어당기면 나무의 결(명암)은 남고 갈색기만 빠진다.
+           * 사람에게는 이 처리를 하지 않는다 — 피부에서 채도를 빼면 시신처럼 보인다.
            */
-          mm.color.multiplyScalar(0.68)
+          const l = mm.color.r * 0.2126 + mm.color.g * 0.7152 + mm.color.b * 0.0722
+          mm.color.lerp(new THREE.Color(l, l, l), 0.55)
+          mm.color.multiplyScalar(0.66)
           mm.roughness = Math.min(Math.max(mm.roughness, 0.68), 0.9)
           mm.metalness = Math.min(mm.metalness, 0.35)
-          mm.envMapIntensity = 0.35
+          mm.envMapIntensity = 0.3
         }
       }
     })
@@ -432,18 +440,23 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 빛이 얼굴에만 닿고 몸은 어둠에 남게 한다 — 생성 모델의 결함도 함께 묻힌다.
      */
     /**
-     * 키라이트 — 갓등 아래 따뜻한 빛. 색을 너무 주황으로 밀었더니 제복·피부·벽이
+     * 키라이트 — 갓등 아래 빛. 색을 너무 주황으로 밀었더니 제복·피부·벽이
      * 전부 한 색으로 눌렸다(사용자 지적: "옷들이 다 단색으로"). 중성 쪽으로 되돌린다.
+     *
+     * **2026-08-27 (팀 3-3-(1) 1단계):** 0xffe2bd 는 여전히 갈색 화면의 절반이었다.
+     * 취조실 갓등은 텅스텐이지만, 우리가 만들 그림은 *"어두운 회색·먹색 중심에
+     * 얼굴과 테이블 일부만 강한 조명"* 이다. 색온도를 올려(0xfff2e2) 빛에서 갈색기를 빼고,
+     * 대신 **원뿔을 좁혀** 얼굴에만 떨어지게 한다 — 밝기를 낮추는 게 아니라 범위를 줄인다.
      */
-    const key = new THREE.SpotLight(0xffe2bd, 15, 6.5, Math.PI / 4.6, 0.75, 1.6)
+    const key = new THREE.SpotLight(0xfff2e2, 16, 6.5, Math.PI / 5.4, 0.72, 1.6)
     key.castShadow = true
     key.shadow.mapSize.set(matchMedia('(pointer: coarse)').matches ? 1024 : 2048, matchMedia('(pointer: coarse)').matches ? 1024 : 2048)
     key.shadow.bias = -0.0005
     key.shadow.normalBias = 0.02
     scene.add(key, key.target)
     // 환경광은 거의 죽인다 — 밝히면 취조실이 사무실이 된다
-        // 환경광 — 방을 둘러볼 때 벽과 가구가 형태로 읽힐 만큼만
-    scene.add(new THREE.HemisphereLight(0x243040, 0x08060a, 0.16))
+        // 환경광 — 방을 둘러볼 때 벽과 가구가 **먹색 회색**으로 읽힐 만큼만 (팀 3-3-(1))
+    scene.add(new THREE.HemisphereLight(0x2b333c, 0x08090a, 0.2))
     /**
      * 카메라 쪽 필 — **그림자를 완전히 검게 막지 않기 위한 것**이다.
      * 이게 없으면 얼굴 그늘이 RGB 0 으로 뭉개져 형태 정보가 사라진다.
@@ -735,8 +748,20 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
      * 시선은 눈이 아니라 **흉골 위쪽**을 겨눈다 — 그래야 머리가 화면 위쪽 43~46% 에 앉는다.
      */
     /** 거리·높이는 블렌더에서 방·인물·카메라를 함께 놓고 렌더해 확정했다. */
-    const DIST = 1.15
-    const aim = new THREE.Vector3(face.x, face.y - 0.16, face.z)
+    /**
+     * ## 더 가까이 — **화면의 중심은 용의자다** (팀 3-3-(3) 1단계)
+     *
+     * 팀 지적: *"주변 공간이 넓게 보이고 인물이 화면 뒤쪽에 위치하면서, 플레이어와
+     * 용의자가 서로 마주 앉아 대화한다는 느낌이 약하다."* 영화가 감정이 중요한 순간에
+     * 카메라를 붙이는 것과 같은 이유다. 테이블과 방은 상황을 설명할 최소한만 남긴다.
+     *
+     * 1.15m → **0.95m**. 실측(1440×900, 캔버스 세로 511px):
+     *   상반신 점유(정수리~상판) 0.678 → 0.79 · 머리 높이 147px → 176px.
+     * 더 붙이지 않는 이유: 0.85m 부터 어깨가 프레임 좌우로 잘려 "마주 앉은 사람" 이
+     * 아니라 얼굴 클로즈업이 된다. 시선은 흉골 위쪽(-0.13)을 겨눠 얼굴이 화면 위 1/3 에 앉는다.
+     */
+    const DIST = 0.95
+    const aim = new THREE.Vector3(face.x, face.y - 0.13, face.z)
     const fwd = new THREE.Vector3(Math.sin(FACE_YAW), 0, Math.cos(FACE_YAW))
     const side = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize()
     camera.position.copy(face)
@@ -794,6 +819,12 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     let drift = 0
     let idleSince = performance.now()
     let dragging = false
+    /**
+     * 압박이 만드는 **미세한 밀어 넣기** 배율 (팀 3-3-(3) 2단계). 1 = 기본 거리.
+     * `orbit.dist`(사용자의 휠)와 곱해진다 — 두 축을 따로 두어야 사용자가 잡은 거리를
+     * 우리가 덮어쓰지 않는다.
+     */
+    let zoomBias = 1
     let applyCam: (dy?: number, dp?: number) => void = () => {}
     /** 삐걱 콜백 — 등이 진폭 최대에 닿는 순간마다 한 번씩 부른다 */
     let creakCb: (() => void) | null = null
@@ -909,10 +940,23 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       key.color.setRGB(1, 0.886 - heat * 0.22, 0.706 - heat * 0.32)
       key.intensity = (15 + heat * 5) * flick
 
-      // 손을 뗀 지 1.2초가 지나면 다시 천천히 떠다닌다
-      if (!dragging && performance.now() - idleSince > 1200) {
-        drift += 0.0016
-        applyCam(Math.sin(drift) * 0.055, Math.sin(drift * 0.63 + 1.2) * 0.022)
+      /**
+       * 카메라의 두 가지 미세 운동. **한 프레임에 `applyCam` 은 한 번만 부른다** —
+       * 두 번 부르면 뒤의 호출이 앞의 오프셋을 지운다(드리프트가 조용히 죽는다).
+       *   ① 떠다니기 — 손을 뗀 지 1.2초가 지나면 시차가 생길 만큼만
+       *   ② 밀어 넣기 — 압박 0→100 에서 배율 1.0 → 0.94 (0.95m 기준 5.7cm).
+       *      팀 3-3-(3) 2단계: *"눈치채지 못할 정도의 미세한 변화"* — 프레임을 다시 잡는 것이
+       *      아니라 숨이 한 뼘 가까워지는 정도다.
+       * 끌고 있는 동안에는 둘 다 멈춘다 — 두 힘이 싸우면 멀미가 난다.
+       */
+      if (!dragging) {
+        zoomBias += ((1 - (pressure / 100) * 0.06) - zoomBias) * 0.03
+        const floating = performance.now() - idleSince > 1200
+        if (floating) drift += 0.0016
+        applyCam(
+          floating ? Math.sin(drift) * 0.055 : 0,
+          floating ? Math.sin(drift * 0.63 + 1.2) * 0.022 : 0,
+        )
       }
 
       renderer.render(scene, camera)
@@ -957,7 +1001,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
       const sph = new THREE.Spherical().setFromVector3(off)
       sph.theta += orbit.yaw + dy
       sph.phi = Math.max(0.55, Math.min(1.48, sph.phi + orbit.pitch + dp))
-      sph.radius = off.length() * orbit.dist
+      sph.radius = off.length() * orbit.dist * zoomBias
       camera.position.copy(aim).add(new THREE.Vector3().setFromSpherical(sph))
       camera.lookAt(aim)
     }
@@ -1012,6 +1056,55 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     if (import.meta.env.DEV) {
       ;(window as unknown as Record<string, unknown>).__st = {
         scene, model, camera, mixer,
+        /**
+         * **인물이 화면에서 차지하는 비율** — 팀 3-3-(3) 의 판정 기준을 숫자로 만든다.
+         * ("용의자가 화면에서 차지하는 비율이 상대적으로 작다" 는 지적을 눈대중으로
+         *  고치면 다음 사람이 또 눈대중으로 되돌린다.)
+         *
+         * `Box3.setFromObject` 를 쓰지 않는다 — 스킨드 메시를 0.017m 로 재는 함정이 있다
+         * (이 파일 위쪽 주석 참조). `measureBox` 가 그 계산을 소유한다.
+         * 반환은 정규화 화면 좌표(0~1)의 사각형과 세로 점유율이다.
+         */
+        screenBox: () => {
+          const mb = measureBox(model)
+          const pts: import('three').Vector3[] = []
+          for (const x of [mb.min.x, mb.max.x]) {
+            for (const y of [mb.min.y, mb.max.y]) {
+              for (const z of [mb.min.z, mb.max.z]) pts.push(new THREE.Vector3(x, y, z))
+            }
+          }
+          let x0 = 1; let x1 = 0; let y0 = 1; let y1 = 0
+          for (const p of pts) {
+            p.project(camera)
+            const sx = (p.x + 1) / 2
+            const sy = (1 - p.y) / 2
+            x0 = Math.min(x0, sx); x1 = Math.max(x1, sx)
+            y0 = Math.min(y0, sy); y1 = Math.max(y1, sy)
+          }
+          /**
+           * 몸 전체의 박스는 **판정에 못 쓴다** — 착석 자세는 다리가 테이블 밑으로 뻗어
+           * 박스가 프레임 아래로 한참 나간다(실측 rect.y1 = 2.475, 화면 밖 147%).
+           * 우리가 재야 하는 것은 **보이는 상반신과 얼굴 크기**다:
+           *   upperFrac  정수리 ~ 탁자 상판 = 화면에서 상반신이 먹는 세로 비율
+           *   headPx     정수리 ~ 턱 = 표정을 식별할 수 있는가 (픽셀)
+           */
+          const sy = (v: import('three').Vector3): number => ((1 - v.clone().project(camera).y) / 2)
+          const crown = sy(new THREE.Vector3(face.x, face.y + 0.13, face.z))
+          const chin = sy(new THREE.Vector3(face.x, face.y - 0.09, face.z))
+          const tableTop = sy(new THREE.Vector3(face.x, R.table.y, face.z))
+          const px = renderer.domElement.clientHeight || 1
+          const fp = face.clone().project(camera)
+          return {
+            upperFrac: +Math.abs(tableTop - crown).toFixed(3),
+            headPx: Math.round(Math.abs(chin - crown) * px),
+            bodyRect: [x0, y0, x1, y1].map((n) => +n.toFixed(3)),
+            /** 얼굴이 화면 어디에 앉아 있나 (0=위, 1=아래). 삼분할이면 0.33~0.46 */
+            faceAt: { x: +((fp.x + 1) / 2).toFixed(3), y: +((1 - fp.y) / 2).toFixed(3) },
+            camDist: +camera.position.distanceTo(aim).toFixed(3),
+            fov: camera.fov,
+            viewportPx: px,
+          }
+        },
         info: () => {
           const hp = new THREE.Vector3()
           if (head) (head as import('three').Object3D).getWorldPosition(hp)

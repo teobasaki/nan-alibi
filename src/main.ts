@@ -1114,17 +1114,59 @@ function cueRail(): HTMLElement {
   return rail
 }
 
-function rightPage(): HTMLElement {
+function rightPage(forDrawer = false): HTMLElement {
   // 심문 중에는 좁은 큐 레일. 그 밖(격자·조서·카드월)에서는 원래의 우면 그대로.
-  if (ui.active) return cueRail()
+  /**
+   * **수첩 안에는 큐 레일을 넣지 않는다** (팀 3-3-(1)·(2)).
+   * 큐 레일은 제1막 3단 레이아웃의 *좁은 띠*다. 제2막에서 우면은 통째로 드로어가 됐고,
+   * 그 안에 레일을 넣으면 "수첩을 펼쳤는데 계기판이 나오는" 물건이 된다 —
+   * 게다가 증거를 집는 자리가 수첩 속에 숨어 대화 중에 수첩을 여닫게 만들었다.
+   * 이제 증거는 질문 입력 옆(askBox)에 있고, 수첩은 어디서 열어도 **수첩**이다.
+   */
+  if (ui.active && !forDrawer) return cueRail()
 
   const page = h('div', 'nb-page nb-right')
 
   page.appendChild(journalBlock())
 
   page.appendChild(h('div', 'nb-rule'))
+  // 취조실에서 걷어낸 인물 정보는 여기 있다 — 방을 나가지 않고 열 수 있다 (팀 3-3-(2) 2단계)
+  if (forDrawer) {
+    page.appendChild(peopleBlock())
+    page.appendChild(h('div', 'nb-rule'))
+  }
   page.appendChild(board())
   return page
+}
+
+/**
+ * **인물 — 프로파일링 문서의 자리를 지키는 면.**
+ *
+ * 팀 3-3-(2) 는 취조실에서 `피해자와의 관계`·`읽힌 성향` 을 걷어내고 *"좌측의 프로파일링
+ * 문서를 열어 확인"* 하게 하라고 지시했다. 그런데 **3-2-(4) 프로파일링 문서 명세는 아직
+ * 미수령**이라 그 화면이 없다 — 지금 파일철을 누르면 이 수첩이 열린다.
+ *
+ * 그래서 정보를 없애지 않고 수첩의 한 면으로 옮긴다. 이 면은 **새 정보를 만들지 않는다**:
+ * 이미 취조실에 떠 있던 두 줄과 같은 값(`sus.relation` · 페르소나 라벨/힌트)을 읽기만 한다.
+ * 프로파일링 문서 명세가 오면 이 면이 그 화면의 초안이 된다.
+ */
+function peopleBlock(): HTMLElement {
+  const wrap = h('div', 'nb-people')
+  const cap = h('div', 'nb-cap')
+  cap.appendChild(document.createTextNode('인물'))
+  cap.appendChild(h('span', 'nb-tally', '관계 · 읽힌 성향'))
+  wrap.appendChild(cap)
+
+  for (const s of SUSPECTS) {
+    const sus = CASE.suspects[s]
+    const persona = personaById(sus.personaId)
+    const card = h('div', `nbp${ui.active === s ? ' on' : ''}`)
+    card.appendChild(h('div', 'nbp-n', `${sus.name} · ${sus.age}세 · ${sus.job}`))
+    card.appendChild(h('div', 'nbp-r', `피해자와의 관계 — ${sus.relation}`))
+    card.appendChild(h('div', 'nbp-p', `읽힌 성향: ${persona.label} — ${persona.hint}`))
+    wrap.appendChild(card)
+  }
+  return wrap
 }
 
 /**
@@ -1469,7 +1511,6 @@ function stage(): HTMLElement {
 
   const s = ui.active!
   const sus = CASE.suspects[s]
-  const persona = personaById(sus.personaId)
   const tense = ui.game.pressure[s] >= 60
   // 압박이 높으면 방이 좁아진다 — 조명이 붉게 조여든다 (분위기 층 ④)
   if (tense) box.classList.add('tense')
@@ -1534,10 +1575,19 @@ function stage(): HTMLElement {
     ui.scene = null
   }
   const meta = h('div')
-  // 용의자 카드 — 이름·나이·관계·읽힌 성향 (ADR 022 심문 화면). 나이와 관계는 동기 추리의 재료다.
+  /**
+   * 용의자 카드 — **이름·나이·직업까지만.** (팀 3-3-(2) 1단계)
+   *
+   * 예전에는 `피해자와의 관계`·`읽힌 성향` 두 줄이 여기 상시 노출됐다. 팀 지적:
+   * *"이미 프로파일링 문서에서 제공할 수 있는 정보다. 같은 정보를 취조실에도 계속 노출하면
+   * 프로파일링 문서의 역할이 약해지고 취조실의 정보 밀도만 높아진다."*
+   * 역할을 나눈다 — **프로파일링 문서 = 인물을 이해하는 공간 / 취조실 = 대화하는 공간.**
+   *
+   * CSS 로 숨기지 않고 **DOM 에서 뺀다.** `display:none` 은 제2막에서만 걸려 있어서
+   * 제1막 폴백 화면에는 그대로 떠 있었고, 스크린리더는 두 경로 모두에서 읽었다.
+   * 두 줄은 사라진 것이 아니라 수첩의 「인물」 면으로 옮겼다 (파일철·I 키로 방을 안 나가고 열린다).
+   */
   meta.appendChild(h('div', 'name', `${sus.name} · ${sus.age}세 · ${sus.job}`))
-  meta.appendChild(h('div', 'hint', `피해자와의 관계 — ${sus.relation}`))
-  meta.appendChild(h('div', 'hint', `읽힌 성향: ${persona.label} — ${persona.hint}`))
   // 남은 대화 칩 — 인당 상한(10회)의 잔량. 소진이 가까울수록 붉어진다.
   const tl = talksLeft(ui.game, s)
   meta.appendChild(h('div', `talkchip${tl <= 0 ? ' off' : tl <= 3 ? ' low' : ''}`,
@@ -1949,6 +1999,36 @@ function askBox(s: SuspectId): HTMLElement {
   // 대화는 인당 상한이다 (ADR 022) — 잔량을 이 사람 옆에 붙여야 "누구에게 얼마 남았나" 가 보인다
   row.appendChild(h('span', 'cost', `대화 ${ui.game.talks[s]} / ${TALK_CAP}`))
   wrap.appendChild(row)
+
+  /**
+   * **손에 쥔 기록 — 방 안에 있어야 한다** (팀 3-3-(1) 1단계: *"심문 진행에 직접 필요한 기능"*).
+   *
+   * 이 줄은 큐 레일(제1막 3단의 좁은 띠)에 있었다. 제2막에서 그 레일은 **수첩 드로어 안**으로
+   * 들어갔고, 그러면 증거를 집으려면 수첩을 펼쳐야 한다 — 대화 중에 화면을 덮는 물건을
+   * 여닫게 만드는 동선이다. 증거 제시는 심문의 일부이므로 질문 입력 옆에 둔다.
+   *
+   * 쥐는 것은 **한 장**이다. `pickCard` 를 쓰면 두 장째에서 대조(connect)가 돌아 선택이
+   * 비워지는데, 이 자리에서 원하는 건 대조가 아니라 **교체**다 (들이밀 종이를 바꿔 쥐는 것).
+   * 대조는 칠판이 한다.
+   */
+  const held = CASE.evidence.filter((e) => ui.game.cards.includes(e.id))
+  if (held.length > 0 && left > 0) {
+    const hand = h('div', 'ask-hand')
+    hand.appendChild(h('span', 'ask-hand-k', '손에 쥔 기록'))
+    for (const e of held) {
+      const on = ui.selected.includes(e.id)
+      const b = h('button', `ask-ev${on ? ' on' : ''}`) as HTMLButtonElement
+      b.appendChild(h('span', 'ask-ev-k', labelOfKind(e.kind)))
+      b.appendChild(h('span', 'ask-ev-t', SLOT_L(e.slot)))
+      b.setAttribute('aria-pressed', String(on))
+      b.title = `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)} — ${on ? '누르면 놓는다' : '누르면 집는다'}`
+      b.disabled = ui.busy
+      focusKey(b, `askev:${e.id}`)
+      b.onclick = () => { ui.selected = on ? [] : [e.id]; render() }
+      hand.appendChild(b)
+    }
+    wrap.appendChild(hand)
+  }
 
   if (ui.selected.length === 1 && left > 0) {
     const picked = ui.selected[0]!
@@ -3284,16 +3364,17 @@ function render(): void {
    * 제1막(챕터1)은 옛 2단을 그대로 쓴다. 3D 가 실패했을 때의 폴백 경로라 건드리지 않는다.
    */
   if (ui.chapter2) {
-    const act2 = h('div', `act2${ui.active ? ' interview' : ''}`)
+    const act2 = h('div', `act2${ui.active ? ' interview' : ''}${ui.busy ? ' answering' : ''}`)
     act2.appendChild(sidebarEl())
     const main = h('div', 'act2-main')
     main.appendChild(act2Main())
     act2.appendChild(main)
     app.appendChild(act2)
 
-    // 드로어는 화면에 고정된다 — 재렌더로 다시 만들지 않고 내용만 갈아 끼운다
+    // 드로어는 화면에 고정된다 — 재렌더로 다시 만들지 않고 내용만 갈아 끼운다.
+    // `true` = 수첩용 면 (큐 레일 대신 일지·인물·기록 조회)
     const d = notebookDrawer()
-    d.setContent(rightPage())
+    d.setContent(rightPage(true))
     if (!d.el.isConnected) document.body.appendChild(d.el)
   } else {
     const nb = h('div', `nb${ui.active ? ' interview' : ''}${ui.opening ? ' opening' : ''}`)
