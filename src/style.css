@@ -1,8 +1,14 @@
+@import './styles/tokens.css';
+
 /*
  * 색은 템플릿이 아니라 **허구의 세계**에서 뽑는다.
  * 이 게임의 무대는 22:20, 불이 반쯤 꺼진 호텔 12층이다.
  *   불 꺼진 복도(갈색기 검정) · 카펫(버건디) · 놋쇠 문패 · 비상구 유도등 · 조서 용지 · 인장
  * 이전 팔레트(중성 검정 + 앰버 단색)는 "AI가 만든 다크 UI" 의 기본값이었다.
+ *
+ * ⚠️ 아래 `:root` 는 **호텔 월드 시절의 팔레트**다. 새 화면은 `styles/tokens.css` 의
+ * `--fa-*`(다섯 재질)를 쓴다 — 정본은 그쪽이고, 기준은 docs/DESIGN-GUIDE.md 다.
+ * 이 블록을 지우지 않는 이유: 제1막과 3D 실패 폴백 경로가 아직 이 변수들을 읽는다.
  */
 :root {
   color-scheme: dark;
@@ -2697,9 +2703,34 @@ body::after {
    제2막 레이아웃 — 좌 사이드바 + 메인 (팀 3-2 대개편)
    수사일지는 우측 드로어로 빠졌다. 그 폭을 메인이 가져간다.
    ══════════════════════════════════════════════════════════════ */
+/*
+ * **화면이 아니라 방이다** (팀 3-2-(5)-(5) 1·2단계).
+ * 배경을 완전히 비워 두면 칠판이 검은 여백에 뜬 판때기가 된다. 벽면 결·그림자·조명
+ * 번짐을 아주 얇게 깔아 "어두운 조사실" 을 만든다 — 갓등은 하나이고, 칠판 위에 있다.
+ * **UI 보다 튀면 실패다.** 결의 불투명도(.5 · soft-light)와 원뿔의 알파(--fa-lamp)는
+ * 칠판 표면과 같은 값을 쓴다 — 두 면이 같은 빛을 받는 것처럼 읽혀야 한다.
+ */
 .act2 {
-  flex: 1; display: flex; min-height: 0; background: var(--bg);
+  position: relative;
+  flex: 1; display: flex; min-height: 0;
+  background:
+    radial-gradient(120% 90% at 46% -8%, var(--fa-lamp, rgba(255,232,190,.1)), transparent 58%),
+    radial-gradient(140% 120% at 50% 46%, transparent 44%, rgba(0, 0, 0, .5)),
+    linear-gradient(178deg, var(--fa-ink-700, #1c1714), var(--fa-ink-800, #14100e) 62%, var(--fa-ink-900, #0c0a09));
 }
+/* 벽의 결 — 외부 에셋 0장 (tokens.css 의 data URI). 칠판 표면과 같은 결이다 */
+.act2::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .5;
+  mix-blend-mode: soft-light;
+  background-image: var(--fa-grain);
+  background-size: 180px 180px;
+}
+.act2 > * { position: relative; z-index: 1; }
 /* 사이드바의 width:20% 는 부모 기준이라 **직계 자식**이어야 한다 (부품 주의사항) */
 .act2 > :first-child { flex: 0 0 auto; }
 .act2-main {
