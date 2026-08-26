@@ -1,0 +1,403 @@
+/*
+ * 좌측 사이드바 — `src/ui/sidebar.ts` 전용. **`src/style.css` 는 건드리지 않는다.**
+ *
+ * 토큰은 전부 `var(--x, 폴백)` 으로 읽는다. 게임 안에서는 style.css 의 팔레트를 그대로
+ * 물려받고, probe 하네스처럼 style.css 가 없는 곳에서도 **같은 색으로** 선다.
+ * (폴백을 안 두면 하네스에서 검은 글자 검은 배경이 되고, 그걸 고치려다 style.css 를
+ *  건드리게 된다 — 이 파일이 자기 색을 들고 다니는 이유다.)
+ */
+
+.fa-sb {
+  /* 서류철 색 — 어두운 복도에 놓인 마닐라지. 팔레트에 없던 축이라 여기서 만든다. */
+  --fa-fold-1: #5f4c30;      /* 뒷장 (그늘) */
+  --fa-fold-2: #8b7247;      /* 앞장 */
+  --fa-fold-3: #a98d55;      /* 탭 · 빛 받는 모서리 */
+  --fa-paper: #ded4bd;       /* 안에 낀 조서 용지 */
+  --fa-fold-slide: 0px;      /* 호버하면 이만큼 더 내려온다 */
+  --fa-fold-tilt: -23deg;    /* 긴 옆면이 아니라 모서리가 보이도록 — 수평에서 67° */
+
+  /*
+   * 화면 폭의 20% — **부모 기준이다.** flex 행이나 그리드 칸의 *직계* 자식으로 넣어라.
+   * 감싸는 div 를 하나 두면 20% 가 그 div 기준으로 풀려 min-width 로 주저앉는다
+   * (probe 하네스에서 실제로 그렇게 196px 이 됐다).
+   * min/max 는 규격이 아니라 극단 화면용 안전선이다: 1024 이하에서 글자가 깨지지 않게,
+   * 초광폭에서 이름 다섯 개에 500px 을 쓰지 않게.
+   */
+  width: 20%;
+  flex: 0 0 20%;
+  min-width: 196px;
+  max-width: 360px;
+  height: 100%;
+  min-height: 0;
+
+  display: grid;
+  grid-template-rows: 1fr 5fr;   /* 6등분: 파일철 1칸 + 사람 5칸 */
+
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, .012) 0 2px, transparent 2px 4px),
+    var(--panel, #201519);
+  border-right: 1px solid var(--line, #3d2b2c);
+  color: var(--ink, #e9e1d3);
+  font-family: 'Apple SD Gothic Neo', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+/* ─────────────────────────── 파일철 (위 1/6 칸) ─────────────────────────── */
+
+.fa-sb-folder {
+  /* style.css 의 전역 button 규칙(패딩·테두리·배경·라운드)을 전부 되돌린다 */
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line, #3d2b2c);
+  border-radius: 0;
+  background: linear-gradient(180deg, #1a1215 0%, var(--panel, #201519) 100%);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;               /* 위쪽이 잘려야 '밖에서 걸쳐 들어온 물건'이 된다 */
+  isolation: isolate;             /* 아래 z-index 셋이 이 칸 안에서만 겨루게 한다 */
+}
+
+/*
+ * 캡션이 서류철 위에 얹혀도 읽히도록 아래쪽에 그늘을 깐다.
+ * **z-index 를 반드시 준다** — `::after` 는 마지막 자식으로 칠해지므로, 그냥 두면
+ * 이 그늘이 캡션 *위에* 덮여 글자가 통째로 사라진다(실제로 그렇게 안 보였다).
+ */
+.fa-sb-folder::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 22% 0 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(13, 9, 8, .68) 50%, rgba(13, 9, 8, .99) 100%);
+  pointer-events: none;
+}
+
+/*
+ * 서류철 본체. **칸을 꽉 채우지 않는다** — 꽉 채우면 그냥 금색 판때기가 되고,
+ * 물건이 화면 밖에서 걸쳐 들어온 느낌이 사라진다. 좌상단에서 절반쯤 잘린 채로
+ * 들어와 오른쪽·아래에 어두운 여백을 남기고, 그 여백 위에 캡션이 눕는다.
+ */
+.fa-sb-fold {
+  position: absolute;
+  z-index: 0;
+  left: 4%;
+  top: 0;
+  width: 64%;
+  aspect-ratio: 1 / 1.16;
+  transform: translate(0, calc(-50% + var(--fa-fold-slide))) rotate(var(--fa-fold-tilt));
+  transform-origin: 50% 50%;
+  transition: transform 210ms ease-out, filter 210ms ease-out;
+  filter: drop-shadow(2px 7px 13px rgba(0, 0, 0, .62));
+}
+
+.fa-sb-fold > i { position: absolute; display: block; }
+
+/* 뒷장 */
+.fa-sb-fold-back {
+  inset: 0;
+  border-radius: 2px 3px 4px 2px;
+  background: linear-gradient(150deg, var(--fa-fold-2) 0%, var(--fa-fold-1) 58%, #402f1d 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 190, .2);
+}
+
+/*
+ * 색인 탭 — 진짜 서류철은 **윗변**에 붙지만, 23° 기울면 윗변이 잘려 안 보인다.
+ * 오른쪽 변으로 옮기면 기운 채로 삐죽 나와 "이건 서류철이다"를 한눈에 말한다.
+ */
+.fa-sb-fold-tab {
+  left: 94%;
+  top: 54%;
+  width: 13%;
+  height: 21%;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(110deg, var(--fa-fold-3) 0%, #6d5836 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 200, .26);
+}
+
+/* 안에 낀 조서 용지 — 앞장 아래로 삐져나온 종이 끝. box-shadow 로 두 장을 더 겹친다 */
+.fa-sb-fold-paper {
+  left: 4%;
+  top: 2%;
+  width: 90%;
+  height: 99%;
+  border-radius: 1px;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 6px, rgba(96, 76, 52, .26) 6px 7px),
+    var(--fa-paper);
+  box-shadow:
+    3px 4px 0 -1px #cec2a8,
+    6px 8px 0 -2px #b9ad93,
+    7px 10px 9px -4px rgba(0, 0, 0, .55);
+}
+
+/* 앞장 — 종이 끝을 조금 남기고 덮는다 */
+.fa-sb-fold-front {
+  left: -1%;
+  top: 9%;
+  width: 100%;
+  height: 83%;
+  border-radius: 2px 2px 4px 3px;
+  background: linear-gradient(158deg, var(--fa-fold-3) 0%, var(--fa-fold-2) 46%, #64502f 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 200, .3), 0 -2px 7px rgba(0, 0, 0, .4);
+}
+/* 접힌 등 — 앞장 왼쪽의 접합선 */
+.fa-sb-fold-front::before {
+  content: '';
+  position: absolute;
+  left: 4%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .34), rgba(255, 240, 200, .16));
+}
+
+/* 놋쇠 집게 */
+.fa-sb-fold-clip {
+  left: 56%;
+  top: 4%;
+  width: 15%;
+  height: 6%;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e2be6f 0%, var(--amber, #c8912f) 55%, #7d5a1c 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .6);
+}
+
+.fa-sb-fold-cap {
+  position: absolute;
+  z-index: 2;                     /* 그늘(::after) 위 — 아니면 글자가 묻힌다 */
+  left: 13px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: none;
+}
+/* 캡션 앞의 앰버 눈금 — 이게 '누를 수 있는 것'이라는 표시 */
+.fa-sb-fold-cap::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  background: var(--amber, #c8912f);
+  opacity: .55;
+  transition: opacity 160ms ease-out;
+}
+
+.fa-sb-fold-t {
+  font-family: var(--serif, AppleMyungjo, Batang, serif);
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: .3px;
+  color: #f2eadb;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .95), 0 0 12px rgba(0, 0, 0, .8);
+  transition: color 160ms ease-out;
+}
+
+.fa-sb-fold-s {
+  font-size: 11px;
+  color: #b3a294;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .95), 0 0 10px rgba(0, 0, 0, .8);
+}
+
+/* 호버 — 더 빼꼼 나오고 조금 밝아진다 */
+.fa-sb-folder:hover,
+.fa-sb-folder:focus-visible { --fa-fold-slide: 14px; }
+.fa-sb-folder:hover .fa-sb-fold,
+.fa-sb-folder:focus-visible .fa-sb-fold { filter: brightness(1.14) drop-shadow(0 9px 16px rgba(0, 0, 0, .6)); }
+.fa-sb-folder:hover .fa-sb-fold-t,
+.fa-sb-folder:focus-visible .fa-sb-fold-t { color: var(--amber, #c8912f); }
+.fa-sb-folder:hover .fa-sb-fold-cap::before,
+.fa-sb-folder:focus-visible .fa-sb-fold-cap::before { opacity: 1; }
+.fa-sb-folder:active { --fa-fold-slide: 8px; }
+
+/* ─────────────────────────── 용의자 5칸 ─────────────────────────── */
+
+.fa-sb-list {
+  display: grid;
+  grid-auto-rows: 1fr;      /* 몇 명이 오든 남은 5/6 을 고르게 나눈다 */
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fa-sb-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px 8px 13px;
+  border: 0;
+  border-top: 1px solid rgba(61, 43, 44, .55);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background-color 150ms ease-out;
+}
+.fa-sb-row:first-child { border-top: 0; }
+
+/* 앰버 좌측 바 — 지금 심문 중인 사람. 호버는 그 바를 살짝 예고만 한다. */
+.fa-sb-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--amber, #c8912f);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 150ms ease-out;
+}
+.fa-sb-row:hover { background-color: rgba(200, 145, 47, .07); }
+.fa-sb-row:hover::before { transform: scaleX(.34); }
+.fa-sb-row.on { background-color: var(--panel-2, #2a1c20); }
+.fa-sb-row.on::before { transform: scaleX(1); }
+.fa-sb-row.on .fa-sb-name { color: var(--amber, #c8912f); }
+.fa-sb-row.on .fa-sb-face { border-color: rgba(200, 145, 47, .7); }
+
+/*
+ * 초상은 **칸 높이를 따라 자란다.** 44px 고정으로 두면 1080p 에서 한 칸이 150px 인데
+ * 얼굴만 44px 이라 칸의 2/3 가 빈 갈색으로 남는다 — 다섯 명이 나란히 서 있는 느낌이
+ * 거기서 죽는다. 낮은 화면에서는 34px 까지 줄어든다.
+ */
+.fa-sb-face {
+  flex: 0 0 auto;
+  height: clamp(34px, 58%, 88px);
+  width: auto;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  border: 1px solid var(--line, #3d2b2c);
+  background-color: var(--panel-2, #2a1c20);
+  background-size: cover;
+  background-position: center 16%;   /* 초상은 머리가 위 — 가운데로 자르면 턱만 남는다 */
+  background-repeat: no-repeat;
+  transition: border-color 150ms ease-out;
+}
+
+/* 초상이 없을 때 — 놋쇠 명패 (에셋 0장에서도 화면이 안 깨진다) */
+.fa-sb-face.plate {
+  display: grid;
+  place-items: center;
+  font-family: var(--serif, AppleMyungjo, Batang, serif);
+  font-size: clamp(17px, 3.2vh, 34px);
+  /* 어두운 복도에 걸린 놋쇠 명패다 — 밝은 금색 덩어리가 되면 다섯 칸이 조명처럼 튄다 */
+  color: #efe3c9;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .55);
+  background-image: linear-gradient(158deg, #8f7136 0%, #6b5326 48%, #40311a 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 236, 190, .16);
+}
+
+.fa-sb-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.fa-sb-name {
+  font-family: var(--serif, AppleMyungjo, Batang, serif);
+  font-size: 15.5px;
+  letter-spacing: .2px;
+  color: var(--ink, #e9e1d3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 150ms ease-out;
+}
+
+.fa-sb-job {
+  font-size: 11px;
+  color: var(--muted, #9a8b80);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fa-sb-talk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.fa-sb-bar {
+  flex: 1 1 auto;
+  height: 2px;
+  min-width: 18px;
+  border-radius: 1px;
+  background: var(--line, #3d2b2c);
+  overflow: hidden;
+}
+.fa-sb-bar u {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--amber, #c8912f);
+  transition: width 260ms ease-out;
+}
+
+.fa-sb-n {
+  flex: 0 0 auto;
+  font-family: var(--mono, ui-monospace, Menlo, monospace);
+  font-style: normal;
+  font-size: 10.5px;
+  letter-spacing: -.2px;
+  color: var(--muted, #9a8b80);
+}
+.fa-sb-n.off { color: #6d5f57; }
+
+/* ─────────────────────────── 포커스 · 좁은 화면 · 모션 ─────────────────────────── */
+
+.fa-sb-folder:focus-visible,
+.fa-sb-row:focus-visible {
+  outline: 2px solid var(--amber, #c8912f);
+  outline-offset: -2px;
+}
+
+/* 세로가 짧으면 6등분 칸이 얇아진다 — 글자를 줄이고 부제를 접는다(얼굴은 clamp 가 줄인다) */
+@media (max-height: 720px) {
+  .fa-sb-name { font-size: 13.5px; }
+  .fa-sb-job { font-size: 10.5px; }
+  .fa-sb-fold-s { display: none; }
+}
+
+@media (max-height: 560px) {
+  .fa-sb-talk { display: none; }
+  .fa-sb-fold-cap { bottom: 6px; }
+}
+
+/*
+ * 움직임을 줄여달라고 한 사람에게는 **밝기만** 바꾼다.
+ * 파일철이 '빼꼼' 나오는 것이 이 물건의 정체지만, 정체보다 사용자의 요청이 위다.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .fa-sb-fold,
+  .fa-sb-row,
+  .fa-sb-row::before,
+  .fa-sb-bar u,
+  .fa-sb-name,
+  .fa-sb-fold-t { transition: none; }
+
+  .fa-sb-folder:hover,
+  .fa-sb-folder:focus-visible,
+  .fa-sb-folder:active { --fa-fold-slide: 0px; }
+
+  .fa-sb-folder:hover .fa-sb-fold,
+  .fa-sb-folder:focus-visible .fa-sb-fold { filter: brightness(1.22); }
+}

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sidebar probe (dev 전용)</title>
+<style>
+  /* 게임의 팔레트만 흉내 낸다 — style.css 는 불러오지 않는다.
+     사이드바가 자기 색을 들고 다니는지(폴백이 도는지) 여기서 같이 확인된다. */
+  :root {
+    color-scheme: dark;
+    --bg: #16110f; --panel: #201519; --panel-2: #2a1c20; --line: #3d2b2c;
+    --ink: #e9e1d3; --muted: #9a8b80; --amber: #c8912f;
+    --serif: AppleMyungjo, Batang, 'Nanum Myeongjo', 'Apple SD Gothic Neo', serif;
+    --mono: 'SF Mono', 'D2Coding', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box }
+  html, body { height: 100% }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); overflow: hidden;
+    font-family: 'Apple SD Gothic Neo', system-ui, sans-serif;
+  }
+  #screen { height: 100vh; display: flex; }
+  /* 메인 영역은 남이 만든다 — 여기서는 자리만 차지하는 판때기 */
+  .fake-main {
+    flex: 1 1 auto; min-width: 0; padding: 22px 26px;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 1px, transparent 1px 46px),
+      radial-gradient(120% 90% at 50% 0%, #24302c 0%, #141a18 70%);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .fake-main h2 { font-family: var(--serif); font-weight: 500; font-size: 16px; margin: 0; color: #cfd8cf }
+  .fake-main p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 62ch }
+  .panel { background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px }
+  .panel h3 { margin: 0 0 8px; font-size: 11px; color: var(--muted); font-weight: 500 }
+  .row { display: flex; flex-wrap: wrap; gap: 7px }
+  button.t {
+    font: 12px/1 'Apple SD Gothic Neo', system-ui, sans-serif; color: var(--ink);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+    padding: 7px 11px; cursor: pointer;
+  }
+  button.t:hover { border-color: var(--amber) }
+  #log { font-family: var(--mono); font-size: 11px; color: #b9d2b9; white-space: pre-wrap;
+         background: #0c0f0d; border: 1px solid var(--line); border-radius: 5px;
+         padding: 10px; flex: 1 1 auto; overflow: auto; min-height: 0 }
+</style>
+</head>
+<body>
+<!-- 사이드바는 이 flex 행의 **직계 자식**이어야 한다. 감싸는 div 를 하나 두면
+     width:20% 가 그 div(내용 폭)를 기준으로 풀려 min-width 196px 로 주저앉는다. -->
+<div id="screen">
+  <div class="fake-main">
+    <h2>(메인 영역 자리 — 칠판 타임라인은 다른 담당이 만든다)</h2>
+    <p>왼쪽이 이번 담당분이다. 위 1/6 칸의 <b>파일철</b>에 마우스를 올리면 더 빼꼼 나오고, 누르면
+       <code>openProfile()</code> 이 불린다. 아래 다섯 칸을 누르면 <code>pick(id)</code> 가 불리면서
+       그 사람이 '심문 중'으로 바뀐다 — 심문실 안에서도 사이드바가 살아 있다는 뜻이다.</p>
+    <div class="panel">
+      <h3>하네스 조작</h3>
+      <div class="row">
+        <button class="t" id="talk">선택된 사람과 대화 1회</button>
+        <button class="t" id="maxtalk">선택된 사람 대화 소진</button>
+        <button class="t" id="noshot">초상 없음(명패 폴백) 토글</button>
+        <button class="t" id="reset">되돌리기</button>
+      </div>
+    </div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script type="module">
+import { renderSidebar, updateSidebar } from '/src/ui/sidebar.ts'
+import { portraitFor } from '/src/ui/portraits.ts'
+import { castTagFor } from '/src/ui/cast.ts'
+
+const log = (s) => {
+  const el = document.getElementById('log')
+  el.textContent += s + '\n'
+  el.scrollTop = el.scrollHeight
+}
+
+/** gc001 대본의 다섯. 사건 파일을 통째로 들고 오지 않고 화면에 나가는 값만 흉내 낸다. */
+const CAST = [
+  { id: 'S1', name: '류나린', age: 41, job: '전시 운영 책임자' },
+  { id: 'S2', name: '배지호', age: 33, job: '부큐레이터' },
+  { id: 'S3', name: '문소라', age: 38, job: '작품 운송 담당' },
+  { id: 'S4', name: '도율',   age: 52, job: '작품 보존 담당' },
+  { id: 'S5', name: '김하늘', age: 29, job: '야간 보안 담당' },
+]
+
+/* 헤드리스 캡처용 — 마우스 없이도 상태를 지정할 수 있다.
+   ?plate=1 초상 없음(명패 폴백) · ?pick=S4 심문 중인 사람 */
+const Q = new URLSearchParams(location.search)
+let shots = Q.get('plate') !== '1'
+let picked = Q.get('pick') ?? 'S2'
+const talked = { S1: 3, S2: 7, S3: 0, S4: 10, S5: 1 }
+
+const people = () => CAST.map((c) => ({
+  ...c,
+  portrait: shots ? portraitFor(castTagFor(c.id, 'gc001')) : null,
+  active: c.id === picked,
+  talked: talked[c.id],
+  talkCap: 10,
+}))
+
+const screen = document.getElementById('screen')
+const root = renderSidebar(people(), {
+  pick(id) {
+    picked = id
+    log(`pick("${id}") → ${CAST.find((c) => c.id === id).name} 심문실로`)
+    paint()
+  },
+  openProfile() { log('openProfile() → 프로파일링 문서 (이 과제 밖)') },
+})
+screen.insertBefore(root, screen.firstElementChild)   // 메인 판때기 왼쪽에 직접 꽂는다
+
+function paint() {
+  // 구성이 그대로면 값만 갈아 끼운다 — 포커스가 안 날아간다
+  if (!updateSidebar(root, people())) log('!! updateSidebar 거부 — 구성이 바뀌었다')
+}
+
+document.getElementById('talk').onclick = () => {
+  talked[picked] = Math.min(10, talked[picked] + 1)
+  log(`대화 ${picked} → ${talked[picked]}/10`); paint()
+}
+document.getElementById('maxtalk').onclick = () => {
+  talked[picked] = 10; log(`대화 ${picked} 소진`); paint()
+}
+document.getElementById('noshot').onclick = () => {
+  shots = !shots; log(`초상 ${shots ? 'ON' : 'OFF(명패 폴백)'}`); paint()
+}
+document.getElementById('reset').onclick = () => {
+  shots = true; picked = 'S2'
+  Object.assign(talked, { S1: 3, S2: 7, S3: 0, S4: 10, S5: 1 })
+  log('되돌림'); paint()
+}
+
+log(`초상 파일: ${CAST.map((c) => `${c.id}=${castTagFor(c.id, 'gc001')}${portraitFor(castTagFor(c.id, 'gc001')) ? '' : '(없음)'}`).join(' ')}`)
+log('사이드바 폭 = ' + Math.round(root.getBoundingClientRect().width) + 'px / 화면 ' + window.innerWidth + 'px')
+</script>
+</body>
+</html>
