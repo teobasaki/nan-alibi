@@ -2666,3 +2666,22 @@ body::after {
   letter-spacing: .05em;
 }
 .book-change-v { font-size: 12px; line-height: 1.5; }
+
+/* ══════════════════════════════════════════════════════════════
+   제2막 레이아웃 — 좌 사이드바 + 메인 (팀 3-2 대개편)
+   수사일지는 우측 드로어로 빠졌다. 그 폭을 메인이 가져간다.
+   ══════════════════════════════════════════════════════════════ */
+.act2 {
+  flex: 1; display: flex; min-height: 0; background: var(--bg);
+}
+/* 사이드바의 width:20% 는 부모 기준이라 **직계 자식**이어야 한다 (부품 주의사항) */
+.act2 > :first-child { flex: 0 0 auto; }
+.act2-main {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+/* 메인 안의 화면들이 남은 높이를 그대로 쓴다 */
+.act2-main > * { flex: 1; min-height: 0; }
+/* 드로어가 메인 오른쪽을 살짝 덮으므로 오른쪽에 숨 쉴 자리를 준다 */
+.act2-main { padding-right: 46px; }
+@media (max-width: 1100px) { .act2-main { padding-right: 34px; } }

@@ -51,6 +51,10 @@ import {
   type CaseFile, type Evidence, type PlaceId, type Slot, type SuspectId,
 } from './types'
 import { FIELD_BUDGET, TALK_CAP, WEAPONS, WEAPON_TRACE } from './data/config'
+import { chalkData, renderChalkboard } from './ui/chalkboard'
+import { renderSidebar, type SidebarSuspect } from './ui/sidebar'
+import { createNotebookDrawer, type DrawerHandle } from './ui/drawer'
+import { heldRecordsFrom, renderCaseReview } from './ui/caseReview'
 
 /**
  * 정형 질문 — **무엇을 확인하려는 질문인지 함께 적는다** (QA 5.2).
@@ -906,6 +910,81 @@ function cardWallPage(): HTMLElement {
  * 모드를 오가도 유효하다. 예전 3단에서는 45% 였고, 만약 모드마다 폭이 달랐으면
  * `stage3d.ts` 의 크기 계산(mount 시 `host.clientWidth`)을 건드려야 했을 것이다.
  */
+/**
+ * **수사일지 드로어** — 우측 가장자리에 걸쳐 있다가 눌러야 펼쳐진다 (팀 3-2-(1)).
+ *
+ * 예전엔 우면에 항상 펼쳐져 있었다. 팀 지적: *"이 좌우 2단 구조가 너무 고정적이고
+ * 긴장감이나 탐색의 흐름이 약하다. 무엇보다 중심 행동이 약하다. 수사일지는 필요할 때마다
+ * 펼쳐보는 장치여야 감정이 산다."*
+ *
+ * 핸들은 **한 번만 만든다.** 전체 재렌더 구조라 매번 새로 만들면 열린 상태가 닫히고
+ * 리스너가 쌓인다. 내용만 갈아 끼운다.
+ */
+let drawer: DrawerHandle | null = null
+
+function notebookDrawer(): DrawerHandle {
+  if (!drawer) drawer = createNotebookDrawer({ onOpen: () => play('page') })
+  return drawer
+}
+
+/** 좌측 사이드바 — 파일철 + 용의자 5칸. 취조실에서도 살아 있다 (팀 3-2-(2)) */
+function sidebarEl(): HTMLElement {
+  const people: SidebarSuspect[] = SUSPECTS.map((s) => {
+    const sus = CASE.suspects[s]
+    return {
+      id: s,
+      name: sus.name,
+      age: sus.age,
+      job: sus.job,
+      portrait: portraitFor(castTagFor(s, CASE_TAG)),
+      active: ui.active === s,
+      talked: TALK_CAP - talksLeft(ui.game, s),
+      talkCap: TALK_CAP,
+      // **소거를 넘기지 않는다** — 시스템이 용의자를 확정적으로 지우지 않기로 했다 (팀 3-1-(1))
+    }
+  })
+  return renderSidebar(people, {
+    pick: (id) => {
+      const s = id as SuspectId
+      if (ui.active === s) return
+      if (!gatePass()) return
+      hush(); stopVoice()
+      ui.active = s
+      ui.wall = false
+      mark({ k: 'open', who: s })
+      render()
+    },
+    openProfile: () => {
+      // 프로파일링 문서는 아직 명세가 없다 — 지금은 수사일지를 연다
+      notebookDrawer().open()
+    },
+  })
+}
+
+/**
+ * 제2막 메인 영역. 기본은 **칠판 타임라인**이고, 사람을 고르면 취조실이 그 자리를 쓴다.
+ * 경찰서 3D 는 토글로 남는다 (사용자 결정).
+ */
+function act2Main(): HTMLElement {
+  if (ui.active) return stage()
+  if (ui.explore) return exploreRoom()
+  if (ui.wall) return cardWallPage()
+  return renderChalkboard(
+    chalkData(CASE, ui.game, { selected: ui.selected, stampedSeen: ui.stamped }),
+    {
+      pickCell: (s, t) => pickCard(claimCardId(s as SuspectId, t as Slot)),
+      pickSuspect: (s) => {
+        const id = s as SuspectId
+        if (!gatePass()) return
+        hush(); stopVoice()
+        ui.active = id
+        mark({ k: 'open', who: id })
+        render()
+      },
+    },
+  )
+}
+
 function deskOrRoom(): HTMLElement {
   if (ui.active) return stage()
   if (ui.explore) return exploreRoom()
@@ -1436,8 +1515,10 @@ function stage(): HTMLElement {
   if (ui.busy) log.appendChild(stageChip())
   box.appendChild(log)
   box.appendChild(askBox(s))
-  // 좌: 용의자 다섯 · 중앙: 무대와 대화 (UI 레퍼런스 3분할의 왼쪽 두 칸)
-  col.appendChild(suspectRail(s))
+  /**
+   * **용의자 레일은 좌측 사이드바가 가져갔다** (팀 3-2-(2)).
+   * 사이드바가 취조실에서도 살아 있으므로 여기서 또 그리면 같은 목록이 두 벌이 된다.
+   */
   col.appendChild(box)
   queueMicrotask(() => { log.scrollTop = log.scrollHeight })
   return col
@@ -2005,66 +2086,29 @@ function gatePass(): boolean {
  */
 function openCaseReview(): void {
   const ov = h('div', 'overlay')
-  const sheet = h('div', 'sheet casefile')
-  sheet.appendChild(fileHeader('수사\n정리'))
-  sheet.appendChild(h('h2', undefined, '현장 조사 종료'))
-
-  // ① 확보한 기록
-  const owned = CASE.evidence.filter((e) => ui.game.cards.includes(e.id))
-  sheet.appendChild(h('label', undefined, `확보한 기록 (${owned.length})`))
-  if (owned.length === 0) sheet.appendChild(h('div', 'hintline', '확보한 기록이 없다.'))
-  for (const e of owned) {
-    const who = e.subjects.length ? ` — ${e.subjects.map((s) => CASE.suspects[s].name).join(', ')} 확인` : ''
-    sheet.appendChild(h('div', 'hintline', `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}${who}`))
-  }
-
-  // ② 검시 소견/현장 판정 — 셋째 축의 근거. 확보 여부가 지목의 성격(판독/추측)을 가른다
-  sheet.appendChild(h('label', undefined, AUTOPSY_NAME))
-  const hasAutopsy = owned.some((e) => e.kind === 'autopsy')
-  sheet.appendChild(h('div', hasAutopsy ? 'contradiction' : 'hintline',
-    hasAutopsy
-      ? CASE.world?.autopsyText ?? WEAPON_TRACE[CASE.weapon] ?? ''
-      : `확인하지 않았다 — ${WEAPON_AXIS} 지목은 추측이 된다.`))
-
-  // ③ 확보한 증언
-  const heldTestimonies = CASE.testimonies.filter((t) => ui.game.cards.includes(t.id))
-  if (heldTestimonies.length) {
-    sheet.appendChild(h('label', undefined, `확보한 증언 (${heldTestimonies.length})`))
-    for (const t of heldTestimonies) {
-      sheet.appendChild(h('div', 'hintline', `${CASE.suspects[t.from].name} — ${t.text}`))
-    }
-  }
-
   /**
-   * ④ 수사 상황 — **숫자만 남긴다** (2026-08-10 사용자 지시: "너무 길다").
-   * 무엇을 해야 하는지 설명하는 문단은 걷어냈다. 다음 화면이 카드 월이고
-   * 거기 사람이 다섯 장 펼쳐져 있으면, 무엇을 하는지는 보면 안다.
+   * **판정을 쓰지 않는다** (팀 플레이테스트 3-1-(1)).
+   * 예전엔 여기서 후보 소거·수단 판독·"남은 후보 n명" 을 시스템이 확정해 보여줬다.
+   * 팀 지적: *"너무 많은 정보가 시스템으로 확정되어 플레이어의 재미를 오히려 빼앗아간다.
+   * 특히 용의자가 바로 제외되는 것은 그 용의자에 대한 심문의 기회를 빼앗아간다."*
+   *
+   * 이제 **무엇을 확보했는지만** 보여준다. 그 기록이 누구를 지우는지는
+   * 플레이어가 칠판에서 직접 맞대어 본다. 소거 계산 자체(`candidatesFrom`)는
+   * 엔진에 그대로 있다 — 이 화면이 **안 보여줄 뿐**이다.
    */
-  const cands = candidatesFrom(CASE, new Set(ui.game.cards))
-  sheet.appendChild(h('label', undefined, '수사 상황'))
-  sheet.appendChild(h('div', 'tally',
-    `남은 후보 ${cands.length}명 · 인장 ${ui.game.foundContradictions.length}건`))
-
-  const go = h('button', undefined, '용의자를 만난다') as HTMLButtonElement
-  go.style.marginTop = '12px'
-  /**
-   * **제2막은 카드 월로 연다** (사용자 지시 ⑦ — "경찰서 바로 뜨지 마라").
-   * 경찰서 3D 를 기본으로 두면 플레이어는 빈 복도에 떨어져 무엇을 할지 모른다.
-   * 다섯 장이 펼쳐진 카드 월은 그 자체가 안내다 — 읽고, 고르고, 취조실로 간다.
-   * 경찰서를 걷고 싶으면 카드 월의 [경찰서] 버튼으로 언제든 갈 수 있다.
-   */
-  go.onclick = () => {
-    play('paper')
-    ui.explore = null
-    ui.wall = true
-    fadeOut(ov)
-    render()
-  }
-  sheet.appendChild(go)
-
-  ov.appendChild(sheet)
+  const held = heldRecordsFrom(CASE, ui.game.cards)
+  const view = renderCaseReview(held, {
+    next: () => {
+      play('paper')
+      ui.explore = null
+      ui.wall = false          // 카드 월이 아니라 칠판이 제2막의 기본 화면이다
+      fadeOut(ov)
+      render()
+    },
+  })
+  ov.appendChild(view)
   document.body.appendChild(ov)
-  queueMicrotask(() => go.focus())
+  queueMicrotask(() => (ov.querySelector('button') as HTMLButtonElement | null)?.focus())
 }
 
 async function doAsk(s: SuspectId, question: string): Promise<void> {
@@ -3053,8 +3097,8 @@ function coachLine(): string {
 
   // ── 2장: 심문 ──
   const interviewed = SUSPECTS.some((s) => (ui.chats[s]?.length ?? 0) > 0)
-  if (!interviewed) return '③ 취조실이 열렸다 — 카드 월에서 사람을 골라 데려온다. 한 사람과 나눌 수 있는 말은 열 마디뿐이다.'
-  if (g.foundContradictions.length === 0) return '③ 기록 한 장과 진술 한 칸을 맞대 본다 — 종이는 공짜고, 어긋나면 인장이 찍힌다.'
+  if (!interviewed) return '③ 칠판이 비어 있다 — 왼쪽에서 사람을 골라 심문하면 그 사람의 시각이 채워진다. 한 사람과 나눌 수 있는 말은 열 마디뿐이다.'
+  if (g.foundContradictions.length === 0) return '③ 기록 한 장과 칠판의 칸 하나를 맞대 본다 — 대조는 공짜고, 어긋나면 분필로 그어진다.'
   const sceneLocked = lockedRecords(g).some((l) => l.evidence.decisive)
   if (sceneLocked) {
     return '④ 모순이 걸린 사람에게 그 종이를 들이민다 — 흔들리면 잠긴 기록의 자물쇠가 풀린다.'
@@ -3116,11 +3160,36 @@ function render(): void {
    * 내려가지 않아 격자와 조회 목록이 오늘처럼 계속 동시에 보인다.
    * 사라지는 것은 용의자 열 하나뿐이고 그 폭은 격자로 간다 — 45% → 62%.
    */
-  const nb = h('div', `nb${ui.active ? ' interview' : ''}${ui.opening ? ' opening' : ''}`)
-  nb.appendChild(deskOrRoom())
-  nb.appendChild(h('div', 'nb-spine'))
-  nb.appendChild(rightPage())
-  app.appendChild(nb)
+  /**
+   * **제2막 레이아웃** (팀 3-2 대개편).
+   *
+   *   [좌 사이드바 20%] [ 메인 — 칠판 타임라인 / 취조실 / 경찰서 ]   …그리고 우측에 걸친 수첩
+   *
+   * 우면에 항상 펼쳐져 있던 수사일지는 **드로어로 빠졌다.** 그 자리를 메인이 가져가고,
+   * 용의자 선택은 좌측 사이드바가 맡는다 — **심문실 안에서도 사이드바가 살아 있어야**
+   * 심문실 간 이동이 되기 때문이다(팀 명세).
+   *
+   * 제1막(챕터1)은 옛 2단을 그대로 쓴다. 3D 가 실패했을 때의 폴백 경로라 건드리지 않는다.
+   */
+  if (ui.chapter2) {
+    const act2 = h('div', `act2${ui.active ? ' interview' : ''}`)
+    act2.appendChild(sidebarEl())
+    const main = h('div', 'act2-main')
+    main.appendChild(act2Main())
+    act2.appendChild(main)
+    app.appendChild(act2)
+
+    // 드로어는 화면에 고정된다 — 재렌더로 다시 만들지 않고 내용만 갈아 끼운다
+    const d = notebookDrawer()
+    d.setContent(rightPage())
+    if (!d.el.isConnected) document.body.appendChild(d.el)
+  } else {
+    const nb = h('div', `nb${ui.active ? ' interview' : ''}${ui.opening ? ' opening' : ''}`)
+    nb.appendChild(deskOrRoom())
+    nb.appendChild(h('div', 'nb-spine'))
+    nb.appendChild(rightPage())
+    app.appendChild(nb)
+  }
 
   const cols2 = app.querySelectorAll('.col')
   scrolls.forEach((top, i) => { if (top) cols2[i]?.scrollTo({ top }) })
