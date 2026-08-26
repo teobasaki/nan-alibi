@@ -124,12 +124,60 @@ async function callOpenAI(
   }
 }
 
+
+/* ─────────── 남용 방어 — **공개 URL 이고 크레딧은 유한하다** ───────────
+ *
+ * 이 엔드포인트는 인증이 없다. 붙이면 안 되기 때문이다 —
+ * 대회·심사 규정이 "별도 로그인 없이 플레이 가능" 을 요구하고, 로그인은 실격 사유다.
+ * 그래서 **사람의 플레이는 막지 않으면서 스크립트만 걸러내는** 두 겹을 둔다.
+ *
+ * ① Origin — 우리 페이지에서 온 요청만 받는다. 헤더 위조가 가능하므로 완벽하지 않지만,
+ *    URL 을 복사해 curl 로 때리는 가장 흔한 경로를 막는다.
+ * ② 토큰 버킷 — IP 당 분당 상한. Worker 아이솔레이트 메모리라 전역 정확도는 없다.
+ *    그래도 한 아이솔레이트에 몰리는 연타는 잡힌다. KV 없이 오늘 넣을 수 있는 최선이다.
+ *
+ * **막았을 때 조용히 폴백하지 않는다.** `reason` 을 실어 보내 화면이 정직하게 말하게 한다 —
+ * 크레딧이 죽었는데 페르소나가 회피 대사만 하면 플레이어는 "AI 가 형편없다" 고 읽는다.
+ */
+const ALLOW_HOSTS = [/\.nan-alibi\.pages\.dev$/, /^nan-alibi\.pages\.dev$/, /^localhost(:\d+)?$/, /^127\.0\.0\.1(:\d+)?$/]
+
+function originOk(request: Request): boolean {
+  const o = request.headers.get('Origin') ?? request.headers.get('Referer')
+  if (!o) return false                       // 브라우저는 항상 붙인다. 없으면 브라우저가 아니다
+  try {
+    const h = new URL(o).host
+    return ALLOW_HOSTS.some((re) => re.test(h))
+  } catch { return false }
+}
+
+/** IP 당 분당 상한 — 한 판이 40~50턴이므로 사람은 절대 안 걸린다 */
+const RATE_PER_MIN = 20
+const buckets = new Map<string, { n: number; at: number }>()
+
+function rateOk(ip: string): boolean {
+  const now = Date.now()
+  const b = buckets.get(ip)
+  if (!b || now - b.at > 60_000) { buckets.set(ip, { n: 1, at: now }); return true }
+  if (b.n >= RATE_PER_MIN) return false
+  b.n += 1
+  return true
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = (await request.json().catch(() => null)) as Body | null
   if (!body || typeof body.seed !== 'number' || !body.suspectId || !body.personaId || !body.question) {
     return bad('seed / suspectId / personaId / question 이 필요하다')
   }
   if (body.question.length > 200) return bad('질문이 너무 길다 (200자 상한)')
+
+  // 남용 방어 — 폴백으로 떨어뜨리되 **이유를 숨기지 않는다** (클라이언트가 조사 횟수를 환불한다)
+  if (!originOk(request)) {
+    return Response.json({ reply: fallbackReply(body.personaId), fallback: true, reason: 'bad_origin' }, { status: 403 })
+  }
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
+  if (!rateOk(ip)) {
+    return Response.json({ reply: fallbackReply(body.personaId), fallback: true, reason: 'rate_limited' }, { status: 429 })
+  }
 
   if (!env.OPENAI_API_KEY) {
     // 폴백 3층: 키 없음 → 게임은 멈추지 않고 계속 진행되어야 한다
