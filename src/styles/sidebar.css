@@ -1,20 +1,30 @@
+@import './tokens.css';
+
 /*
  * 좌측 사이드바 — `src/ui/sidebar.ts` 전용. **`src/style.css` 는 건드리지 않는다.**
  *
- * 토큰은 전부 `var(--x, 폴백)` 으로 읽는다. 게임 안에서는 style.css 의 팔레트를 그대로
- * 물려받고, probe 하네스처럼 style.css 가 없는 곳에서도 **같은 색으로** 선다.
+ * 색은 `tokens.css` 의 다섯 재질에서만 온다 (팀 3-2-(5)-(3) 1단계 — 파일철·수첩·
+ * 프로파일링 문서가 **같은 세계의 물건**으로 보여야 한다). 전부 `var(--x, 폴백)` 으로 읽어
+ * probe 하네스처럼 토큰이 없는 곳에서도 같은 색으로 선다.
  * (폴백을 안 두면 하네스에서 검은 글자 검은 배경이 되고, 그걸 고치려다 style.css 를
  *  건드리게 된다 — 이 파일이 자기 색을 들고 다니는 이유다.)
  */
 
 .fa-sb {
-  /* 서류철 색 — 어두운 복도에 놓인 마닐라지. 팔레트에 없던 축이라 여기서 만든다. */
-  --fa-fold-1: #5f4c30;      /* 뒷장 (그늘) */
-  --fa-fold-2: #8b7247;      /* 앞장 */
-  --fa-fold-3: #a98d55;      /* 탭 · 빛 받는 모서리 */
-  --fa-paper: #ded4bd;       /* 안에 낀 조서 용지 */
+  /* 서류철 — 바랜 종이에 마닐라지 표지. 종이는 드로어·프로파일링 문서와 같은 한 장이다 */
+  --fa-fold-1: #4d3c26;      /* 뒷장 (그늘) */
+  --fa-fold-2: #7a6440;      /* 앞장 */
+  --fa-fold-3: #9c8250;      /* 탭 · 빛 받는 모서리 */
+  --fa-fold-paper: var(--fa-paper-lo, #d6cdb8);   /* 안에 낀 조서 용지 */
   --fa-fold-slide: 0px;      /* 호버하면 이만큼 더 내려온다 */
   --fa-fold-tilt: -23deg;    /* 긴 옆면이 아니라 모서리가 보이도록 — 수평에서 67° */
+  /* 이 부품 안에서 쓰는 먹색·괘선·글자색 (게임 팔레트가 없어도 서게) */
+  --fa-sb-panel: var(--fa-ink-800, #14100e);
+  --fa-sb-panel-2: var(--fa-ink-600, #262019);
+  --fa-sb-line: var(--fa-ink-line, #3a3029);
+  --fa-sb-ink: #ece5d5;
+  --fa-sb-muted: #9d9184;
+  --fa-sb-brass: var(--fa-brass, #96793c);
 
   /*
    * 화면 폭의 20% — **부모 기준이다.** flex 행이나 그리드 칸의 *직계* 자식으로 넣어라.
@@ -35,9 +45,9 @@
 
   background:
     repeating-linear-gradient(180deg, rgba(255, 255, 255, .012) 0 2px, transparent 2px 4px),
-    var(--panel, #201519);
-  border-right: 1px solid var(--line, #3d2b2c);
-  color: var(--ink, #e9e1d3);
+    var(--fa-sb-panel, #14100e);
+  border-right: 1px solid var(--fa-sb-line, #3a3029);
+  color: var(--fa-sb-ink, #ece5d5);
   font-family: 'Apple SD Gothic Neo', system-ui, sans-serif;
   overflow: hidden;
 }
@@ -53,9 +63,9 @@
   margin: 0;
   padding: 0;
   border: 0;
-  border-bottom: 1px solid var(--line, #3d2b2c);
+  border-bottom: 1px solid var(--fa-sb-line, #3a3029);
   border-radius: 0;
-  background: linear-gradient(180deg, #1a1215 0%, var(--panel, #201519) 100%);
+  background: linear-gradient(180deg, var(--fa-ink-900, #0c0a09) 0%, var(--fa-sb-panel, #14100e) 100%);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -129,7 +139,7 @@
   border-radius: 1px;
   background:
     repeating-linear-gradient(180deg, transparent 0 6px, rgba(96, 76, 52, .26) 6px 7px),
-    var(--fa-paper);
+    var(--fa-fold-paper);
   box-shadow:
     3px 4px 0 -1px #cec2a8,
     6px 8px 0 -2px #b9ad93,
@@ -164,7 +174,7 @@
   width: 15%;
   height: 6%;
   border-radius: 2px;
-  background: linear-gradient(180deg, #e2be6f 0%, var(--amber, #c8912f) 55%, #7d5a1c 100%);
+  background: linear-gradient(180deg, #e2be6f 0%, var(--fa-sb-brass, #96793c) 55%, #7d5a1c 100%);
   box-shadow: 0 1px 3px rgba(0, 0, 0, .6);
 }
 
@@ -187,13 +197,13 @@
   top: 3px;
   bottom: 3px;
   width: 2px;
-  background: var(--amber, #c8912f);
+  background: var(--fa-sb-brass, #96793c);
   opacity: .55;
   transition: opacity 160ms ease-out;
 }
 
 .fa-sb-fold-t {
-  font-family: var(--serif, AppleMyungjo, Batang, serif);
+  font-family: var(--fa-serif, AppleMyungjo, Batang, serif);
   font-size: 14.5px;
   font-weight: 500;
   letter-spacing: .3px;
@@ -214,7 +224,7 @@
 .fa-sb-folder:hover .fa-sb-fold,
 .fa-sb-folder:focus-visible .fa-sb-fold { filter: brightness(1.14) drop-shadow(0 9px 16px rgba(0, 0, 0, .6)); }
 .fa-sb-folder:hover .fa-sb-fold-t,
-.fa-sb-folder:focus-visible .fa-sb-fold-t { color: var(--amber, #c8912f); }
+.fa-sb-folder:focus-visible .fa-sb-fold-t { color: var(--fa-sb-brass, #96793c); }
 .fa-sb-folder:hover .fa-sb-fold-cap::before,
 .fa-sb-folder:focus-visible .fa-sb-fold-cap::before { opacity: 1; }
 .fa-sb-folder:active { --fa-fold-slide: 8px; }
@@ -238,7 +248,7 @@
   margin: 0;
   padding: 8px 10px 8px 13px;
   border: 0;
-  border-top: 1px solid rgba(61, 43, 44, .55);
+  border-top: 1px solid rgba(58, 48, 41, .62);
   border-radius: 0;
   background: transparent;
   color: inherit;
@@ -258,17 +268,17 @@
   top: 0;
   bottom: 0;
   width: 3px;
-  background: var(--amber, #c8912f);
+  background: var(--fa-sb-brass, #96793c);
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 150ms ease-out;
 }
-.fa-sb-row:hover { background-color: rgba(200, 145, 47, .07); }
+.fa-sb-row:hover { background-color: rgba(150, 121, 60, .1); }
 .fa-sb-row:hover::before { transform: scaleX(.34); }
-.fa-sb-row.on { background-color: var(--panel-2, #2a1c20); }
+.fa-sb-row.on { background-color: var(--fa-sb-panel-2, #262019); }
 .fa-sb-row.on::before { transform: scaleX(1); }
-.fa-sb-row.on .fa-sb-name { color: var(--amber, #c8912f); }
-.fa-sb-row.on .fa-sb-face { border-color: rgba(200, 145, 47, .7); }
+.fa-sb-row.on .fa-sb-name { color: var(--fa-sb-brass, #96793c); }
+.fa-sb-row.on .fa-sb-face { border-color: rgba(150, 121, 60, .8); }
 
 /*
  * 초상은 **칸 높이를 따라 자란다.** 44px 고정으로 두면 1080p 에서 한 칸이 150px 인데
@@ -281,8 +291,8 @@
   width: auto;
   aspect-ratio: 1;
   border-radius: 3px;
-  border: 1px solid var(--line, #3d2b2c);
-  background-color: var(--panel-2, #2a1c20);
+  border: 1px solid var(--fa-sb-line, #3a3029);
+  background-color: var(--fa-sb-panel-2, #262019);
   background-size: cover;
   background-position: center 16%;   /* 초상은 머리가 위 — 가운데로 자르면 턱만 남는다 */
   background-repeat: no-repeat;
@@ -293,7 +303,7 @@
 .fa-sb-face.plate {
   display: grid;
   place-items: center;
-  font-family: var(--serif, AppleMyungjo, Batang, serif);
+  font-family: var(--fa-serif, AppleMyungjo, Batang, serif);
   font-size: clamp(17px, 3.2vh, 34px);
   /* 어두운 복도에 걸린 놋쇠 명패다 — 밝은 금색 덩어리가 되면 다섯 칸이 조명처럼 튄다 */
   color: #efe3c9;
@@ -311,10 +321,10 @@
 }
 
 .fa-sb-name {
-  font-family: var(--serif, AppleMyungjo, Batang, serif);
+  font-family: var(--fa-serif, AppleMyungjo, Batang, serif);
   font-size: 15.5px;
   letter-spacing: .2px;
-  color: var(--ink, #e9e1d3);
+  color: var(--fa-sb-ink, #ece5d5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -323,7 +333,7 @@
 
 .fa-sb-job {
   font-size: 11px;
-  color: var(--muted, #9a8b80);
+  color: var(--fa-sb-muted, #9d9184);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -341,24 +351,24 @@
   height: 2px;
   min-width: 18px;
   border-radius: 1px;
-  background: var(--line, #3d2b2c);
+  background: var(--fa-sb-line, #3a3029);
   overflow: hidden;
 }
 .fa-sb-bar u {
   display: block;
   height: 100%;
   width: 0;
-  background: var(--amber, #c8912f);
+  background: var(--fa-sb-brass, #96793c);
   transition: width 260ms ease-out;
 }
 
 .fa-sb-n {
   flex: 0 0 auto;
-  font-family: var(--mono, ui-monospace, Menlo, monospace);
+  font-family: var(--fa-mono, ui-monospace, Menlo, monospace);
   font-style: normal;
   font-size: 10.5px;
   letter-spacing: -.2px;
-  color: var(--muted, #9a8b80);
+  color: var(--fa-sb-muted, #9d9184);
 }
 .fa-sb-n.off { color: #6d5f57; }
 
@@ -366,7 +376,7 @@
 
 .fa-sb-folder:focus-visible,
 .fa-sb-row:focus-visible {
-  outline: 2px solid var(--amber, #c8912f);
+  outline: 2px solid var(--fa-sb-brass, #96793c);
   outline-offset: -2px;
 }
 

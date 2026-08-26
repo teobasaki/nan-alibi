@@ -1351,6 +1351,19 @@ window.addEventListener('keydown', (e) => {
   if (csHandle || csOpening) return
   if (document.querySelector('.overlay, .startpage, .curtain, .intro')) return
   e.preventDefault()
+  /**
+   * **제2막에는 수첩이 화면에 물건으로 있다** (우측 드로어). 그 위에 책 오버레이를 또 열면
+   * 같은 일지가 두 벌이 되고, 닫는 키가 무엇을 닫는 키인지 알 수 없다 (감사 확정건 —
+   * "전역 I 키가 드로어의 존재를 모른다"). 제2막에서 I 는 그 드로어를 여닫는다.
+   * 제1막(3D 실패 폴백의 2단 화면)에는 드로어가 없으므로 예전처럼 책이 열린다.
+   */
+  if (ui.chapter2) {
+    const d = notebookDrawer()
+    if (d.isOpen()) d.close()
+    else d.open()
+    play('page')
+    return
+  }
   openBook()
 })
 

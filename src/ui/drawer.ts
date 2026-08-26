@@ -173,6 +173,33 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
     try { n.focus({ preventScroll: true }) } catch { /* 포커스는 연출이다 — 실패해도 진행 */ }
   }
 
+  /**
+   * **열린 동안 뒤 화면을 봉한다** (감사 확정건).
+   *
+   * 막(scrim)은 **클릭만** 막는다. Tab 은 그 막을 그냥 통과해서, 펼친 수첩 뒤의 칠판·
+   * 사이드바·최종 추론 버튼으로 포커스가 빠져나갔다 — 보이지 않는 곳으로 포커스가 가면
+   * 사용자는 자기가 어디에 있는지 알 수 없고, 그 상태의 Enter 는 되돌릴 수 없는 행동을 한다.
+   *
+   * `inert` 는 **형제에게** 건다. 우리 뿌리를 뺀 나머지 형제 전부다 — 우리가 얹은 것만
+   * 되돌리기 위해 표식(`data-nbk-sealed`)을 남긴다. 원래 `inert` 였던 형제(다른 모달)를
+   * 우리가 닫을 때 풀어 주면 그쪽이 조용히 새기 때문이다.
+   */
+  const sealBehind = (on: boolean): void => {
+    const parent = root.parentElement
+    if (!parent) return
+    for (const sib of Array.from(parent.children)) {
+      if (sib === root || !(sib instanceof HTMLElement)) continue
+      if (on) {
+        if (sib.hasAttribute('inert')) continue
+        sib.setAttribute('inert', '')
+        sib.dataset.nbkSealed = '1'
+      } else if (sib.dataset.nbkSealed) {
+        sib.removeAttribute('inert')
+        delete sib.dataset.nbkSealed
+      }
+    }
+  }
+
   const doOpen = (): void => {
     if (dead || open) return
     open = true
@@ -183,6 +210,7 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
     leaf.removeAttribute('inert')
     grab.setAttribute('aria-expanded', 'true')
     grab.tabIndex = -1
+    sealBehind(true)
 
     const act = document.activeElement
     returnTo = act instanceof HTMLElement && act !== document.body ? act : null
@@ -200,6 +228,7 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
     leaf.setAttribute('inert', '')
     grab.setAttribute('aria-expanded', 'false')
     grab.tabIndex = 0
+    sealBehind(false)
 
     // 포커스가 덮이는 면 안에 있으면 손잡이로 데려온다 — 안 그러면 body 로 떨어진다
     if (book.contains(document.activeElement)) focus(returnTo?.isConnected ? returnTo : grab)
@@ -240,6 +269,8 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
       scope = null
       life.abort()
       returnTo = null
+      // 봉인을 먼저 푼다 — 뿌리를 지워 버리면 형제의 inert 를 되돌릴 손이 없어진다
+      sealBehind(false)
       root.remove()
     },
   }

@@ -1,3 +1,5 @@
+@import './tokens.css';
+
 /*
  * 수사일지 드로어 — **우측 가장자리에 꽂힌 수첩.** (`src/ui/drawer.ts` 의 그림)
  *
@@ -17,12 +19,14 @@
  * 전환 중에 요소가 커서 밑에서 빠져나가면 `leave` 를 흘려서 **수첩이 나온 채 얼어붙는다.**
  * `:hover` 는 브라우저가 그 정합을 책임진다 — 리스너도 0개다(이 저장소는 리스너 누수 이력이 있다).
  *
- * ## 색: 누런내를 뺀다
- * 기존 수첩 종이(`.nb .nb-page`)는 세피아(#e2d1aa)라 "누런내" 지적을 받았다.
- * 여기서는 **회백색**(#e7e5e0 → #d5d3cc)으로 당기고, `paper.webp`·`leather.webp` 는
- * 색을 그대로 깔지 않고 **`grayscale()` 을 먹여 명암만** 빌려 쓴다.
+ * ## 색: **바랜 종이 한 장** (팀 3-2-(5)-(3) 1단계)
+ * 팀 지시가 바뀌었다 — 예전에는 "누런내" 지적을 받아 회백색(#e7e5e0)으로 당겨 놨는데,
+ * 3-2-(5)-(3) 이 *"종이의 바랜 색감, 먹선, 거친 그림자 … 도입부 카툰의 종이 질감과 같은
+ * 시각 언어를 공유"* 를 지시했다. **최신 지시가 이긴다** — 색은 이제 `tokens.css` 의
+ * `--fa-paper*` 에서 온다. 파일철·프로파일링 문서와 같은 종이여야 하고, 그 종이는 하나뿐이다.
+ * `paper.webp`·`leather.webp` 는 여전히 색을 빌리지 않고 **명암만** 빌린다(`grayscale()`).
  * 텍스처가 없어도(파일 부재) 배경 그라디언트만 남아 조용히 성립한다.
- * 판정색(빨강·초록)은 한 곳도 쓰지 않는다 — 드로어는 상태를 그리지 않고 담기만 한다.
+ * 판정색(빨강·초록)은 껍데기에 한 곳도 쓰지 않는다 — 드로어는 상태를 그리지 않고 담기만 한다.
  */
 
 .nbk {
@@ -37,15 +41,15 @@
   --nbk-dur: 280ms;
   --nbk-ease: cubic-bezier(.22, .86, .3, 1);
 
-  /* ── 색: 회백색 종이 · 채도 낮춘 가죽 ── */
-  --nbk-paper-hi: #e7e5e0;
-  --nbk-paper-lo: #d5d3cc;
-  --nbk-ink: #23221f;
-  --nbk-ink-soft: #6b695f;
-  --nbk-rule: rgba(64, 74, 84, .13);
-  --nbk-brass: #8a7649;                 /* 놋쇠 한 점 — 여기서만 색이 산다 */
-  --nbk-leather: #2c2523;
-  --nbk-leather-hi: #3b312d;
+  /* ── 색: 바랜 종이 · 채도 낮춘 가죽. 정본은 tokens.css ── */
+  --nbk-paper-hi: var(--fa-paper-hi, #efe9da);
+  --nbk-paper-lo: var(--fa-paper-lo, #d6cdb8);
+  --nbk-ink: var(--fa-paper-ink, #221b14);
+  --nbk-ink-soft: var(--fa-paper-ink-soft, #5e5343);
+  --nbk-rule: var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  --nbk-brass: var(--fa-brass, #96793c);          /* 놋쇠 한 점 — 여기서만 색이 산다 */
+  --nbk-leather: var(--fa-wood-900, #1f1610);
+  --nbk-leather-hi: var(--fa-wood-700, #372619);
 
   /* style.css 없이(프로브 단독) 세워도 서체가 무너지지 않게 폴백을 안고 간다 */
   --nbk-serif: var(--serif, AppleMyungjo, Batang, 'Nanum Myeongjo', 'Apple SD Gothic Neo', serif);
@@ -199,7 +203,7 @@
   perspective: 1700px;                  /* 표지가 진짜로 젖혀지게 */
 }
 
-/* ── 종이 — 회백색. 세피아를 쓰지 않는다 ─────────────────────────────── */
+/* ── 종이 — 바랜 한 장 ─────────────────────────────────────────────── */
 .nbk-paper {
   position: absolute;
   inset: 0;
@@ -213,6 +217,30 @@
   box-shadow:
     inset 16px 0 24px -14px rgba(38, 34, 28, .5),   /* 제본 골의 그늘 */
     inset 0 0 42px rgba(96, 92, 80, .16);
+
+  /*
+   * ★ **경계에서 팔레트를 다시 묶는다** — 이 여덟 줄이 blocker 하나를 고친다.
+   *
+   * 드로어에 주입되는 내용(`rightPage()`)은 원래 **어두운 판** 위에 그려질 마크업이고,
+   * 그 규칙들은 전부 `style.css` 의 팔레트 변수(`--ink`·`--muted`·`--line`·`--panel-2`…)를
+   * 읽는다. 밝은 종이 안에 그대로 넣으면 밝은 글자가 밝은 종이에 얹힌다 —
+   * **실측 1.03:1, 드로어 안 글자 10개가 전부 안 읽혔다.** (감사 최우선 blocker)
+   *
+   * 색을 하나하나 덮어쓰지 않는 이유: 주입되는 마크업은 이 파일이 소유하지 않는다.
+   * 클래스를 열거하면 다음에 새 줄이 들어올 때 또 안 보인다. **변수를 다시 묶으면
+   * 아직 존재하지 않는 마크업까지 종이 위에서 읽힌다.**
+   *
+   * 판정색(빨강·초록)도 함께 묶는다 — 어두운 판용 채도로는 종이에서 형광펜처럼 뜬다.
+   */
+  --bg: var(--fa-paper, #e6dfcd);
+  --panel: rgba(255, 255, 255, .4);
+  --panel-2: rgba(255, 255, 255, .52);
+  --line: var(--nbk-rule);
+  --ink: var(--nbk-ink);
+  --muted: var(--nbk-ink-soft);
+  --amber: #6f5417;                       /* 놋쇠 잉크 — 종이 위 5.2:1 (실측) */
+  --red: var(--fa-red-seal, #a8382c);
+  --green: #3c6349;
 }
 /* 종이 결 — 텍스처의 **명암만** (원본은 누렇다). 없으면 이 층이 통째로 빠질 뿐이다.
  * `paper.webp` 는 3D 수첩의 UV 아틀라스라 여러 장의 필기가 한 장에 모여 있다.
@@ -335,6 +363,31 @@
 }
 .nbk-body .nbk-empty { color: var(--nbk-ink-soft); font-style: italic; }
 
+/* ── 주입된 옛 우측 패널 마크업을 종이에 눕힌다 ───────────────────────
+ * 위의 팔레트 재바인딩이 **색**을 고치고, 아래 대여섯 줄이 **판**을 고친다 —
+ * 어두운 판을 전제로 깔려 있던 배경·그늘·괘선은 변수가 아니라 리터럴이라 변수로 못 지운다.
+ * (구조는 손대지 않는다. 수사일지 정보구조 개편은 팀 명세 3-2-(3) 이고 아직 미수령이다.)
+ */
+.nbk-body .nb-page {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+}
+/* 어두운 판의 앰버 괘선 — 종이에는 이미 자기 괘선이 있다. 두 벌은 격자무늬가 된다 */
+.nbk-body .nb-page::before { display: none; }
+.nbk-body .col { padding: 0; overflow: visible; }
+.nbk-body .col + .col { border-left: 0; }
+/* 종이 위의 단추 — 눌러 앉힌 카드처럼. 종이보다 밝고 먹선으로 테를 두른다 */
+.nbk-body button {
+  border-radius: 3px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .45), inset 0 1px 0 rgba(255, 255, 255, .5);
+}
+.nbk-body button:hover:not(:disabled) { border-color: var(--nbk-brass); background: rgba(255, 255, 255, .78); }
+/* 조서 줄의 초록 세로선 — 종이에서는 먹선이다 */
+.nbk-body .jl-note { color: var(--nbk-ink-soft); border-left-color: var(--nbk-rule); }
+/* 증거 카드는 이미 종이(#f4efe4)다. 종이 위 종이라 테두리 하나로 층을 만든다 */
+.nbk-body .evcard { box-shadow: 0 1px 2px rgba(60, 50, 34, .16); }
+
 /* ── 표지 — 클릭하면 젖혀진다 ─────────────────────────────────────────
  * 경첩은 책등의 오른쪽 모서리(=`.nbk-leaf` 의 왼쪽 변)다. 실제 책이 도는 축과 같다.
  * 뒷면을 따로 만들지 않았다: 표지는 좌우대칭이라 뒤집혀도 같은 그림이고,
@@ -433,6 +486,18 @@
 }
 .nbk-grab:focus-visible { outline: 2px solid var(--nbk-brass); outline-offset: -3px; }
 .nbk.is-open .nbk-grab { pointer-events: none; cursor: default; }
+
+/* ── 판이 올라오면 수첩은 그 방에 없다 ────────────────────────────────
+ * 드로어는 `--nbk-z: 65` 로 서류 오버레이(`.overlay`, z 10)보다 **위**에 있다. 그래서
+ * 결과 화면·최종 추론 판이 떠 있는 동안에도 수첩이 살아 있었고, **제출이 끝난 뒤에도
+ * 상태를 바꿀 수 있었다** (감사 확정건). z 를 낮추는 대신 존재를 지운다 —
+ * z 만 낮추면 판 뒤에 반쯤 보이는 물건이 남아 "눌러도 아무 일 없는 것" 이 된다.
+ * `display: none` 은 포커스까지 함께 걷어 간다.
+ */
+body:has(.overlay) .nbk,
+body:has(.startpage) .nbk,
+body:has(.curtain) .nbk,
+body:has(.bookov) .nbk { display: none; }
 
 /* ── 좁은 화면 ── */
 @media (max-width: 560px) {

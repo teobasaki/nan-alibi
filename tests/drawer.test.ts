@@ -143,3 +143,53 @@ describe('수첩 드로어', () => {
     expect(document.querySelectorAll('.nbk').length).toBe(0)
   })
 })
+
+/**
+ * **열린 동안 뒤 화면을 봉한다** (감사 확정건 — 막은 클릭만 막고 Tab 은 통과했다).
+ * 실측(브라우저, Tab 12회): 봉인 전에는 칠판·사이드바·「최종 추론」까지 포커스가 나갔다.
+ * 봉인 뒤에는 문서 경계(BODY) 한 번을 빼면 전부 수첩 안에 머문다.
+ */
+describe('수첩 드로어 — 뒤 화면 봉인', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('열면 형제에게 inert 가 걸리고, 닫으면 우리가 건 것만 풀린다', () => {
+    const app = document.createElement('div')
+    app.id = 'app'
+    document.body.appendChild(app)
+    // 남의 모달 — 원래부터 inert 였다. 우리가 닫을 때 이것까지 풀면 그쪽이 새기 시작한다
+    const other = document.createElement('div')
+    other.setAttribute('inert', '')
+    document.body.appendChild(other)
+
+    const d = createNotebookDrawer()
+    d.open()
+    expect(app.hasAttribute('inert')).toBe(true)
+    expect(app.dataset.nbkSealed).toBe('1')
+    expect(other.dataset.nbkSealed).toBeUndefined()
+
+    d.close()
+    expect(app.hasAttribute('inert')).toBe(false)
+    expect(app.dataset.nbkSealed).toBeUndefined()
+    expect(other.hasAttribute('inert')).toBe(true)     // 남의 것은 그대로 둔다
+    d.dispose()
+  })
+
+  it('열린 채 dispose 해도 봉인이 남지 않는다', () => {
+    const app = document.createElement('div')
+    document.body.appendChild(app)
+    const d = createNotebookDrawer()
+    d.open()
+    expect(app.hasAttribute('inert')).toBe(true)
+    d.dispose()
+    expect(app.hasAttribute('inert')).toBe(false)
+    expect(document.querySelectorAll('[data-nbk-sealed]').length).toBe(0)
+  })
+
+  it('자기 뿌리에는 inert 를 걸지 않는다 — 걸면 수첩 자신이 죽는다', () => {
+    const d = createNotebookDrawer()
+    d.open()
+    expect(d.el.hasAttribute('inert')).toBe(false)
+    expect(d.el.querySelector('.nbk-leaf')?.hasAttribute('inert')).toBe(false)
+    d.dispose()
+  })
+})
