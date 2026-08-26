@@ -1,0 +1,228 @@
+@import './tokens.css';
+
+/*
+ * 제출 시트 (`src/ui/proofSheet.ts`) — **책상 위에 펼친 송치 의견서.**
+ *
+ * 이 화면은 서류다. 그래서 바랜 종이 위의 먹선이고, 강조는 붉은 인장 하나뿐이다
+ * (DESIGN-GUIDE §2·§5). 판정 결과에도 색을 두 개 이상 쓰지 않는다 —
+ * 성립은 형태(○)와 활자(성립)로, 미성립은 그 없음으로 읽힌다.
+ */
+
+.pf {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(86vh, 860px);
+  width: min(760px, 92vw);
+  overflow: hidden;
+  color: var(--fa-paper-ink, #221b14);
+  background:
+    linear-gradient(180deg, var(--fa-paper-hi, #efe9da), var(--fa-paper, #e6dfcd) 40%, var(--fa-paper-lo, #d6cdb8));
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-radius: 3px;
+  box-shadow: 0 26px 60px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .5);
+  font-family: var(--fa-sans, system-ui, sans-serif);
+  word-break: keep-all;
+}
+/* 종이 결 — 색이 아니라 거칠기만 빌린다 */
+.pf::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--fa-grain);
+  background-size: 180px 180px;
+  mix-blend-mode: multiply;
+  opacity: .05;
+}
+
+.pf-body { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px 16px; }
+
+.pf-sec { margin-bottom: 18px; }
+.pf-sec h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding-bottom: 4px;
+  font-family: var(--fa-serif, serif);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  border-bottom: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+}
+.pf-count, .pf-need {
+  margin-left: auto;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-hint { margin: 0 0 10px; font-size: 11.5px; line-height: 1.6; color: var(--fa-paper-ink-soft, #5e5343); }
+.pf-empty { font-size: 11.5px; font-style: italic; color: var(--fa-paper-ink-soft, #5e5343); }
+
+/* ── 사람·방식 칩 ── */
+.pf-who, .pf-methods { display: flex; flex-wrap: wrap; gap: 6px; }
+.pf-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 11px;
+  font: inherit;
+  text-align: left;
+  color: var(--fa-paper-ink, #221b14);
+  background: rgba(255, 255, 255, .42);
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-radius: 2px;
+  cursor: pointer;
+}
+.pf-chip.wide { min-width: 160px; }
+.pf-chip:hover { background: rgba(255, 255, 255, .72); border-color: var(--fa-brass, #96793c); }
+/* 고른 것 — 색 + 눈금 + 굵기 셋이 함께 간다 */
+.pf-chip.on {
+  background: rgba(255, 255, 255, .82);
+  border-color: var(--fa-red-seal, #a8382c);
+  box-shadow: inset 3px 0 0 var(--fa-red-seal, #a8382c);
+  font-weight: 500;
+}
+.pf-chip-t { font-family: var(--fa-serif, serif); font-size: 13px; }
+.pf-chip-s { font-size: 10px; color: var(--fa-paper-ink-soft, #5e5343); }
+
+/* ── 사슬 ── */
+.pf-chain {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, .34);
+  border: 1px dashed var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-radius: 2px;
+}
+.pf-arrow { display: block; padding: 1px 0 1px 6px; font-size: 11px; color: var(--fa-paper-ink-soft, #5e5343); }
+.pf-link { display: flex; align-items: baseline; gap: 7px; }
+.pf-link-k {
+  flex: 0 0 auto;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-link-t { font-size: 12px; line-height: 1.5; }
+
+/* ── 근거 목록 ── */
+.pf-clues { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; }
+.pf-clue {
+  padding: 7px 9px;
+  font: inherit;
+  text-align: left;
+  color: var(--fa-paper-ink, #221b14);
+  background: rgba(255, 255, 255, .4);
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-left-width: 2px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.pf-clue:hover:not(:disabled) { background: rgba(255, 255, 255, .74); }
+.pf-clue:disabled { opacity: .42; cursor: not-allowed; }
+.pf-clue.on { background: rgba(255, 255, 255, .86); border-color: var(--fa-red-seal, #a8382c); }
+/* 종류는 왼쪽 눈금 색으로 — 활자(진술/사실/기록)와 함께 간다 */
+.pf-clue.k-claim { border-left-color: var(--fa-wood-500, #54402c); }
+.pf-clue.k-fact { border-left-color: #3c6349; }
+.pf-clue.k-evidence { border-left-color: var(--fa-brass, #96793c); }
+.pf-clue.bad { border-left-color: var(--fa-red-seal, #a8382c); }
+.pf-clue-h { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; }
+.pf-clue-k {
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9px;
+  letter-spacing: .06em;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-clue-n {
+  margin-left: auto;
+  min-width: 15px;
+  text-align: center;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  color: #fff;
+  background: var(--fa-red-seal, #a8382c);
+  border-radius: 2px;
+}
+.pf-clue-bad { font-size: 9px; color: var(--fa-red-seal, #a8382c); }
+.pf-clue-t { font-size: 11.5px; line-height: 1.5; }
+.pf-clue-d { margin-top: 2px; font-size: 10px; line-height: 1.5; color: var(--fa-paper-ink-soft, #5e5343); }
+
+/* ── 판정 ── */
+.pf-verdict {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, .46);
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-left: 3px solid var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-verdict.v-proven { border-left-color: #3c6349; }
+.pf-verdict.v-contradictory_proof { border-left-color: var(--fa-red-seal, #a8382c); }
+.pf-vk {
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-verdict.v-proven .pf-vk { color: #3c6349; }
+.pf-vt { margin-top: 4px; font-family: var(--fa-serif, serif); font-size: 15px; line-height: 1.55; }
+.pf-vr { margin-top: 6px; font-size: 11.5px; line-height: 1.6; color: var(--fa-paper-ink-soft, #5e5343); }
+
+.pf-props { display: flex; flex-direction: column; gap: 2px; }
+.pf-prop {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--fa-paper-edge, rgba(90, 74, 52, .26));
+}
+.pf-prop-m { flex: 0 0 12px; text-align: center; font-size: 11px; color: var(--fa-paper-ink-soft, #5e5343); }
+.pf-prop.s-proven .pf-prop-m { color: #3c6349; }
+.pf-prop-t { flex: 1; font-size: 12px; line-height: 1.55; }
+.pf-prop.s-unknown .pf-prop-t { color: var(--fa-paper-ink-soft, #5e5343); }
+.pf-prop-s {
+  flex: 0 0 auto;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-prop.s-proven .pf-prop-s { color: #3c6349; }
+
+/* ── 바닥 ── */
+.pf-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+}
+.pf-go, .pf-back {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 8px 16px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.pf-go {
+  margin-left: auto;
+  color: #f6efe2;
+  background: var(--fa-red-seal, #a8382c);
+  border: 1px solid #7d2a20;
+  font-weight: 500;
+}
+.pf-go:disabled { opacity: .4; cursor: not-allowed; }
+.pf-back {
+  color: var(--fa-paper-ink, #221b14);
+  background: rgba(255, 255, 255, .5);
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+}
+.pf-back:hover { border-color: var(--fa-brass, #96793c); }
+.pf-chip:focus-visible, .pf-clue:focus-visible, .pf-go:focus-visible, .pf-back:focus-visible {
+  outline: 2px solid var(--fa-brass, #96793c);
+  outline-offset: 1px;
+}
+
+@media (max-width: 560px) {
+  .pf { width: 96vw; }
+  .pf-clues { grid-template-columns: 1fr; }
+  .pf-body { padding: 14px 13px 12px; }
+}

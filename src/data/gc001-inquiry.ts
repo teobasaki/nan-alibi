@@ -16,7 +16,10 @@
  */
 
 import type { SuspectId } from '../types'
-import { heldClueIds, question, type ClaimDef, type FactDef, type InquiryState } from '../engine/inquiry'
+import {
+  discover, heldClueIds, learnFact, question, understand,
+  type ClaimDef, type FactDef, type InquiryState,
+} from '../engine/inquiry'
 
 /* ────────────────────────────── Fact — 객관적으로 확정된 것 ────────────────────────────── */
 
@@ -261,6 +264,36 @@ export const GC001_INVESTIGATION_QUESTIONS: readonly InvestigationQuestion[] = [
   { id: 'IQ08', text: '도율은 무엇을 숨기고 있는가?', answeredBy: ['CLM-GC001-DO-REPORT-PLEA', 'E2'] },
 ]
 
+/* ────────────────────────────── 기록이 알려주는 사실 ────────────────────────────── */
+
+/**
+ * **기록 하나를 확보하면 그 종이에 적힌 사실을 알게 된다.**
+ *
+ * 이 표가 없으면 조사 계층에 구멍이 난다 — 실측에서 걸렸다: `F-GC001-LABEL-CHANGED-2118`·
+ * `F-GC001-MUN-AT-LOADING-2118`·`F-GC001-DEATH-CLASSIFICATION`·`F-GC001-REV17-ISSUED-2111` 을
+ * **얻을 방법이 아예 없었다.** 심문 규칙에도 없고 기록에서도 안 나왔다. 그러면 Proof Path B 가
+ * 코드로는 성립하는데 플레이로는 도달할 수 없다 (AC-15 가 테스트에서만 초록인 상태).
+ *
+ * 여기 적히는 것은 전부 **그 기록의 본문에 이미 적혀 있는 것**이다 (`gc001.ts` 의 `note` 참조).
+ * 새 사실을 만들지 않는다 — 종이를 읽으면 알 수 있는 것을 상태로 옮길 뿐이다.
+ */
+export const GC001_EVIDENCE_FACTS: Readonly<Record<string, readonly string[]>> = {
+  // 데스크 기록 — 20:55 해임 통지 출력, 21:30 보고 예약, 피해자는 21:15까지 통화 중
+  E1: ['F-GC001-DISMISSAL-NOTICE', 'F-GC001-CRIME-WINDOW'],
+  // 현장 판정 — 고의적 직접 물리력 분류, 받침대 사전 결함 배제
+  E4: ['F-GC001-DEATH-CLASSIFICATION'],
+  // 운송 상자 스캔 — 21:09 이동과 21:10 임시 표식
+  E3: ['F-GC001-CRATE-MOVED-2109'],
+  // 반입대 고정 작업 기록 — 그 시각 문소라의 위치와 "메인 전시홀까지 최소 2분"
+  E6: ['F-GC001-MUN-AT-LOADING-2118', 'F-GC001-MAIN-LOADING-TRAVEL-TIME'],
+  // 출입 패널 점검 기록 — 패널은 문 열림만 남긴다
+  E7: ['F-GC001-DOOR-OPEN-NOT-PASSAGE'],
+  // 카메라 조각 — 21:18 라벨 교체, 얼굴 식별 불가
+  E8: ['F-GC001-LABEL-CHANGED-2118'],
+  // 수정 라벨 기록 — 21:11 발급, 발급자, 세션 공유 가능성
+  E9: ['F-GC001-REV17-ISSUED-2111', 'F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-REV17-SESSION-SHARABLE'],
+}
+
 /* ────────────────────────────── 조회 헬퍼 ────────────────────────────── */
 
 const CLAIM_BY_ID = new Map(GC001_CLAIMS.map((c) => [c.id, c]))
@@ -282,6 +315,9 @@ export const gc001KnownFacts = (): FactDef[] => GC001_FACTS.filter((f) => f.know
  * 여기서 하는 일은 딱 하나다: `KNOWN → QUESTIONABLE`. **거짓말이라고 말하지 않는다** (AC-12).
  * 그다음(추궁)은 플레이어가 움직여야 한다 (명세 §14).
  *
+ * 곁일 하나: 어떤 기록이 진술을 흔드는 데 실제로 쓰였다면 그 기록은 **의미가 파악된 것**이다
+ * (`DISCOVERED → UNDERSTOOD`, 명세 §8). 종이를 쥔 것과 그 종이가 무엇을 말하는지 아는 것은 다르다.
+ *
  * 순수 함수라 호출 시점을 자유롭게 잡을 수 있다 — 기록을 조회한 직후, 진술을 들은 직후,
  * 어느 쪽이든 같은 결과가 나온다 (AC-14: 조사 순서가 달라도 같은 Truth).
  */
@@ -291,7 +327,16 @@ export function applyGc001Tension(s: InquiryState): InquiryState {
   for (const c of GC001_CLAIMS) {
     if (!next.claims[c.id]) continue
     const hits = (c.tension ?? []).filter((t) => held.has(t))
-    if (hits.length) next = question(next, c.id, hits)
+    if (!hits.length) continue
+    next = question(next, c.id, hits)
+    for (const id of hits) if (/^E\d+$/.test(id)) next = understand(next, id)
   }
   return next
+}
+
+/** 기록을 확보했다 — 그 종이에 적힌 사실까지 함께 알게 된다 */
+export function discoverGc001Evidence(s: InquiryState, evId: string): InquiryState {
+  let next = discover(s, evId)
+  for (const f of GC001_EVIDENCE_FACTS[evId] ?? []) next = learnFact(next, f)
+  return applyGc001Tension(next)
 }

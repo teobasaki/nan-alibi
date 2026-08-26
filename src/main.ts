@@ -54,11 +54,18 @@ import {
 import { FIELD_BUDGET, TALK_CAP, WEAPONS, WEAPON_TRACE } from './data/config'
 import { chalkData, renderChalkboard } from './ui/chalkboard'
 import {
-  createInquiry, discover, hear, learnFact, revise, heldClueIds, setMemo, setSuspect, shakyClaims,
+  createInquiry, hear, learnFact, revise, heldClueIds, setMemo, setSuspect, shakyClaims,
   type InquiryState,
 } from './engine/inquiry'
-import { inquiryView, renderInquiry } from './ui/inquiryPanel'
-import { applyGc001Tension, gc001Claim, gc001Fact, gc001KnownFacts } from './data/gc001-inquiry'
+import { CLAIM_STATE_LABEL, inquiryView, renderInquiry } from './ui/inquiryPanel'
+import { renderProofSheet, type ProofClue } from './ui/proofSheet'
+import { validateProof, VERDICT_LINE, type ProofContext } from './engine/proof'
+import {
+  GC001_CLUE_PICK, GC001_CULPRIT_PROOF, GC001_METHOD_PROOF, GC001_PROPOSITIONS,
+} from './data/gc001-proof'
+import {
+  applyGc001Tension, discoverGc001Evidence, gc001Claim, gc001Fact, gc001KnownFacts, GC001_CLAIMS,
+} from './data/gc001-inquiry'
 import { renderSidebar, type SidebarSuspect } from './ui/sidebar'
 import { createNotebookDrawer, type DrawerHandle } from './ui/drawer'
 import { heldRecordsFrom, renderCaseReview } from './ui/caseReview'
@@ -2382,10 +2389,13 @@ function applyInquiry(inq: AskInquiry | undefined): void {
   ui.inq = applyGc001Tension(next)
 }
 
-/** 기록을 확보했다 — 조사 계층에도 알린다. 흔들리는 진술은 그 즉시 다시 계산된다 */
+/**
+ * 기록을 확보했다 — 조사 계층에도 알린다.
+ * 그 종이에 적힌 사실까지 함께 배우고(§8), 흔들리는 진술은 그 즉시 다시 계산된다.
+ */
 function noteDiscovery(evId: string): void {
   if (!IS_GC001) return
-  ui.inq = applyGc001Tension(discover(ui.inq, evId))
+  ui.inq = discoverGc001Evidence(ui.inq, evId)
 }
 
 async function doAsk(s: SuspectId, question: string): Promise<void> {
@@ -2567,6 +2577,96 @@ function unlockNote(before: GameState, after: GameState, reveal: PresentReveal):
 }
 
 /**
+ * **GC-001 의 제출 — 답을 고르는 것이 아니라 논증을 낸다** (V0.2 §31~§34).
+ *
+ * 이 화면이 V0.2 의 결승선이다. 범인·방식과 함께 **근거 2~4개와 그 사슬**을 내고,
+ * 판정은 `validateProof` 가 명제로 한다. 판정이 서지 않으면 **수사는 끝나지 않는다** —
+ * 근거를 더 모아 다시 오는 것이 정상 진행이다.
+ *
+ * 화면은 정답을 모른다. 범인 id·명제 조건은 엔진과 사건 데이터에만 있다.
+ */
+function openProofSheet(): void {
+  const ov = h('div', 'overlay')
+
+  /** 손에 쥔 것만 근거가 된다 — 진술·사실·기록을 한 목록으로 (명세 §7 Clue 통합) */
+  const clues: ProofClue[] = []
+  for (const [id, t] of Object.entries(ui.inq.claims)) {
+    const c = gc001Claim(id)
+    if (!c) continue
+    clues.push({
+      id,
+      kind: 'CLAIM',
+      label: `${CASE.suspects[c.speaker].name}${c.at ? ` · ${c.at}` : ''} — “${c.text}”`,
+      detail: CLAIM_STATE_LABEL[t.state],
+      conflicted: t.state === 'DISPROVED',
+    })
+  }
+  for (const id of ui.inq.facts) {
+    const f = gc001Fact(id)
+    if (f) clues.push({ id, kind: 'FACT', label: f.text, detail: `출처 · ${f.source}` })
+  }
+  for (const id of ui.game.cards) {
+    const e = CASE.evidence.find((x) => x.id === id)
+    if (!e) continue
+    clues.push({
+      id,
+      kind: 'EVIDENCE',
+      label: `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}`,
+      ...(e.note ? { detail: e.note } : {}),
+    })
+  }
+
+  /** 판정에 쓰는 문맥 — 손에 쥔 것, 진술 상태, 브리핑 전제 */
+  const ctx = (): ProofContext => ({
+    propositions: GC001_PROPOSITIONS,
+    culpritProof: GC001_CULPRIT_PROOF,
+    methodProof: GC001_METHOD_PROOF,
+    held: [...new Set([...heldClueIds(ui.inq), ...ui.game.cards])],
+    given: gc001KnownFacts().map((f) => f.id),
+    claimStates: Object.fromEntries(
+      Object.entries(ui.inq.claims).map(([id, t]) => [id, t.state]),
+    ),
+    revisionOf: Object.fromEntries(
+      GC001_CLAIMS.filter((c) => c.revises).map((c) => [c.id, c.revises!]),
+    ),
+  })
+
+  const sheet = renderProofSheet({
+    people: SUSPECTS.map((s) => ({
+      id: s, name: CASE.suspects[s].name, job: `${CASE.suspects[s].age}세 · ${CASE.suspects[s].job}`,
+    })),
+    methods: [...(CASE.world?.weaponOptions ?? WEAPONS)],
+    clues,
+    pick: GC001_CLUE_PICK,
+    propositions: GC001_PROPOSITIONS.map((p) => ({ id: p.id, statement: p.statement })),
+    verdictLine: VERDICT_LINE,
+  }, {
+    judge: (sub) => {
+      // 여정 기록은 `showResult` 가 남긴다 — 여기서 또 남기면 한 판에 제출이 여러 번 찍힌다
+      const r = validateProof(sub, ctx())
+      play(r.verdict === 'PROVEN' ? 'stamp' : 'deny')
+      return r
+    },
+    accept: (sub) => {
+      /**
+       * 입증됐다 — 이제 판을 닫는다. 채점은 기존 엔진이 그대로 한다(3축 순수 함수):
+       * V0.2 는 **판정 기준**을 바꿨을 뿐 점수 계산을 새로 만들지 않았다.
+       * 동기 축은 이 경로에서 묻지 않으므로 사건의 값을 그대로 넘긴다 — 명세 §31 의
+       * 제출 구조가 `범인 + 방식 + 근거` 셋이기 때문이다.
+       */
+      fadeOut(ov)
+      showResult(sub.culpritId as SuspectId, CASE.motive, sub.methodId)
+    },
+    close: () => { play('paper'); fadeOut(ov) },
+  })
+
+  ov.appendChild(sheet)
+  ov.onclick = (e) => { if (e.target === ov) fadeOut(ov) }
+  document.body.appendChild(ov)
+  queueMicrotask(() => (ov.querySelector('button') as HTMLButtonElement | null)?.focus())
+}
+
+/**
  * 마지막 답변에 타자기 연출을 건다.
  *
  * **`.stagechip` 을 반드시 제외한다.** 파이프라인 칩도 `bubble a` 클래스를 쓰는데,
@@ -2592,6 +2692,8 @@ function animateLast(text: string): void {
  * 둘 다 잠긴 기록 사슬 하나에 걸려 점수가 몰렸고, 이제 그 사슬은 통찰 보너스(+10)로만 산다.
  */
 function openSubmit(): void {
+  // GC-001 은 명제로 판정한다 (V0.2 §31~§34). 시드 사건은 기존 3축 시트를 그대로 쓴다.
+  if (IS_GC001) return openProofSheet()
   const ov = h('div', 'overlay')
   const sheet = h('div', 'sheet casefile')
   sheet.appendChild(fileHeader('송치\n의견'))
