@@ -1,0 +1,417 @@
+/*
+ * 녹색 칠판 타임라인 — 제2막 메인 화면의 중심 표.
+ *
+ * 이 표가 하는 말은 하나다: **"여기를 채워라."**
+ * 그래서 처음에는 비어 있고, 빈 칸에는 "여기 적힌다" 만 암시하는 점선 밑줄이 있다.
+ * 채워지는 것은 장소이고, 채우는 행위는 심문이다.
+ *
+ * 질감 원칙 — 균일한 초록은 칠판이 아니라 초록 사각형이다.
+ *   ① 바탕은 얼룩진다 (vignette + 지우개 자국 + 분필 가루)
+ *   ② 결이 있다 (feTurbulence 그레인 · 외부 에셋 0장, data URI)
+ *   ③ 글씨는 자로 잰 듯 놓이지 않는다 (칸마다 결정론적 미세 기울기)
+ *   ④ 획 끝이 흐려진다 (text-shadow 이중 글로우 + SVG 변위 필터)
+ *
+ * 색 세 개만 쓴다: 하얀 분필 · 다홍 분필(범행 시각) · 붉은 분필(어긋남).
+ * **색만으로 구분하지 않는다** — 다홍에는 '범행 추정' 표가, 붉음에는 '어긋남' 표와 ✕ 획이 함께 간다.
+ *
+ * 이 파일은 src/style.css 와 독립이다. 토큰은 전부 .chalkboard 스코프 안에서 정의한다
+ * (부품 단독 데모 하네스에서도 같은 모습으로 서야 한다).
+ */
+
+.chalkboard {
+  /* ── 칠판 물성 ── */
+  --cb-board:     #2b3c33;   /* 슬레이트 그린 — 초록기 도는 진회색 */
+  --cb-board-lo:  #1a2620;
+  --cb-board-hi:  #40594b;
+  --cb-chalk:     #eef2e7;   /* 하얀 분필 — 살짝 따뜻하다 */
+  --cb-chalk-2:   rgba(238, 242, 231, .56);
+  --cb-chalk-3:   rgba(238, 242, 231, .30);
+  --cb-rule:      rgba(226, 236, 222, .26);
+  --cb-verm:      #ff8b66;   /* 다홍 분필 — 범행 시각 */
+  --cb-brick:     #f26a58;   /* 붉은 분필 — 어긋남 */
+  --cb-wood:      #4b3627;
+  --cb-wood-lo:   #291d15;
+  --cb-wood-hi:   #77563d;
+  --cb-timecol:   minmax(96px, .8fr);
+  --cb-colmin:    72px;
+  --cb-rowh:      52px;
+
+  display: flex;
+  flex-direction: column;
+  /* 부모가 높이를 정해 주면 그 안에서 표가 스스로 스크롤한다. 안 정해 주면 내용만큼 자란다 */
+  height: 100%;
+  min-height: 0;
+  font-family: var(--serif, AppleMyungjo, Batang, 'Nanum Myeongjo', 'Apple SD Gothic Neo', serif);
+  color: var(--cb-chalk);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 필터 정의만 담은 0×0 SVG — 문서에 있어야 url(#…) 이 산다 */
+.cb-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* ── 나무 테두리 ── */
+.cb-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 13px 13px 0;
+  border-radius: 7px;
+  background:
+    repeating-linear-gradient(92deg, rgba(0,0,0,.16) 0 2px, rgba(255,255,255,.03) 2px 5px),
+    linear-gradient(178deg, var(--cb-wood-hi), var(--cb-wood) 22%, var(--cb-wood-lo));
+  box-shadow:
+    0 22px 44px rgba(0, 0, 0, .48),
+    inset 0 1px 0 rgba(255, 255, 255, .16),
+    inset 0 -1px 0 rgba(0, 0, 0, .4);
+}
+
+/* ── 칠판 면 ── */
+.cb-surface {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px 14px;
+  border-radius: 3px;
+  overflow: hidden;
+  background:
+    /* 지우개가 훑고 간 자리 — 가루가 남아 살짝 뿌옇다 */
+    radial-gradient(58% 13% at 22% 26%, rgba(255,255,255,.055), transparent 72%),
+    radial-gradient(46% 10% at 74% 41%, rgba(255,255,255,.045), transparent 72%),
+    radial-gradient(66% 15% at 46% 68%, rgba(255,255,255,.04),  transparent 74%),
+    radial-gradient(38% 9%  at 86% 82%, rgba(255,255,255,.05),  transparent 70%),
+    radial-gradient(30% 8%  at 12% 88%, rgba(255,255,255,.035), transparent 70%),
+    /* 아래로 갈수록 분필 가루가 쌓인다 */
+    linear-gradient(to top, rgba(238,242,231,.07), transparent 20%),
+    /* 빛은 위쪽 왼편에서 든다 · 네 귀퉁이는 어둡다 */
+    radial-gradient(115% 85% at 38% 22%, rgba(255,255,255,.075), transparent 62%),
+    radial-gradient(112% 108% at 50% 50%, transparent 52%, rgba(0,0,0,.42)),
+    linear-gradient(168deg, var(--cb-board-hi), var(--cb-board) 34%, var(--cb-board-lo));
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, .55),
+    inset 0 0 0 1px rgba(0, 0, 0, .3);
+}
+
+/* 결 — 외부 에셋 없이 feTurbulence 를 data URI 로 굽는다 */
+.cb-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .42;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ── 머리말 ── */
+.cb-head { position: relative; margin-bottom: 12px; flex: none; }
+.cb-cap {
+  font-size: 20px;
+  letter-spacing: 1.4px;
+  line-height: 1.25;
+}
+.cb-cap-rule {
+  display: block;
+  width: 100%;
+  max-width: 132px;
+  height: 7px;
+  margin-top: 3px;
+  overflow: visible;
+}
+.cb-hint {
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--cb-chalk-2);
+  letter-spacing: .2px;
+  max-width: 62ch;
+}
+
+/* ── 표 ── */
+.cb-scroll { flex: 1; min-height: 0; overflow: auto; margin: 0 -4px; padding: 0 4px; }
+.cb-table {
+  display: grid;
+  /*
+   * `min-height:100%` 를 쓰면 1fr 행이 **스크롤 영역보다 큰 높이**를 나눠 갖고
+   * 마지막 행이 잘린다 (브라우저가 flex 아이템의 잠정 높이로 fr 을 푼다).
+   * `height:100%` 는 확정 높이를 주므로 행이 정확히 그 안에서 나뉜다.
+   */
+  height: 100%;
+  /* grid-template-columns / -rows 는 사람 수·시각 수에 맞춰 JS 가 인라인으로 넣는다 */
+}
+.cb-row { display: contents; }
+
+/* 행 래퍼는 display:contents 라 그리드 항목은 이 넷이다 (`.cb-table > *` 로는 안 잡힌다) */
+.cb-corner, .cb-name, .cb-time, .cb-cell {
+  position: relative;
+  min-width: 0;
+  padding: 8px 6px;
+  background-repeat: no-repeat;
+}
+
+/*
+ * 괘선은 자가 아니라 손이 그었다 — 획 끝에서 압력이 빠지며 흐려진다.
+ * 가로줄은 칸 위쪽에, 세로줄은 칸 왼쪽에. 표 바깥 테두리는 긋지 않는다.
+ */
+.cb-cell, .cb-time {
+  background-image:
+    linear-gradient(90deg, transparent, var(--cb-rule) 5%, rgba(226,236,222,.32) 52%, var(--cb-rule) 95%, transparent),
+    linear-gradient(180deg, transparent, var(--cb-rule) 8%, var(--cb-rule) 92%, transparent);
+  background-position: top left, top left;
+  background-size: 100% 1.5px, 1.5px 100%;
+}
+.cb-time { background-image: linear-gradient(90deg, transparent, var(--cb-rule) 5%, rgba(226,236,222,.32) 52%, var(--cb-rule) 95%, transparent); background-size: 100% 1.5px; }
+
+/* 머리행 아래는 두 줄 — 표의 어깨선 */
+.cb-name, .cb-corner {
+  align-self: end;
+  padding-bottom: 10px;
+  background-image:
+    linear-gradient(90deg, transparent, rgba(226,236,222,.5) 6%, rgba(226,236,222,.5) 94%, transparent),
+    linear-gradient(90deg, transparent, rgba(226,236,222,.24) 6%, rgba(226,236,222,.24) 94%, transparent);
+  background-position: bottom left, left calc(100% - 4px);
+  background-size: 100% 1.6px, 100% 1.1px;
+}
+
+/* 모서리 칸 — 축의 이름을 사선으로 나눠 적는다 */
+.cb-corner { display: grid; }
+.cb-slash { position: absolute; inset: 6px 8px 10px; width: auto; height: auto; }
+.cb-corner-a, .cb-corner-b {
+  font-size: 11px;
+  color: var(--cb-chalk-2);
+  letter-spacing: 1px;
+  line-height: 1;
+}
+.cb-corner-a { justify-self: end; }
+.cb-corner-b { justify-self: start; align-self: end; margin-top: 12px; }
+
+/* ── 열머리: 사람 ── */
+.cb-name { text-align: center; }
+.cb-name-in { display: inline-block; }
+.cb-name-t { position: relative; display: block; font-size: 16px; letter-spacing: 1.2px; line-height: 1.3; }
+.cb-name-j { display: block; margin-top: 3px; font-size: 10.5px; letter-spacing: .4px; color: var(--cb-chalk-2); }
+.cb-name-u { display: block; width: 100%; height: 6px; margin-top: 3px; overflow: visible; }
+.cb-name.out .cb-name-t, .cb-name.out .cb-name-j { color: var(--cb-chalk-3); }
+.cb-strike { position: absolute; left: -5%; top: 38%; width: 110%; height: 10px; }
+.cb-tag-out {
+  display: block; margin-top: 2px;
+  font-size: 9.5px; letter-spacing: .6px; color: var(--cb-chalk-3);
+}
+
+/* ── 행머리: 시각 ── */
+.cb-time { display: flex; flex-direction: column; justify-content: center; padding-left: 4px; }
+.cb-time-t { font-size: 17px; letter-spacing: 1.6px; font-variant-numeric: tabular-nums; }
+.cb-time-n { margin-top: 3px; font-size: 10px; letter-spacing: .5px; color: var(--cb-chalk-3); }
+
+/* 범행 시각 — 다홍 분필. 색 하나로 두지 않고 '범행 추정' 표와 밑줄이 함께 간다 */
+.cb-time.crime .cb-time-t { color: var(--cb-verm); }
+.cb-time.crime .cb-tag-crime {
+  display: block; margin-top: 4px;
+  font-size: 10px; letter-spacing: 1.2px; color: var(--cb-verm);
+}
+/* 고정 폭이면 좁은 화면에서 시각 칸을 넘어 옆 칸까지 그어진다 — 칸 안에서 재운다 */
+.cb-time-u { display: block; width: 100%; max-width: 84px; height: 7px; margin-top: 2px; overflow: visible; }
+.cb-time.crime, .cb-cell.crime { background-color: rgba(255, 172, 145, .085); }
+
+/* ── 칸 ── */
+.cb-cell { display: grid; place-items: center; text-align: center; }
+.cb-place {
+  display: inline-block;
+  font-size: 14.5px;
+  letter-spacing: .8px;
+  line-height: 1.35;
+}
+.cb-cell.crime .cb-place { font-size: 15.5px; }
+
+/* 빈 칸 — 아무것도 없다. "여기 적힌다" 만 암시한다 */
+.cb-blank {
+  display: block;
+  width: 46%;
+  min-width: 34px;
+  height: 0;
+  border-bottom: 1.5px dotted rgba(238, 242, 231, .2);
+}
+
+/*
+ * 어긋난 칸 — 붉은 분필로 크게 ✕.
+ * ✕ 는 **글씨 뒤에 깔린다.** 위에 얹으면 무엇이 어긋났는지(장소 이름)를 못 읽는다 —
+ * 표시가 정보를 지워 버리면 표시가 아니라 삭제다.
+ * 색만으로 말하지 않도록 '어긋남' 표가 함께 간다.
+ */
+.cb-cell-in { position: relative; z-index: 1; }
+.cb-x {
+  position: absolute;
+  inset: 10% 17%;
+  z-index: 0;
+  width: auto; height: auto;
+  pointer-events: none;
+}
+.cb-tag-bad {
+  position: absolute;
+  left: 0; right: 0; bottom: 1px;
+  z-index: 2;
+  text-align: center;
+  font-size: 9.5px; letter-spacing: .8px;
+  color: var(--cb-brick);
+}
+
+/* 집힌 칸 — 분필로 동그라미를 친다 */
+.cb-ring {
+  position: absolute;
+  inset: 8% 6%;
+  z-index: 2;
+  width: auto; height: auto;
+  pointer-events: none;
+}
+
+/* ── 분필 획 공통 ── */
+.cb-frame path {
+  fill: none;
+  stroke: var(--cb-chalk);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 2px rgba(238, 242, 231, .28));
+}
+.cb-time-u path { stroke: var(--cb-verm); filter: drop-shadow(0 0 2.5px rgba(255, 139, 102, .4)); }
+.cb-x path { stroke: var(--cb-brick); stroke-width: 3; filter: drop-shadow(0 0 3px rgba(242, 106, 88, .38)); }
+.cb-ring path { stroke: var(--cb-chalk); stroke-width: 2.4; }
+.cb-strike path { stroke: var(--cb-chalk-2); }
+.cb-slash path { stroke: var(--cb-chalk-3); stroke-width: 1.4; }
+.cb-name-u path, .cb-cap-rule path { stroke: var(--cb-chalk-2); stroke-width: 1.6; }
+
+/*
+ * 분필 글씨 — 획이 거칠고 끝이 흐려진다.
+ * ① 이중 글로우: 안쪽은 또렷하고 바깥은 가루처럼 번진다
+ * ② 얇은 흰 테두리: 획 가장자리가 눌린 자국
+ * ③ SVG 변위 필터: 직선을 미세하게 흔들어 활자 티를 지운다 (지원 없으면 그냥 또렷할 뿐)
+ * ④ 칸마다 결정론적 미세 기울기 — Math.random() 은 이 저장소의 금기다
+ */
+.cb-ink {
+  display: inline-block;
+  transform: rotate(var(--cb-tilt, 0deg)) translate(var(--cb-dx, 0px), var(--cb-dy, 0px));
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, .55),
+    0 0 3px rgba(233, 245, 232, .3),
+    0 0 9px rgba(214, 236, 216, .16),
+    0 1px 1px rgba(0, 0, 0, .3);
+  -webkit-text-stroke: .34px rgba(255, 255, 255, .22);
+  filter: url(#cbChalkRough);
+}
+.cb-time.crime .cb-ink {
+  text-shadow:
+    0 0 1px rgba(255, 190, 165, .6),
+    0 0 4px rgba(255, 139, 102, .4),
+    0 0 11px rgba(255, 139, 102, .22),
+    0 1px 1px rgba(0, 0, 0, .3);
+  -webkit-text-stroke: .32px rgba(255, 190, 165, .22);
+}
+
+/* ── 조작 ── */
+/*
+ * 눌리는 칸은 진짜 <button> 이다 — 표의 의미(행/열 머리)는 role 이 지키고,
+ * 키보드·스크린리더는 버튼이 맡는다.
+ * `all: unset` 은 position 까지 static 으로 되돌린다 — 안의 분필 획(✕·동그라미)이
+ * 칸이 아니라 **칠판 전체**를 기준으로 자리를 잡아 화면을 가로지른다. relative 를 반드시 되돌린다.
+ */
+.cb-btn {
+  all: unset;
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 40px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color .14s ease;
+}
+.cb-btn:hover { background-color: rgba(238, 242, 231, .07); }
+.cb-btn:focus-visible {
+  outline: 2px solid var(--cb-chalk);
+  outline-offset: -2px;
+  background-color: rgba(238, 242, 231, .09);
+}
+.cb-name .cb-btn:hover .cb-name-t { color: #fff; }
+
+/* ── 아무것도 안 적힌 칠판 ── */
+.cb-empty {
+  flex: none;
+  margin-top: 10px;
+  font-size: 12px;
+  letter-spacing: .3px;
+  color: var(--cb-chalk-3);
+}
+
+/* ── 분필 받침 ── */
+.cb-tray {
+  flex: none;
+  position: relative;
+  height: 15px;
+  margin: 11px -13px 0;
+  border-radius: 0 0 7px 7px;
+  background: linear-gradient(180deg, var(--cb-wood-hi), var(--cb-wood) 40%, var(--cb-wood-lo));
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .45), 0 3px 8px rgba(0, 0, 0, .35);
+}
+.cb-stick, .cb-eraser { position: absolute; top: 3px; border-radius: 2px; }
+.cb-stick {
+  width: 42px; height: 7px;
+  background: linear-gradient(180deg, #f4f6ee, #cfd3c6);
+  box-shadow: 0 1px 2px rgba(0,0,0,.4);
+  left: 6%;
+  transform: rotate(-1.2deg);
+}
+.cb-stick.red {
+  width: 27px;
+  left: calc(6% + 52px);
+  background: linear-gradient(180deg, #ffa287, #d4574a);
+  transform: rotate(1.6deg);
+}
+.cb-eraser {
+  right: 8%;
+  width: 46px; height: 9px; top: 2px;
+  background: linear-gradient(180deg, #6c5f52 0 45%, #3b332c 45%);
+  box-shadow: 0 1px 3px rgba(0,0,0,.45);
+}
+
+/* ── 연출 — 처음 그어질 때 한 번 ── */
+@media (prefers-reduced-motion: no-preference) {
+  .cb-x.fresh path {
+    stroke-dasharray: 160;
+    stroke-dashoffset: 160;
+    animation: cb-draw .34s cubic-bezier(.3, .8, .4, 1) forwards;
+  }
+  .cb-x.fresh path:nth-child(2) { animation-delay: .16s; }
+}
+@keyframes cb-draw { to { stroke-dashoffset: 0; } }
+
+/* ── 좁은 화면 ── */
+@media (max-width: 860px) {
+  .chalkboard { --cb-timecol: minmax(78px, .7fr); --cb-colmin: 64px; --cb-rowh: 52px; }
+  .cb-surface { padding: 13px 12px 11px; }
+  .cb-cap { font-size: 17px; }
+  .cb-hint { font-size: 11.5px; }
+  .cb-name-t { font-size: 14px; }
+  .cb-name-j { display: none; }
+  .cb-time-t { font-size: 15px; }
+  .cb-place { font-size: 12.5px; letter-spacing: .3px; }
+  .cb-table > * { padding: 6px 3px; }
+}
+@media (max-width: 560px) {
+  .chalkboard { --cb-timecol: minmax(64px, .6fr); --cb-colmin: 58px; --cb-rowh: 48px; }
+  .cb-surface { padding: 11px 9px 9px; }
+  .cb-cap { font-size: 15px; letter-spacing: .8px; }
+  .cb-hint { font-size: 11px; }
+  .cb-name-t { font-size: 12.5px; letter-spacing: .2px; }
+  .cb-time-t { font-size: 13px; letter-spacing: .6px; }
+  .cb-place { font-size: 11.5px; letter-spacing: 0; }
+  .cb-corner-a, .cb-corner-b { font-size: 9.5px; letter-spacing: 0; }
+}
+@media (pointer: coarse) {
+  .cb-btn { min-height: 44px; }
+}
