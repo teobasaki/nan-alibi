@@ -119,6 +119,11 @@ interface UI {
   note: string | null
   /** 이미 화면에 찍힌 인장 — 재렌더 때 전부 다시 찍히는 걸 막는다 */
   stamped: Set<string>
+  /**
+   * 마지막으로 만난 사람 — 칠판으로 돌아오면 **그 사람의 행에 조명이 남는다**
+   * (팀 3-2-(5)-(2) 3단계). 판정이 아니라 "내가 방금 어디까지 봤는지" 의 표시다.
+   */
+  lastWho: SuspectId | null
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
   /** AI 파이프라인 판을 펼쳤는가 */
   dash: boolean
@@ -229,6 +234,7 @@ const ui: UI = {
   wallStamped: new Set(),
   note: null,
   stamped: new Set(),
+  lastWho: null,
   dash: false,
   opening: false,
   journalSeen: 0,
@@ -974,7 +980,12 @@ function act2Main(): HTMLElement {
   if (ui.explore) return exploreRoom()
   if (ui.wall) return cardWallPage()
   const board = renderChalkboard(
-    chalkData(CASE, ui.game, { selected: ui.selected, stampedSeen: ui.stamped }),
+    chalkData(CASE, ui.game, {
+      selected: ui.selected,
+      stampedSeen: ui.stamped,
+      // 방금 나온 취조실의 그 사람 — 돌아온 자리를 표가 기억한다 (팀 3-2-(5)-(2) 3단계)
+      litSuspect: ui.lastWho,
+    }),
     {
       pickCell: (s, t) => pickCard(claimCardId(s as SuspectId, t as Slot)),
       pickSuspect: (s) => {
@@ -3220,6 +3231,11 @@ function restoreFocus(key: string): void {
 
 function render(): void {
   const keep = (document.activeElement as HTMLElement | null)?.dataset?.fk ?? null
+  /**
+   * 마지막으로 만난 사람을 여기 한 곳에서 잡는다. `ui.active` 를 대입하는 자리가 여덟 곳이라
+   * 각각에 적으면 하나를 빠뜨리는 순간 조명이 엉뚱한 행에 남는다 — 그리기 직전이 유일한 관문이다.
+   */
+  if (ui.active) ui.lastWho = ui.active
   // 전체 재렌더의 대가 — 스크롤 위치. 측정상 렌더 자체는 0.8ms 라 비용이 아니지만,
   // 오른쪽 기록 더미를 내려보다 행동하면 맨 위로 튀는 건 실제 불편이다.
   const scrolls = Array.from(app.querySelectorAll('.col')).map((c) => c.scrollTop)
@@ -3329,5 +3345,36 @@ function showStartPage(): void {
   queueMicrotask(() => go.focus())
 }
 
-render()
-showStartPage()
+/**
+ * **DEV 전용 검증 통로** — `?dev=act2[&who=S3][&ev=3]`
+ *
+ * UI 를 브라우저에서 실제로 재려면 매번 인트로 10칸 · 브리핑 3장 · 30초 현장을 통과해야 했다.
+ * 그 통로 때문에 "화면을 직접 열어서 확인한다"(AGENTS.md §4) 가 비싼 일이 되고,
+ * 비싸지면 건너뛰게 된다 — 이 저장소에서 가장 비쌌던 실패가 전부 그 지점에서 나왔다.
+ *
+ * 이 통로는 **상태를 엔진 함수로만 만든다.** `lookupEvidence`·`interview`·`timeUp` 만 쓰므로
+ * 여기서 만들어지는 상태는 실제 플레이로 도달 가능한 상태다 (규칙을 우회하지 않는다).
+ * `import.meta.env.DEV` 가드 안에 있어 프로덕션 번들에는 이 블록이 들어가지 않는다.
+ */
+const DEV_JUMP = import.meta.env.DEV
+  ? new URLSearchParams(location.search).get('dev')
+  : null
+
+if (DEV_JUMP === 'act2') {
+  const q = new URLSearchParams(location.search)
+  const want = Math.max(0, Math.min(FIELD_BUDGET, Number(q.get('ev') ?? 3)))
+  for (const e of CASE.evidence.slice(0, want)) ui.game = lookupEvidence(ui.game, e.id)
+  ui.game = timeUp(ui.game)          // 시간 종료 = 예산 소진 (기획서 §2) — 제2막 게이트가 열린다
+  syncChapter()
+  ui.wall = false                    // 첫 화면을 칠판으로 (검증 대상)
+  const who = q.get('who') as SuspectId | null
+  if (who && SUSPECTS.includes(who)) {
+    ui.game = interview(ui.game, who)
+    ui.active = who
+  }
+  render()
+  console.info('[DEV] ?dev=act2 — 인트로·브리핑·현장을 건너뛰고 제2막에서 시작한다')
+} else {
+  render()
+  showStartPage()
+}

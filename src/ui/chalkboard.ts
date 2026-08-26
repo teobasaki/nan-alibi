@@ -6,9 +6,14 @@
  * 빈 칸에는 값 대신 "여기 적힌다" 만 암시하는 점선 밑줄이 있다.
  *
  * ## 축
- * **행이 시각, 열이 사람이다.** (기존 `main.ts`의 `alibiGrid()` 와 축이 뒤집혀 있다.)
- * 시간이 위에서 아래로 흐르는 편이 타임라인의 은유에 맞고, 사람이 늘어도 가로로만 늘어난다.
- * 범행 시각 행은 반드시 있고, 그 행만 다홍 분필로 쓰이며 살짝 밝다.
+ * **행이 사람, 열이 시각이다.** (팀 명세 3-2-(5)-(2) 1단계 — 팀이 3-2-(2) 의 축을 스스로 뒤집었다.)
+ * 팀 진단: *"각 인물의 흐름을 따라가기가 어렵다. 시선이 위아래로 많이 끊겨서 정보 대조가
+ * 직관적이지 않다."* 한 사람의 알리바이는 **시간의 열**이므로 왼쪽에서 오른쪽으로 읽혀야 한다.
+ * 범행 시각 열은 반드시 있고, 그 열만 다홍 분필로 쓰이며 살짝 밝다.
+ *
+ * 전치할 때 깨지기 쉬운 계약이 하나 있다 — `cell()` 은 **칸당 정확히 한 번만** 부른다
+ * (`fresh` 를 소모한다). 그래서 렌더는 그리기 전에 표 전체를 먼저 읽는다.
+ * `tests/chalkboard.test.ts` 가 이 계약과 축을 함께 잠근다.
  *
  * ## 경계 (이 저장소의 상수)
  * - **판정하지 않는다.** 모순 여부·소거 여부는 전부 engine 이 이미 정한 값을 읽기만 한다.
@@ -41,7 +46,7 @@ export interface ChalkCell {
   fresh?: boolean
 }
 
-/** 행 하나 = 시각 하나 */
+/** 열 하나 = 시각 하나 (전치 후) */
 export interface ChalkSlot {
   /** **이미 `slotLabel` 을 지난 문자열** */
   label: string
@@ -51,7 +56,7 @@ export interface ChalkSlot {
   note?: string
 }
 
-/** 열 하나 = 사람 하나 */
+/** 행 하나 = 사람 하나 (전치 후) */
 export interface ChalkSuspect {
   id: string
   name: string
@@ -70,6 +75,11 @@ export interface ChalkBoardData {
   caption?: string
   /** 머리말 밑 한 줄. 없으면 기본 문구. 빈 문자열이면 안 그린다 */
   hint?: string
+  /**
+   * 지금 눈이 가 있는 사람 — 그 **행 전체가 조금 밝아진다** (팀 3-2-(5)-(2) 3단계).
+   * 판정이 아니라 조명이다. 없으면 아무 행도 밝지 않다.
+   */
+  litSuspect?: string | null
 }
 
 export interface ChalkHandlers {
@@ -91,6 +101,8 @@ export interface ChalkOpts {
   stampedSeen?: Set<string>
   caption?: string
   hint?: string
+  /** 행 하나를 밝혀 둔다 (마지막으로 만난 사람 등). 조명이며 판정이 아니다 */
+  litSuspect?: string | null
 }
 
 /**
@@ -128,6 +140,7 @@ export function chalkData(c: CaseFile, g: GameState, o: ChalkOpts): ChalkBoardDa
     suspects,
     caption: o.caption,
     hint: o.hint,
+    litSuspect: o.litSuspect ?? null,
     cell(suspectId, slotIndex) {
       const s = suspectId as SuspectId
       const t = slotIndex as Slot
@@ -179,8 +192,6 @@ const D_UNDERLINE = 'M2 5.4 C 20 2.6, 43 6.8, 62 3.4 C 76 1.2, 88 5, 98 3'
 const D_NAME_LINE = 'M4 4.6 C 26 2.2, 58 6.2, 96 3.2'
 /** 소거선 */
 const D_STRIKE = 'M2 6.4 C 24 2.8, 56 8.4, 98 4.2'
-/** 모서리 사선 */
-const D_SLASH = 'M3 4 C 28 26, 60 60, 97 96'
 /** 크게 그은 ✕ 두 획 */
 const D_X1 = 'M8 12 C 30 34, 58 58, 92 88'
 const D_X2 = 'M90 10 C 66 36, 40 58, 10 90'
@@ -281,15 +292,16 @@ export function renderChalkboard(d: ChalkBoardData, on: ChalkHandlers): HTMLElem
   cap.appendChild(ink('', d.caption ?? '알리바이 대조표', 3))
   head.appendChild(cap)
   head.appendChild(stroke('cb-cap-rule', '0 0 100 8', D_UNDERLINE))
-  const hint = d.hint ?? '세로는 시각, 가로는 사람이다. 심문으로 받아낸 진술이 이 칸에 적힌다.'
+  const hint = d.hint ?? '세로는 사람, 가로는 시각이다. 한 사람의 밤을 왼쪽에서 오른쪽으로 읽는다.'
   if (hint) head.appendChild(el('div', 'cb-hint', hint))
   surface.appendChild(head)
 
   /*
    * 칸을 **먼저 한 번에 다 읽는다.** `cell()` 은 `fresh` 를 소모하므로 두 번 부르면
    * 처음 그어지는 획이 조용히 사라진다. 읽고 나서 그린다.
+   * 전치 후에는 첫 축이 사람이다 — `grid[si][ti]`.
    */
-  const grid: ChalkCell[][] = d.slots.map((_, ti) => d.suspects.map((s) => d.cell(s.id, ti)))
+  const grid: ChalkCell[][] = d.suspects.map((s) => d.slots.map((_, ti) => d.cell(s.id, ti)))
   const written = grid.some((row) => row.some((c) => c.place !== null))
 
   /* ── 표 ── */
@@ -299,29 +311,65 @@ export function renderChalkboard(d: ChalkBoardData, on: ChalkHandlers): HTMLElem
   table.setAttribute('aria-label', d.caption ?? '알리바이 대조표')
   // 칸을 무한정 줄이느니 가로로 넘긴다 — 못 읽는 표는 표가 아니다 (`--cb-colmin`)
   table.style.gridTemplateColumns =
-    `var(--cb-timecol) repeat(${d.suspects.length}, minmax(var(--cb-colmin), 1fr))`
-  table.style.gridTemplateRows = `auto repeat(${d.slots.length}, minmax(var(--cb-rowh), 1fr))`
+    `var(--cb-namecol) repeat(${d.slots.length}, minmax(var(--cb-colmin), 1fr))`
+  table.style.gridTemplateRows = `auto repeat(${d.suspects.length}, minmax(var(--cb-rowh), 1fr))`
+  /**
+   * 밝혀진 행 — `data-lit` 하나로 CSS 가 그 사람의 칸을 전부 집는다.
+   * `.cb-row` 는 `display: contents` 라 행을 한 덩이로 호버할 수 없다(자식이 곧 그리드 항목이다).
+   * 그래서 칸마다 `data-who` 를 달고, 표의 `data-lit` 과 짝지어 조명을 켠다 — 재렌더가 없다.
+   */
+  const lit = (who: string | null): void => {
+    if (who) table.dataset.lit = who
+    else delete table.dataset.lit
+  }
+  lit(d.litSuspect ?? null)
 
-  /* 머리행 — 사람 */
+  /* 머리행 — 시각 */
   const headRow = el('div', 'cb-row')
   headRow.setAttribute('role', 'row')
+  /**
+   * 모서리 칸 — 두 축의 이름만 적는다.
+   * 예전에는 사선 획 하나를 그어 칸을 반으로 나눴는데, 전치 후 이 칸이 낮고 넓어져서
+   * (실측 179×74) `preserveAspectRatio="none"` 이 그 사선을 거의 수평선으로 눕혔다 —
+   * 축을 나누는 표시가 아니라 정체불명의 줄 하나가 됐다. **장식을 줄인다** (DESIGN-GUIDE §5).
+   */
   const corner = el('div', 'cb-corner')
   corner.setAttribute('role', 'columnheader')
-  corner.appendChild(stroke('cb-slash', '0 0 100 100', D_SLASH))
-  corner.appendChild(el('span', 'cb-corner-a', '사람'))
-  corner.appendChild(el('span', 'cb-corner-b', '시각'))
+  corner.appendChild(el('span', 'cb-corner-a', '시각 →'))
+  corner.appendChild(el('span', 'cb-corner-b', '사람 ↓'))
   headRow.appendChild(corner)
 
-  d.suspects.forEach((s, ci) => {
-    const th = el('div', `cb-name${s.cleared ? ' out' : ''}`)
+  d.slots.forEach((slot, ti) => {
+    const th = el('div', `cb-slot${slot.isCrime ? ' crime' : ''}`)
     th.setAttribute('role', 'columnheader')
+    const tl = el('div', 'cb-slot-t')
+    tl.appendChild(ink('', slot.label, ti * 5))
+    th.appendChild(tl)
+    if (slot.isCrime) {
+      th.appendChild(stroke('cb-slot-u', '0 0 100 8', D_UNDERLINE))
+      th.appendChild(el('span', 'cb-tag-crime', '범행 추정'))
+    }
+    if (slot.note) th.appendChild(el('div', 'cb-slot-n', slot.note))
+    headRow.appendChild(th)
+  })
+  table.appendChild(headRow)
+
+  /* 본문 — 행 하나가 사람 하나 */
+  d.suspects.forEach((s, si) => {
+    const row = el('div', 'cb-row')
+    row.setAttribute('role', 'row')
+
+    /* 행머리 — 사람. 여기를 짚으면 심문으로 들어간다 */
+    const th = el('div', `cb-name${s.cleared ? ' out' : ''}`)
+    th.setAttribute('role', 'rowheader')
+    th.dataset.who = s.id
 
     const inner = el('span', 'cb-name-in')
     const nameLine = el('span', 'cb-name-t')
-    nameLine.appendChild(ink('', s.name, ci * 7 + 1))
+    nameLine.appendChild(ink('', s.name, si * 7 + 1))
     inner.appendChild(nameLine)
     if (s.job) inner.appendChild(el('span', 'cb-name-j', s.job))
-    // 소거선은 이름 위를 지난다 — 열머리 칸이 아니라 글자에 그어야 '지워졌다' 로 읽힌다
+    // 소거선은 이름 위를 지난다 — 행머리 칸이 아니라 글자에 그어야 '지워졌다' 로 읽힌다
     if (s.cleared) nameLine.appendChild(stroke('cb-strike', '0 0 100 10', D_STRIKE))
     inner.appendChild(stroke('cb-name-u', '0 0 100 8', D_NAME_LINE))
     if (s.cleared) inner.appendChild(el('span', 'cb-tag-out', '기록으로 소거'))
@@ -337,39 +385,21 @@ export function renderChalkboard(d: ChalkBoardData, on: ChalkHandlers): HTMLElem
     } else {
       th.appendChild(inner)
     }
-    headRow.appendChild(th)
-  })
-  table.appendChild(headRow)
-
-  /* 본문 — 행 하나가 시각 하나 */
-  d.slots.forEach((slot, ti) => {
-    const row = el('div', 'cb-row')
-    row.setAttribute('role', 'row')
-
-    const th = el('div', `cb-time${slot.isCrime ? ' crime' : ''}`)
-    th.setAttribute('role', 'rowheader')
-    const tl = el('div', 'cb-time-t')
-    tl.appendChild(ink('', slot.label, ti * 5))
-    th.appendChild(tl)
-    if (slot.isCrime) {
-      th.appendChild(stroke('cb-time-u', '0 0 100 8', D_UNDERLINE))
-      th.appendChild(el('span', 'cb-tag-crime', '범행 추정'))
-    }
-    if (slot.note) th.appendChild(el('div', 'cb-time-n', slot.note))
     row.appendChild(th)
 
-    d.suspects.forEach((s, ci) => {
-      const c = grid[ti]![ci]!
+    d.slots.forEach((slot, ti) => {
+      const c = grid[si]![ti]!
       const td = el('div',
         `cb-cell${slot.isCrime ? ' crime' : ''}${c.contradicted ? ' bad' : ''}`)
       td.setAttribute('role', 'cell')
+      td.dataset.who = s.id
 
       const body = el('span', 'cb-cell-in')
       if (c.place === null) {
         body.appendChild(el('span', 'cb-blank'))
       } else {
         const p = el('span', 'cb-place')
-        p.appendChild(ink('', c.place, ti * d.suspects.length + ci))
+        p.appendChild(ink('', c.place, si * d.slots.length + ti))
         body.appendChild(p)
       }
 
@@ -384,6 +414,15 @@ export function renderChalkboard(d: ChalkBoardData, on: ChalkHandlers): HTMLElem
         )
         b.setAttribute('aria-pressed', String(c.selected))
         b.appendChild(body)
+        /**
+         * **칸에는 장소만 적는다** (팀 3-2-(5)-(2) 2단계). 누구의 언제인지는 호버·포커스에서
+         * 뜬다 — 판서처럼 보이면서도 무엇을 보고 있는지 잃지 않는다.
+         * 스크린리더는 위 `aria-label` 이 이미 같은 문장을 읽는다(`aria-hidden`).
+         */
+        const tip = el('span', 'cb-tip',
+          `${s.name} · ${slot.label} · ${c.place}${c.contradicted ? ' — 기록과 어긋남' : ''}`)
+        tip.setAttribute('aria-hidden', 'true')
+        b.appendChild(tip)
         if (c.selected) b.appendChild(stroke('cb-ring', '0 0 120 60', D_RING))
         if (c.contradicted) {
           b.appendChild(stroke(`cb-x${c.fresh ? ' fresh' : ''}`, '0 0 100 100', D_X1, D_X2))
@@ -397,6 +436,19 @@ export function renderChalkboard(d: ChalkBoardData, on: ChalkHandlers): HTMLElem
     })
     table.appendChild(row)
   })
+
+  /**
+   * 조명은 **표가 소유한다.** 행 하나에 눈이 가면 그 사람의 칸이 조금 밝아지고,
+   * 손을 떼면 `litSuspect`(마지막으로 만난 사람) 로 돌아간다.
+   * 리스너는 표 하나에 위임한다 — 칸마다 붙이면 5×5 에 50개가 된다.
+   */
+  const onEnter = (e: Event): void => {
+    const t = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-who]')
+    if (t?.dataset.who) lit(t.dataset.who)
+  }
+  table.addEventListener('pointerover', onEnter)
+  table.addEventListener('focusin', onEnter)
+  table.addEventListener('pointerleave', () => lit(d.litSuspect ?? null))
 
   scroll.appendChild(table)
   surface.appendChild(scroll)

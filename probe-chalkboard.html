@@ -109,13 +109,14 @@ const real = () => chalkData(CASE, g, {
   selected: state3.sel,
   stampedSeen: state3.seen,
   caption: '알리바이 대조표',
+  litSuspect: 'S3',
 })
 
 /* ── 배치 ── */
 const PANELS = [
   { t: '① 첫 화면 — 비어 있는 칠판', why: '중심 행동이 모양으로 보여야 한다. 빈 칸에는 점선 밑줄만 있다 — "여기 적힌다".', data: () => empty, h: 620 },
-  { t: '② 진행 중 — 진술 · 어긋남 · 집힘', why: '범행 시각 행만 다홍 분필 + 살짝 밝다. 어긋난 칸은 붉은 ✕ 와 "어긋남" 표가 함께 간다.', data: mid, h: 620 },
-  { t: '③ chalkData(gc001) — 실제 사건 어댑터', why: '라벨은 전부 slotLabel/placeLabel 을 지난다. 소거·모순은 engine 이 준 값을 읽기만 한다.', data: real, h: 620 },
+  { t: '② 진행 중 — 진술 · 어긋남 · 집힘', why: '세로=사람, 가로=시각(3-2-(5)-(2)). 범행 시각 열만 붉은 분필 + 살짝 밝다. 어긋난 칸은 붉은 ✕ 와 "어긋남" 표가 함께 간다. 행에 손을 올리면 그 사람의 밤이 밝아진다.', data: mid, h: 620 },
+  { t: '③ chalkData(gc001) — 실제 사건 어댑터', why: '라벨은 전부 slotLabel/placeLabel 을 지난다. 소거·모순은 engine 이 준 값을 읽기만 한다. litSuspect=S3 — 마지막으로 만난 사람의 행이 밝다.', data: real, h: 620 },
 ]
 
 // 한 번에 한 장만 보여 준다 — 스크롤 없이 한 화면에 들어와야 눈으로 검수가 된다
