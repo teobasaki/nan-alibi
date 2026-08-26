@@ -1,0 +1,148 @@
+/**
+ * 수사일지 조사 면 — **판단하지 않고 보여준다** (명세 V0.2 §36 · AC-12).
+ *
+ * 가장 중요한 계약: 시스템이 "거짓말했다"·"범인이 아니다" 라고 쓰지 않는다.
+ * 상태 이름은 관찰이어야 한다 — 어긋남은 관찰이고 거짓말은 판단이다.
+ */
+import { describe, expect, it, vi } from 'vitest'
+import { CLAIM_STATE_LABEL, inquiryView, renderInquiry, type InquirySource } from '../src/ui/inquiryPanel'
+import {
+  challenge, createInquiry, discover, hear, learnFact, question, revise, setMemo, setSuspect,
+  shakyClaims, understand,
+} from '../src/engine/inquiry'
+import { gc001Claim, gc001Fact } from '../src/data/gc001-inquiry'
+import { SUSPECTS, type SuspectId } from '../src/types'
+
+const NAMES: Record<SuspectId, string> = {
+  S1: '류나린', S2: '배지호', S3: '문소라', S4: '도율', S5: '김하늘',
+}
+
+const src: InquirySource = {
+  claim: (id) => {
+    const c = gc001Claim(id)
+    return c ? { speaker: c.speaker, text: c.text, at: c.at, revisedTo: c.revisedTo } : undefined
+  },
+  fact: (id) => {
+    const f = gc001Fact(id)
+    return f ? { text: f.text, source: f.source } : undefined
+  },
+  suspectName: (id) => NAMES[id],
+  evidenceLabel: (id) => `기록 ${id}`,
+  people: SUSPECTS.map((s) => ({ id: s, name: NAMES[s] })),
+}
+
+const view = (s = createInquiry()) => inquiryView(s, src, shakyClaims(s))
+const draw = (s = createInquiry()) =>
+  renderInquiry(view(s), { pickSuspect: () => {}, setMemo: () => {} })
+
+describe('상태 이름 — 관찰만 적는다 (AC-12)', () => {
+  it('어떤 상태 이름에도 "거짓" 이라는 낱말이 없다', () => {
+    for (const label of Object.values(CLAIM_STATE_LABEL)) {
+      expect(label).not.toContain('거짓')
+      expect(label).not.toContain('범인')
+    }
+  })
+
+  it('DISPROVED 는 "기록과 어긋난다" 로 적는다', () => {
+    expect(CLAIM_STATE_LABEL.DISPROVED).toBe('기록과 어긋난다')
+  })
+
+  it('화면 전체에도 판단하는 문구가 없다', () => {
+    let s = hear(createInquiry(), 'CLM-GC001-MUN-NO-MOVE')
+    s = revise(challenge(s, 'CLM-GC001-MUN-NO-MOVE'), 'CLM-GC001-MUN-NO-MOVE', 'CLM-GC001-MUN-MOVED').state
+    s = setSuspect(s, 'S1')
+    const text = draw(s).textContent ?? ''
+    for (const banned of ['거짓말', '범인은', '무죄', '유죄']) expect(text).not.toContain(banned)
+  })
+})
+
+describe('바뀐 말은 원본과 나란히 (명세 §15)', () => {
+  it('원본 아래에 고친 말이 붙고, 둘 다 화면에 있다', () => {
+    let s = hear(createInquiry(), 'CLM-GC001-GIM-BLOCKED')
+    s = revise(s, 'CLM-GC001-GIM-BLOCKED', 'CLM-GC001-GIM-MISSED-FRAME').state
+    const root = draw(s)
+    const rows = Array.from(root.querySelectorAll('.iq-claim'))
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.className).toContain('s-disproved')
+    expect(rows[1]!.className).toContain('rev')
+    expect(root.textContent).toContain(gc001Claim('CLM-GC001-GIM-BLOCKED')!.text)
+    expect(root.textContent).toContain(gc001Claim('CLM-GC001-GIM-MISSED-FRAME')!.text)
+  })
+
+  it('아직 못 들은 수정 진술은 화면에 없다 — 앞질러 보여주지 않는다', () => {
+    const s = hear(createInquiry(), 'CLM-GC001-GIM-BLOCKED')
+    expect(view(s).claims[0]!.revisedById).toBeUndefined()
+    expect(draw(s).textContent).not.toContain(gc001Claim('CLM-GC001-GIM-MISSED-FRAME')!.text)
+  })
+})
+
+describe('다음 질문거리', () => {
+  it('흔들리는 진술이 「확인이 필요한 진술」로 뜬다', () => {
+    let s = hear(createInquiry(), 'CLM-GC001-RYU-LEFT')
+    s = question(s, 'CLM-GC001-RYU-LEFT', ['F-GC001-DOOR-OPEN-NOT-PASSAGE'])
+    const root = draw(s)
+    expect(root.querySelector('.iq-next')).not.toBeNull()
+    expect(root.querySelector('.iq-shaky')!.textContent).toContain('류나린')
+  })
+
+  it('흔들리는 것이 없으면 그 칸이 아예 없다 — 빈 상자를 두지 않는다', () => {
+    expect(draw(hear(createInquiry(), 'CLM-GC001-DO-EXITED')).querySelector('.iq-next')).toBeNull()
+  })
+})
+
+describe('사실·기록·메모', () => {
+  it('확인된 사실은 출처와 함께 뜬다', () => {
+    const s = learnFact(createInquiry(), 'F-GC001-MAIN-LOADING-TRAVEL-TIME')
+    const root = draw(s)
+    expect(root.textContent).toContain('최소 이동 시간은 2분')
+    expect(root.textContent).toContain('출처 · 갤러리 도면 · 동선 실측')
+  })
+
+  it('발견한 기록만 목록에 오른다 — 세계에 있는 것을 미리 보여주지 않는다', () => {
+    const s = understand(discover(createInquiry(), 'E3'), 'E3')
+    const v = view(s)
+    expect(v.evidence).toEqual([{ id: 'E3', label: '기록 E3', state: 'UNDERSTOOD' }])
+  })
+
+  it('메모는 그대로 담긴다', () => {
+    const root = draw(setMemo(createInquiry(), '류나린 · 21:04 확인 필요'))
+    expect(root.querySelector<HTMLTextAreaElement>('.iq-memo')!.value).toBe('류나린 · 21:04 확인 필요')
+  })
+})
+
+describe('현재 의심 인물 — 정답 제출이 아니다 (명세 §22)', () => {
+  it('다섯 명이 다 있고, 고른 사람에게 표시가 붙는다', () => {
+    const root = draw(setSuspect(createInquiry(), 'S3'))
+    const people = Array.from(root.querySelectorAll('.iq-person'))
+    expect(people).toHaveLength(5)
+    const on = people.filter((n) => n.classList.contains('on'))
+    expect(on).toHaveLength(1)
+    expect(on[0]!.textContent).toContain('문소라')
+    expect(on[0]!.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('같은 사람을 다시 누르면 표시를 거둔다 — 의심을 거두는 것도 수사다', () => {
+    const pickSuspect = vi.fn()
+    const root = renderInquiry(view(setSuspect(createInquiry(), 'S1')), { pickSuspect, setMemo: () => {} })
+    const first = root.querySelector<HTMLButtonElement>('.iq-person.on')!
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(pickSuspect).toHaveBeenCalledWith(null)
+  })
+
+  it('안내 문구가 "정답 제출이 아니다" 를 말한다', () => {
+    expect(draw().textContent).toContain('정답 제출이 아니다')
+  })
+})
+
+describe('정렬 — 한 사람의 말이 모여 있어야 변화가 읽힌다', () => {
+  it('사람 순서 → 시각 순서', () => {
+    let s = createInquiry()
+    s = hear(s, 'CLM-GC001-GIM-PANEL')      // S5 21:16
+    s = hear(s, 'CLM-GC001-RYU-REENTERED')  // S1 21:22
+    s = hear(s, 'CLM-GC001-RYU-LEFT')       // S1 21:04
+    s = hear(s, 'CLM-GC001-MUN-LOADING')    // S3 21:18
+    expect(view(s).claims.map((c) => c.id)).toEqual([
+      'CLM-GC001-RYU-LEFT', 'CLM-GC001-RYU-REENTERED', 'CLM-GC001-MUN-LOADING', 'CLM-GC001-GIM-PANEL',
+    ])
+  })
+})

@@ -54,9 +54,10 @@ import {
 import { FIELD_BUDGET, TALK_CAP, WEAPONS, WEAPON_TRACE } from './data/config'
 import { chalkData, renderChalkboard } from './ui/chalkboard'
 import {
-  createInquiry, discover, hear, learnFact, revise, heldClueIds,
+  createInquiry, discover, hear, learnFact, revise, heldClueIds, setMemo, setSuspect, shakyClaims,
   type InquiryState,
 } from './engine/inquiry'
+import { inquiryView, renderInquiry } from './ui/inquiryPanel'
 import { applyGc001Tension, gc001Claim, gc001Fact, gc001KnownFacts } from './data/gc001-inquiry'
 import { renderSidebar, type SidebarSuspect } from './ui/sidebar'
 import { createNotebookDrawer, type DrawerHandle } from './ui/drawer'
@@ -1150,6 +1151,14 @@ function rightPage(forDrawer = false): HTMLElement {
   page.appendChild(journalBlock())
 
   page.appendChild(h('div', 'nb-rule'))
+  /**
+   * **조사 면** (V0.2 §36) — 들은 말·바뀐 말·확인된 사실·의심 인물·메모.
+   * gc001 에서만 뜬다. 시드 사건에는 Claim/Fact 데이터가 없어 이 면이 빈 껍데기가 된다.
+   */
+  if (forDrawer && IS_GC001) {
+    page.appendChild(inquiryBlock())
+    page.appendChild(h('div', 'nb-rule'))
+  }
   // 취조실에서 걷어낸 인물 정보는 여기 있다 — 방을 나가지 않고 열 수 있다 (팀 3-3-(2) 2단계)
   if (forDrawer) {
     page.appendChild(peopleBlock())
@@ -1157,6 +1166,38 @@ function rightPage(forDrawer = false): HTMLElement {
   }
   page.appendChild(board())
   return page
+}
+
+/**
+ * 조사 면을 조립한다 — **부품은 사건을 모르므로** 라벨·이름을 여기서 넘긴다 (불변식 6).
+ */
+function inquiryBlock(): HTMLElement {
+  const view = inquiryView(ui.inq, {
+    claim: (id) => {
+      const c = gc001Claim(id)
+      return c ? { speaker: c.speaker, text: c.text, at: c.at, revisedTo: c.revisedTo } : undefined
+    },
+    fact: (id) => {
+      const f = gc001Fact(id)
+      return f ? { text: f.text, source: f.source } : undefined
+    },
+    suspectName: (id) => CASE.suspects[id].name,
+    evidenceLabel: (id) => {
+      const e = CASE.evidence.find((x) => x.id === id)
+      return e ? `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}` : id
+    },
+    people: SUSPECTS.map((s) => ({ id: s, name: CASE.suspects[s].name })),
+  }, shakyClaims(ui.inq))
+
+  return renderInquiry(view, {
+    pickSuspect: (id) => {
+      // 자원을 쓰지 않는다. 표시가 바뀔 뿐이다 (명세 §22)
+      ui.inq = setSuspect(ui.inq, id)
+      play('page')
+      render()
+    },
+    setMemo: (text) => { ui.inq = setMemo(ui.inq, text) },
+  })
 }
 
 /**

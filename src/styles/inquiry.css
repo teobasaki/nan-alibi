@@ -1,0 +1,159 @@
+@import './tokens.css';
+
+/*
+ * 수사일지의 조사 면 (`src/ui/inquiryPanel.ts`).
+ *
+ * 이 면은 **수첩 종이 위**에 눕는다. 그래서 색을 스스로 정하지 않고 팔레트 변수를 읽는다 —
+ * 드로어가 경계에서 팔레트를 다시 묶어 두었으므로(`.nbk-paper`), 여기서는 `var(--ink)` 하나로
+ * 종이 위에서도 어두운 판 위에서도 읽힌다. 그게 blocker 하나를 고치고 배운 것이다.
+ *
+ * 상태는 **색만으로 말하지 않는다** (DESIGN-GUIDE §2): 왼쪽 눈금(형태) + 상태 이름(활자)이
+ * 색과 함께 간다. 흑백으로 캡처해도 무엇이 흔들리는 진술인지 읽힌다.
+ */
+
+.iq {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-family: var(--fa-sans, system-ui, sans-serif);
+  color: var(--ink, #221b14);
+  word-break: keep-all;
+}
+
+/* 괘선 리듬(20px)을 지키기 위해 세로 간격은 20의 배수만 쓴다 (드로어 본문 규칙) */
+.iq-sec { margin: 0 0 20px; }
+.iq-sec:last-child { margin-bottom: 0; }
+
+.iq-cap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--fa-serif, serif);
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--muted, #5e5343);
+  border-bottom: 1px solid var(--line, rgba(90, 74, 52, .26));
+}
+.iq-cap-s {
+  margin-left: auto;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  letter-spacing: .02em;
+  color: var(--muted, #5e5343);
+  opacity: .85;
+}
+
+.iq-empty { font-size: 11.5px; line-height: 20px; color: var(--muted, #5e5343); font-style: italic; }
+
+/* ── 현재 의심 인물 — 정답 제출이 아니다 ── */
+.iq-people { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 4px; }
+.iq-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--ink, #221b14);
+  background: transparent;
+  border: 1px solid var(--line, rgba(90, 74, 52, .26));
+  border-radius: 2px;
+  cursor: pointer;
+}
+.iq-person:hover { border-color: var(--amber, #6f5417); }
+/* 고른 사람 — 색 + 눈금 + 채워진 표식 셋이 함께 간다 */
+.iq-person.on {
+  color: var(--amber, #6f5417);
+  border-color: var(--amber, #6f5417);
+  box-shadow: inset 2px 0 0 var(--amber, #6f5417);
+  font-weight: 500;
+}
+.iq-radio { font-size: 9px; }
+
+/* ── 확인이 필요한 진술 (다음 질문거리) ── */
+.iq-shaky { margin: 0; padding: 4px 0 0 16px; }
+.iq-shaky li { font-size: 11.5px; line-height: 20px; color: var(--ink, #221b14); }
+
+/* ── 진술 한 장 ── */
+.iq-claim {
+  padding: 4px 0 4px 9px;
+  border-left: 2px solid var(--line, rgba(90, 74, 52, .26));
+}
+.iq-claim-h {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 20px;
+  color: var(--muted, #5e5343);
+}
+.iq-who { font-family: var(--fa-serif, serif); font-size: 11.5px; color: var(--ink, #221b14); }
+.iq-at { font-family: var(--fa-mono, ui-monospace, monospace); font-size: 10px; }
+.iq-state {
+  margin-left: auto;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  letter-spacing: .02em;
+}
+.iq-quote { font-size: 12px; line-height: 20px; }
+
+/* 상태별 — 눈금 색과 상태 글자 색이 함께 움직인다 */
+.iq-claim.s-questionable { border-left-color: var(--amber, #6f5417); }
+.iq-claim.s-questionable .iq-state { color: var(--amber, #6f5417); }
+.iq-claim.s-challenged { border-left-color: var(--amber, #6f5417); border-left-style: dashed; }
+.iq-claim.s-challenged .iq-state { color: var(--amber, #6f5417); }
+.iq-claim.s-confirmed { border-left-color: var(--green, #3c6349); }
+.iq-claim.s-confirmed .iq-state { color: var(--green, #3c6349); }
+.iq-claim.s-disproved { border-left-color: var(--red, #a8382c); }
+.iq-claim.s-disproved .iq-state { color: var(--red, #a8382c); }
+/* 어긋난 진술은 글자에도 줄이 지난다 — 색이 안 보이는 화면에서도 읽힌다.
+   지우지는 않는다: 무엇이 어떻게 바뀌었는지가 정보이기 때문이다 (명세 §15) */
+.iq-claim.s-disproved .iq-quote { text-decoration: line-through; text-decoration-thickness: 1px; opacity: .82; }
+
+/* 고쳐 말한 것 — 원본 바로 아래에 들여 붙는다 */
+.iq-claim.rev {
+  margin-left: 14px;
+  border-left-color: var(--green, #3c6349);
+  background: linear-gradient(90deg, rgba(60, 99, 73, .07), transparent 60%);
+}
+.iq-claim.rev .iq-who { font-family: var(--fa-mono, ui-monospace, monospace); font-size: 9.5px; color: var(--green, #3c6349); }
+
+/* ── 사실 ── */
+.iq-fact { padding: 4px 0 4px 9px; border-left: 2px solid var(--green, #3c6349); }
+.iq-fact-t { font-size: 12px; line-height: 20px; }
+.iq-fact-s {
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  line-height: 20px;
+  color: var(--muted, #5e5343);
+}
+
+/* ── 기록 ── */
+.iq-ev { display: flex; align-items: baseline; gap: 8px; line-height: 20px; }
+.iq-ev-t { font-size: 11.5px; }
+.iq-ev-s {
+  margin-left: auto;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  color: var(--muted, #5e5343);
+}
+
+/* ── 메모 ── */
+.iq-memo {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 20px;
+  color: var(--ink, #221b14);
+  background: rgba(255, 255, 255, .38);
+  border: 1px solid var(--line, rgba(90, 74, 52, .26));
+  border-radius: 2px;
+  resize: vertical;
+}
+.iq-memo:focus { outline: none; border-color: var(--amber, #6f5417); }
+
+.iq-person:focus-visible,
+.iq-memo:focus-visible { outline: 2px solid var(--amber, #6f5417); outline-offset: 1px; }
