@@ -8,19 +8,38 @@
  * 순수 함수로 두어 브라우저 없이 테스트한다. 저장소 접근은 주입받는다.
  */
 
-export type VoiceMode = 'auto' | 'local' | 'off'
+/**
+ * `auto`  서버 음성(Supertone)을 예산 안에서 시도하고 실패하면 내장
+ * `key`   **중요한 대사만** 소리를 낸다 (기본값 — 팀 3-3-(4) 2단계). 평상시 대화는 자막만
+ * `local` 내장 합성만. 지연 없음
+ * `off`   무음
+ */
+export type VoiceMode = 'auto' | 'key' | 'local' | 'off'
 
 export interface Settings {
-  /** auto = 서버 음성을 예산 안에서 시도하고 실패하면 내장. local = 내장만. off = 무음 */
   voice: VoiceMode
   /** 연기 강도 배율 0~1.5. 1이 기본 */
   intensity: number
 }
 
-export const DEFAULTS: Settings = { voice: 'auto', intensity: 1 }
+/**
+ * **기본값이 `key` 인 이유** (팀 3-3-(4)).
+ *
+ * 팀 지적: *"현재 TTS 의 발음과 억양이 자연스럽지 않은 부분이 있고, 오히려 캐릭터의
+ * 몰입감을 떨어뜨릴 가능성이 있다 … TTS 는 기술이 적용되어 있다는 이유로 유지하기보다
+ * 현재 품질이 게임의 몰입감을 실제로 높이는지를 기준으로 판단해야 한다."*
+ *
+ * 품질 판정은 사람이 들어야 하는 일이라 코드가 대신할 수 없다. 그래서 **끄지 않고
+ * 줄였다** — 2단계의 "중요한 대사에만 제한적으로" 를 기본으로 삼는다. 근거 셋:
+ *   ① 되돌릴 수 있다. 팀이 들어 보고 판단하면 `auto`(전량)·`off`(제거) 어느 쪽으로도 한 칸이다
+ *   ② 비용이 대사 수에 비례해 줄어든다 — 한 판 대화 50회 중 소리가 나는 것은 흔들린 순간뿐이다
+ *   ③ 부자연스러움이 가장 덜 드러나는 자리에만 남는다. 평상시 대화가 계속 어색한 것과,
+ *      결정적인 순간에 목소리가 갈라지는 것은 몰입에 미치는 방향이 반대다
+ */
+export const DEFAULTS: Settings = { voice: 'key', intensity: 1 }
 
 const KEY = 'nan-alibi:settings'
-const VOICE_MODES: VoiceMode[] = ['auto', 'local', 'off']
+const VOICE_MODES: VoiceMode[] = ['auto', 'key', 'local', 'off']
 
 /**
  * 저장된 값을 **신뢰하지 않고** 정규화한다.

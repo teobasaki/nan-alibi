@@ -74,9 +74,12 @@ export function dashboard(onChange: () => void): HTMLElement {
       : s.voice === 'local' ? '브라우저 내장'
       : p?.tts === false ? 'Supertone 미연결 — 내장으로'
       : ttsDisabled() ? 'Supertone 응답 없음 — 내장으로'
+      : s.voice === 'key' ? 'Supertone · 중요한 대사만'
       : 'Supertone',
     s.voice === 'off' ? false : (p?.tts ?? null)))
-  box.appendChild(row('speaking', s.voice === 'off' ? '무음' : '재생', s.voice !== 'off'))
+  box.appendChild(row('speaking',
+    s.voice === 'off' ? '무음' : s.voice === 'key' ? '흔들린 순간에만' : '재생',
+    s.voice !== 'off'))
 
   // 판정은 AI 가 하지 않는다 — 그 사실 자체가 이 화면에서 가장 중요한 한 줄이다
   const owned = h('div', 'dbnote')
@@ -88,7 +91,8 @@ export function dashboard(onChange: () => void): HTMLElement {
   // ── 조작 ──
   box.appendChild(h('div', 'cap', '음성'))
   const modes: [VoiceMode, string, string][] = [
-    ['auto', '자동', '서버 음성을 1.5초까지 기다리고, 늦으면 내장으로'],
+    ['key', '중요한 대사만', '진술이 흔들리거나 기록을 들이민 순간에만 (기본)'],
+    ['auto', '전부 읽기', '서버 음성을 1.5초까지 기다리고, 늦으면 내장으로'],
     ['local', '내장만', '브라우저 합성. 지연 없음'],
     ['off', '끄기', '자막만'],
   ]

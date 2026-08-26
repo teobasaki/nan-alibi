@@ -99,6 +99,7 @@ export function speak(
   reply: PersonaReply,
   personaId: string,
   onBoundary?: (charIndex: number) => void,
+  important = false,
 ): void {
   if (isMuted()) return
   stop()
@@ -106,6 +107,15 @@ export function speak(
   // 플레이어가 끈 것은 끈 것이다. 설정은 규칙이 아니라 편의라 여기서만 본다.
   const mode = settings().voice
   if (mode === 'off') return
+  /**
+   * **중요한 대사에만** (기본값 `key` — 팀 3-3-(4) 2단계).
+   * 평상시 대화는 자막으로 간다. 부자연스러운 음성이 모든 답변에 깔리는 것보다,
+   * 진술이 흔들리는 순간에만 목소리가 들리는 편이 몰입에 유리하다는 판단이다
+   * (근거·되돌리는 법은 `settings.ts` 의 DEFAULTS 주석).
+   * 무엇이 '중요' 인지는 이 모듈이 정하지 않는다 — 부르는 쪽(main.ts)이 정한다.
+   * 자막·타이핑은 `animateLast` 가 따로 몰기 때문에 여기서 멈춰도 화면은 산다.
+   */
+  if (mode === 'key' && !important) return setStage('idle')
 
   /**
    * **자막이 소리를 기다리지 않는다.**
@@ -117,7 +127,7 @@ export function speak(
    * 처음엔 예산을 1.5초로 잡아 매번 잘렸는데, 내장 합성이 대신 소리를 내서
    * **겉보기에는 동작하는 것처럼 보였다.** 조용한 실패가 제일 위험하다.
    */
-  if (mode === 'auto' && !supertone.isDisabled()) {
+  if ((mode === 'auto' || mode === 'key') && !supertone.isDisabled()) {
     setStage('synthesizing')
     approximateBoundary(reply.speech, onBoundary)   // 자막은 지금 간다
 

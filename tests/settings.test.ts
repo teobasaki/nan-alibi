@@ -15,9 +15,17 @@ describe('설정 정규화 — 저장된 값을 신뢰하지 않는다', () => {
   })
 
   it('아는 음성 모드는 그대로 통과한다', () => {
-    for (const v of ['auto', 'local', 'off'] as const) {
+    for (const v of ['auto', 'key', 'local', 'off'] as const) {
       expect(normalize({ voice: v }).voice).toBe(v)
     }
+  })
+
+  /**
+   * 기본값은 **중요한 대사만**이다 (팀 3-3-(4) 2단계). 이 값이 조용히 'auto'(전량)로
+   * 되돌아가면 비용과 어색한 음성이 함께 돌아온다 — 판단이 코드에 남아 있어야 한다.
+   */
+  it('기본 음성 모드는 key — 중요한 대사만 읽는다', () => {
+    expect(DEFAULTS.voice).toBe('key')
   })
 
   it('강도는 0~1.5 로 잘린다', () => {
@@ -49,8 +57,9 @@ describe('설정 저장·복원', () => {
   })
 
   it('손으로 고친 값도 정규화해서 읽는다', () => {
-    expect(load(mem('{"voice":"해킹","intensity":999}'))).toEqual(DEFAULTS.voice === 'auto'
-      ? { voice: 'auto', intensity: 1.5 } : DEFAULTS)
+    // 모드는 모르는 값이라 기본값으로, 강도는 상한(1.5)으로 잘린다 — 둘은 따로 정규화된다
+    expect(load(mem('{"voice":"해킹","intensity":999}')))
+      .toEqual({ voice: DEFAULTS.voice, intensity: 1.5 })
   })
 
   it('쓰기가 막혀도 던지지 않는다 — 사파리 프라이빗 모드', () => {

@@ -2312,7 +2312,8 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
   animateLast(r.reply.speech)
   // 3D 인물 옆에도 띄운다 — 심문 중 눈은 아래 로그가 아니라 얼굴에 가 있다
   say(r.reply.speech)
-  voiceOut(r.reply, CASE.suspects[s].personaId)
+  // 기본 설정에서는 흔들린 대사만 목소리가 된다 (팀 3-3-(4) 2단계)
+  voiceOut(r.reply, CASE.suspects[s].personaId, worthSpeaking({ ...r.reply, fallback: r.fallback }, s))
 }
 
 async function doPresent(s: SuspectId, evId: string): Promise<void> {
@@ -2364,22 +2365,43 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
   if (ui.active !== s) return          // doAsk 와 같은 그물
   animateLast(r.reply.speech)
   say(r.reply.speech)
-  voiceOut(r.reply, CASE.suspects[s].personaId)
+  // 기록을 들이민 답변은 언제나 중요하다 — 되돌릴 수 없는 1회를 쓴 순간이다
+  voiceOut(r.reply, CASE.suspects[s].personaId, worthSpeaking({ ...r.reply, fallback: r.fallback }, s, true))
 }
+
+/**
+ * **어떤 대사가 소리를 낼 자격이 있나** (팀 3-3-(4) 2단계 — "중요한 대사에만 제한적으로").
+ *
+ * 셋 중 하나면 중요하다:
+ *   ① 흔들림이 보인다 (`tell !== 'none'`) — 이 게임에서 가장 비싼 정보다
+ *   ② 압박이 높다 (60 이상 = 방이 붉게 조여드는 그 지점)
+ *   ③ 기록을 들이민 답변 — 플레이어가 되돌릴 수 없는 1회를 쓴 순간이다
+ * 폴백 대사는 제외한다. AI 가 못 답해서 나온 문장을 목소리까지 입혀 강조할 이유가 없다.
+ */
+const worthSpeaking = (
+  reply: { tell: string; fallback?: boolean },
+  s: SuspectId,
+  presented = false,
+): boolean =>
+  !reply.fallback && (presented || reply.tell !== 'none' || ui.game.pressure[s] >= 60)
 
 /**
  * 대사를 소리로 낸다. **몸동작·말풍선과 한 몸으로 움직인다** —
  * 말이 끝나는 시점을 소리가 알려주므로, 제스처도 거기에 맞춰 멎는다.
  * 음성을 못 쓰는 환경(윈도우 한국어 언어팩 없음 등)에서는 글자 길이로 어림한다.
+ *
+ * @param important **소리를 낼 자격이 있는 대사인가** (팀 3-3-(4) 2단계).
+ *   기본 설정(`voice: 'key'`)에서는 이 값이 참인 대사만 목소리가 된다.
+ *   판단은 여기(부르는 쪽)가 한다 — `voice.ts` 는 사건을 모른다.
  */
-function voiceOut(reply: { speech: string; tell: string }, personaId: string): void {
+function voiceOut(reply: { speech: string; tell: string }, personaId: string, important = false): void {
   const h = ui.scene?.handle
   h?.setSpeaking(true)
   const fallbackMs = Math.min(9000, reply.speech.length * 140)
   if (canSpeak() && !isMuted()) {
     let ended = false
     const done = (): void => { if (!ended) { ended = true; h?.setSpeaking(false) } }
-    speak(reply as never, personaId)
+    speak(reply as never, personaId, undefined, important)
     // 큐가 비면 끝난 것으로 본다 — utterance 를 문장 단위로 쪼개 놔서 onend 가 여러 번 온다
     const poll = setInterval(() => {
       if (!speechSynthesis.speaking && !speechSynthesis.pending) {
