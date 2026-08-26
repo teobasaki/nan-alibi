@@ -1,0 +1,187 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>drawer probe — 우측 수첩 (temp)</title>
+<!--
+  수첩 드로어 단독 하네스 (dev 전용, 빌드에 포함되지 않는다 — vite 입력은 index.html 하나다).
+  뒤에 깔린 사이드바·칠판은 **가짜**다. 수첩이 메인 화면을 얼마나 가리는지 눈으로 재기 위한 배경일 뿐,
+  이 파일은 게임에 배선되지 않는다. 배선은 사람이 한다.
+
+    npm run dev  →  http://localhost:5181/probe-drawer.html
+-->
+<link rel="stylesheet" href="/src/styles/drawer.css">
+<style>
+  :root {
+    --bg: #16110f; --panel: #201519; --panel-2: #2a1c20; --line: #3d2b2c;
+    --ink: #e9e1d3; --muted: #9a8b80; --amber: #c8912f;
+    --serif: AppleMyungjo, Batang, 'Nanum Myeongjo', 'Apple SD Gothic Neo', serif;
+    --mono: 'SF Mono', 'D2Coding', ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; overflow: hidden; background: var(--bg); color: var(--ink);
+         font-family: 'Apple SD Gothic Neo', system-ui, sans-serif; display: flex; }
+
+  /* 좌측 사이드바 20% (가짜) */
+  .mock-side { flex: 0 0 20%; background: var(--panel); border-right: 1px solid var(--line);
+               padding: 14px 12px; }
+  .mock-side h1 { font-family: var(--serif); font-size: 15px; margin: 0 0 14px; letter-spacing: .5px; }
+  .mock-side .s { display: flex; gap: 9px; align-items: center; padding: 8px; margin-bottom: 7px;
+                  border: 1px solid var(--line); border-radius: 5px; background: var(--panel-2); }
+  .mock-side .s i { width: 30px; height: 30px; border-radius: 4px; background: #3a2830;
+                    display: grid; place-items: center; font-style: normal; font-size: 14px; }
+  .mock-side .s b { font-family: var(--serif); font-weight: 500; font-size: 13px; }
+  .mock-side .s em { display: block; font-style: normal; font-size: 10.5px; color: var(--muted); }
+
+  /* 메인 — 칠판 타임라인 (가짜) */
+  .mock-main { flex: 1; position: relative; padding: 22px 26px;
+               background: radial-gradient(120% 90% at 30% 10%, #24312c 0%, #16211d 60%, #101715 100%); }
+  .mock-main h2 { font-family: var(--serif); font-size: 13px; color: #c7d6cc; margin: 0 0 18px;
+                  letter-spacing: 1.5px; font-weight: 500; }
+  .grid { display: grid; grid-template-columns: 70px repeat(5, 1fr); gap: 6px; }
+  .grid div { border: 1px dashed rgba(200,220,205,.16); border-radius: 3px; min-height: 46px;
+              font-size: 11px; color: #a7bdaf; display: grid; place-items: center; font-family: var(--mono); }
+  .grid div.h { border: 0; color: #d9e6dc; font-family: var(--serif); font-size: 12px; }
+  .hintbar { position: absolute; left: 26px; bottom: 18px; font-size: 11.5px; color: #7f9488; }
+
+  /* 프로브 조작판 */
+  .probe { position: fixed; left: 12px; bottom: 12px; z-index: 200; display: flex; gap: 6px;
+           background: rgba(0,0,0,.6); padding: 7px; border-radius: 6px; }
+  .probe button { font: inherit; font-size: 11.5px; color: var(--ink); background: var(--panel-2);
+                  border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+  .probe button:hover { border-color: var(--amber); }
+  .probe span { font-family: var(--mono); font-size: 11px; color: var(--amber); align-self: center; padding: 0 6px; }
+</style>
+
+<div class="mock-side">
+  <h1>용의자</h1>
+  <div class="s"><i>윤</i><span><b>윤서진</b><em>34세 · 큐레이터</em></span></div>
+  <div class="s"><i>차</i><span><b>차민혁</b><em>41세 · 감정사</em></span></div>
+  <div class="s"><i>한</i><span><b>한지우</b><em>29세 · 경비</em></span></div>
+  <div class="s"><i>오</i><span><b>오세라</b><em>37세 · 투자자</em></span></div>
+  <div class="s"><i>임</i><span><b>임도현</b><em>26세 · 비서</em></span></div>
+</div>
+
+<div class="mock-main">
+  <h2>사건의 밤 — 다섯 사람이 어디에 있었나</h2>
+  <div class="grid" id="grid"></div>
+  <div class="hintbar">↘ 오른쪽 가장자리의 수첩에 마우스를 올려 보라</div>
+</div>
+
+<div class="probe">
+  <button id="b-peek">빼꼼(peek)</button>
+  <button id="b-open">열기</button>
+  <button id="b-close">닫기</button>
+  <button id="b-swap">내용 교체</button>
+  <button id="b-dispose">dispose</button>
+  <span id="stat">idle</span>
+</div>
+
+<script type="module">
+  import { createNotebookDrawer } from '/src/ui/drawer.ts'
+  import { slotLabel, placeLabel, SLOTS, PLACES } from '/src/types.ts'
+
+  /* 가짜 사건 한 건 — 라벨은 **사건이 소유한다**(불변식 6). 하드코딩하지 않고
+     slotLabel/placeLabel 을 지나게 해서, 프로브에서도 같은 규약으로 쓴다. */
+  const CASE = {
+    world: {
+      slotLabels: ['21:00', '21:07', '21:14', '21:21', '21:28'],
+      placeLabels: ['로비', '서관 홀', '수장고', '직원계단', '사무동'],
+    },
+  }
+
+  /* 가짜 칠판 격자 */
+  const grid = document.getElementById('grid')
+  grid.appendChild(Object.assign(document.createElement('div'), { className: 'h', textContent: '' }))
+  for (const t of SLOTS) grid.appendChild(Object.assign(document.createElement('div'), { className: 'h', textContent: slotLabel(CASE, t) }))
+  for (const nm of ['윤서진', '차민혁', '한지우', '오세라', '임도현']) {
+    grid.appendChild(Object.assign(document.createElement('div'), { className: 'h', textContent: nm }))
+    for (const t of SLOTS) {
+      const p = PLACES[(t + nm.length) % 5]
+      grid.appendChild(Object.assign(document.createElement('div'), { textContent: t === 2 && nm === '한지우' ? '?' : placeLabel(CASE, p) }))
+    }
+  }
+
+  /* 주입되는 일지 내용 — 드로어는 이걸 만들지 않는다 */
+  const line = (t, note) => {
+    const w = document.createElement('p')
+    w.textContent = t
+    if (note) { const n = document.createElement('span'); n.className = 'nbk-note'; n.textContent = note; w.appendChild(n) }
+    return w
+  }
+  function journal(n) {
+    const w = document.createElement('div')
+    const h = document.createElement('h3'); h.textContent = `오늘 한 일 (${n}장째)`; w.appendChild(h)
+    w.appendChild(line(`${slotLabel(CASE, 1)} ${placeLabel(CASE, 1)} 출입 기록을 조회했다.`, '카드키 1건 — 본인 것이 아니었다'))
+    w.appendChild(line('한지우를 심문했다.', '"그 시간엔 계단에 있었습니다."'))
+    w.appendChild(line(`${slotLabel(CASE, 2)} ${placeLabel(CASE, 2)} 기록을 들이밀었다.`, '진술과 기록이 어긋난다'))
+    w.appendChild(line('차민혁을 심문했다.'))
+    const h2 = document.createElement('h3'); h2.textContent = '남은 조사'; w.appendChild(h2)
+    const ul = document.createElement('ul')
+    for (const s of ['오세라의 통화 기록', `${placeLabel(CASE, 3)} 카드키 발급 대장`, '임도현의 영수증']) {
+      const li = document.createElement('li'); li.textContent = s; ul.appendChild(li)
+    }
+    w.appendChild(ul)
+    for (let i = 0; i < 6; i++) w.appendChild(line(`${slotLabel(CASE, i % 5)} ${placeLabel(CASE, (i + 2) % 5)} 주변을 훑었다. 특별한 것은 없었다.`))
+    return w
+  }
+
+  const stat = document.getElementById('stat')
+  let nb = null, page = 1, peeking = false
+
+  function build() {
+    nb = createNotebookDrawer({
+      hint: '필요할 때만 펼친다',
+      onOpen: () => { stat.textContent = 'open' },
+      onClose: () => { stat.textContent = peeking ? 'peek' : 'idle' },
+    })
+    nb.setContent(journal(page))
+    nb.peek(peeking)
+  }
+  build()
+
+  document.getElementById('b-peek').onclick = () => {
+    peeking = !peeking
+    nb?.peek(peeking)
+    stat.textContent = peeking ? 'peek' : 'idle'
+  }
+  document.getElementById('b-open').onclick = () => nb?.open()
+  document.getElementById('b-close').onclick = () => nb?.close()
+  document.getElementById('b-swap').onclick = () => { page += 1; nb?.setContent(journal(page)) }
+  document.getElementById('b-dispose').onclick = () => {
+    if (nb) { nb.dispose(); nb = null; stat.textContent = 'disposed'; }
+    else { page = 1; build(); stat.textContent = 'idle' }
+  }
+  /* 상태를 URL 로 고정한다 — 헤드리스 캡처용.
+     `?state=peek` 은 호버와 **같은 규칙**(.is-peek 가 :hover 와 한 블록)을 켠다.
+     자동화 브라우저는 합성 마우스로 :hover 를 못 만든다. */
+  const want = new URLSearchParams(location.search).get('state')
+  if (want === 'peek') { peeking = true; nb.peek(true); stat.textContent = 'peek' }
+  if (want === 'open') { nb.open() }
+  /* `?blur=1` — 포커스 링 없이 쉼 상태의 단추를 보기 위한 캡처용 */
+  if (new URLSearchParams(location.search).get('blur')) setTimeout(() => document.activeElement?.blur(), 100)
+
+  /* `?measure=1` — 헤드리스에서 실치수를 재기 위한 창구.
+     자동화 브라우저는 창을 못 줄여 주므로(pane 한계), 좁은 화면 검증은 여기로 한다.
+     `chrome --headless --dump-dom` 이 이 <pre> 를 그대로 뱉는다. */
+  if (new URLSearchParams(location.search).get('measure')) {
+    const pre = document.createElement('pre')
+    pre.id = 'measure'
+    pre.style.cssText = 'position:fixed;left:4px;top:4px;z-index:500;margin:0;font:9px/12px ui-monospace,monospace;color:#9fe0b6;background:rgba(0,0,0,.8);padding:4px'
+    setTimeout(() => {
+      const r = (sel) => { const n = document.querySelector(sel); if (!n) return sel + ' = 없음'
+        const b = n.getBoundingClientRect(); const cs = getComputedStyle(n)
+        return `${sel.padEnd(14)} x=${Math.round(b.x)} r=${Math.round(b.right)} w=${Math.round(b.width)} h=${Math.round(b.height)} disp=${cs.display} ov=${cs.overflow}` }
+      pre.textContent = ['vw=' + innerWidth + ' vh=' + innerHeight,
+        r('.nbk-book'), r('.nbk-leaf'), r('.nbk-paper'), r('.nbk-cap'),
+        r('.nbk-cap h2'), r('.nbk-sub'), r('.nbk-x'), r('.nbk-body'),
+        'reduced=' + matchMedia('(prefers-reduced-motion: reduce)').matches
+          + ' book.dur=' + getComputedStyle(document.querySelector('.nbk-book')).transitionDuration
+          + ' cover.dur=' + getComputedStyle(document.querySelector('.nbk-cover')).transitionDuration
+          + ' sheen.anim=' + getComputedStyle(document.querySelector('.nbk-sheen > i')).animationName].join('\n')
+    }, 900)
+    document.body.appendChild(pre)
+  }
+
+  // 프로브 편의: 콘솔에서 만져 볼 수 있게
+  Object.defineProperty(window, 'nb', { get: () => nb })
+</script>
