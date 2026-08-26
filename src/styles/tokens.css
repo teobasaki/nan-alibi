@@ -1,0 +1,75 @@
+/*
+ * 디자인 토큰 — **한 광원, 여섯 재질.** (팀 명세 3-2-(5)-(1) 2·3단계)
+ *
+ * 기준점은 도입부 카툰이다: 종이 질감 + 연필선 + 어두운 갈색·먹색 채색.
+ * 팀이 못 박은 팔레트는 다섯 가지다 — 어두운 갈색 · 먹색 · 바랜 종이색 · 탁한 녹색 · 붉은 포인트.
+ * 그 다섯을 여기서만 정의하고, 부품 CSS 는 이 이름을 통해서만 색을 쓴다.
+ *
+ * ## 규칙
+ * 1. **부품은 자기 CSS 맨 위에서 이 파일을 `@import` 한다.** 번들러가 중복을 지운다.
+ *    그래야 `probe-*.html` 단독 하네스에서도 같은 색으로 선다.
+ * 2. **부품 안에서는 반드시 폴백을 안고 쓴다** — `var(--fa-paper, #ece5d5)`.
+ *    이 파일이 어떤 이유로든 안 실려도 부품이 무채색으로 무너지지 않는다.
+ * 3. **여기에 새 색을 늘리지 않는다.** 필요한 색이 없으면 그건 대개 재질을 잘못 고른 것이다.
+ *    (기존 `:root` 의 `--bg/--ink/--amber/--red/--green` 은 호텔 월드 시절의 팔레트다.
+ *     지우지 않는다 — 제1막 폴백 경로가 아직 그것을 쓴다. 새 화면은 `--fa-*` 를 쓴다.)
+ * 4. **색만으로 상태를 말하지 않는다.** 붉은색을 쓸 때는 형태·활자·위치 중 하나를 함께 준다
+ *    (비주얼 바이블에서 살아남은 원칙. 3-2-(5) 가 "강조는 붉은 계열" 로 덮어썼지만
+ *     이 항목은 그대로 유효하다).
+ */
+
+:root {
+  /* ── 먹색 — 검정 대신. 갈색기가 살짝 도는 어둠이라 종이·나무와 같은 세계에 있다 ── */
+  --fa-ink-900: #0c0a09;   /* 가장 깊은 어둠 (취조실 바깥) */
+  --fa-ink-800: #14100e;   /* 화면 바탕 */
+  --fa-ink-700: #1c1714;   /* 판 */
+  --fa-ink-600: #262019;   /* 판 위의 판 */
+  --fa-ink-line: #3a3029;  /* 괘선·경계 */
+
+  /* ── 어두운 갈색 — 나무 프레임 · 가죽 장정 · 책상 ── */
+  --fa-wood-900: #1f1610;
+  --fa-wood-700: #372619;
+  --fa-wood-500: #54402c;
+  --fa-wood-300: #7a5c3d;
+
+  /* ── 바랜 종이 — 파일철 · 수첩 · 프로파일링 문서 ── */
+  --fa-paper: #e6dfcd;
+  --fa-paper-lo: #d6cdb8;
+  --fa-paper-hi: #efe9da;
+  --fa-paper-edge: rgba(90, 74, 52, .26);   /* 종이 가장자리·괘선 */
+  /* 종이 위의 글. --fa-paper 위에서 각각 **12.8:1 · 5.65:1** (실측, WCAG AA 통과) */
+  --fa-paper-ink: #221b14;
+  --fa-paper-ink-soft: #5e5343;
+
+  /* ── 탁한 녹색 — 칠판. 교실 초록이 아니라 조명 아래 슬레이트다 ── */
+  --fa-slate: #1e2a23;
+  --fa-slate-lo: #121a15;
+  --fa-slate-hi: #2c3b31;
+  --fa-chalk: #e8ebdf;                        /* 흐린 흰 분필 — 슬레이트 위 12.3:1 */
+  --fa-chalk-soft: rgba(232, 235, 223, .54);
+  --fa-chalk-dim: rgba(232, 235, 223, .28);
+
+  /* ── 붉은 포인트 — 강조 하나. 분필과 인장 두 얼굴을 갖는다 ── */
+  --fa-red-chalk: #e8654c;   /* 붉은 분필 — 범행 시각. 슬레이트 위 4.5:1 */
+  --fa-red-seal: #a8382c;    /* 인장 — 모순·경고 */
+
+  /* ── 놋쇠 — 금속이 필요한 한 점에만 (문패·클립·책등 띠) ── */
+  --fa-brass: #96793c;
+
+  /* ── 공기: 한 개의 광원 ──
+   * 이 세계에는 갓등 하나가 있다. 빛은 위에서 약간 왼쪽으로 떨어지고, 나머지는 어둠이다.
+   * 화면마다 다른 방향에서 빛이 오면 오브젝트들이 같은 방 안의 물건으로 안 읽힌다. */
+  --fa-lamp: rgba(255, 232, 190, .10);
+  --fa-lamp-warm: rgba(255, 216, 158, .16);
+  --fa-shadow: rgba(0, 0, 0, .52);
+
+  /* ── 활자 ── */
+  --fa-serif: var(--serif, AppleMyungjo, Batang, 'Nanum Myeongjo', 'Apple SD Gothic Neo', serif);
+  --fa-sans: 'Apple SD Gothic Neo', system-ui, sans-serif;
+  --fa-mono: var(--mono, 'SF Mono', 'D2Coding', ui-monospace, Menlo, monospace);
+
+  /* ── 종이 질감 이미지 ──
+   * 외부 에셋 0장. feTurbulence 를 data URI 로 구워 쓴다 (배포 무게 0, 오프라인에서도 선다).
+   * `background-blend-mode: multiply` 나 `soft-light` 로 얹는다 — 그냥 깔면 회색 막이 된다. */
+  --fa-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+}
