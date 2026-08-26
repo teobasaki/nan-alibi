@@ -16,7 +16,7 @@
  */
 
 import type { SuspectId } from '../types'
-import type { ClaimDef, FactDef } from '../engine/inquiry'
+import { heldClueIds, question, type ClaimDef, type FactDef, type InquiryState } from '../engine/inquiry'
 
 /* ────────────────────────────── Fact — 객관적으로 확정된 것 ────────────────────────────── */
 
@@ -42,7 +42,12 @@ export const GC001_FACTS: readonly FactDef[] = [
     id: 'F-GC001-DOOR-OPEN-NOT-PASSAGE',
     text: '반입문 출입 패널은 문이 열린 사실만 남긴다. 통과 여부는 기록하지 않는다.',
     source: '출입 패널 규격서',
-    known: true,
+    /**
+     * ⚠️ **처음부터 알려주지 않는다.** 한 번 `known: true` 로 뒀다가 실측에서 걸렸다 —
+     * 이 한 줄이 IQ03(류나린은 정말 21:04에 나갔는가)의 열쇠이므로, 브리핑에 넣으면
+     * 첫 질문에 류나린의 퇴장 진술이 바로 흔들린다. 이 사실은 **보안 담당에게 묻거나
+     * 출입 기록을 조회해서** 얻는 것이다.
+     */
   },
   {
     id: 'F-GC001-CRIME-WINDOW',
@@ -270,3 +275,23 @@ export const gc001OpeningClaims = (s: SuspectId): ClaimDef[] =>
 
 /** 처음부터 알고 있는 Fact — 브리핑에 포함된 것 */
 export const gc001KnownFacts = (): FactDef[] => GC001_FACTS.filter((f) => f.known)
+
+/**
+ * **비교할 거리가 생긴 진술을 흔든다** — 들은 진술 중 `tension` 이 손에 들어온 것.
+ *
+ * 여기서 하는 일은 딱 하나다: `KNOWN → QUESTIONABLE`. **거짓말이라고 말하지 않는다** (AC-12).
+ * 그다음(추궁)은 플레이어가 움직여야 한다 (명세 §14).
+ *
+ * 순수 함수라 호출 시점을 자유롭게 잡을 수 있다 — 기록을 조회한 직후, 진술을 들은 직후,
+ * 어느 쪽이든 같은 결과가 나온다 (AC-14: 조사 순서가 달라도 같은 Truth).
+ */
+export function applyGc001Tension(s: InquiryState): InquiryState {
+  const held = new Set(heldClueIds(s))
+  let next = s
+  for (const c of GC001_CLAIMS) {
+    if (!next.claims[c.id]) continue
+    const hits = (c.tension ?? []).filter((t) => held.has(t))
+    if (hits.length) next = question(next, c.id, hits)
+  }
+  return next
+}

@@ -45,13 +45,19 @@ import { newTrace, profile, record as trace, type TraceEvent, type TraceInput } 
 import { journalLines } from './ui/journal'
 import { saveTrace } from './ui/journeyStore'
 import { pendingPairs, placeMatrix } from './engine/crossref'
-import { ask } from './api'
+import { ask, type AskInquiry } from './api'
+import { chargesQuestion, costNote } from './engine/askPolicy'
 import {
   CRIME_PLACE, CRIME_SLOT, kindLabel, PLACES, placeLabel, SLOTS, slotLabel, SUSPECTS,
   type CaseFile, type Evidence, type PlaceId, type Slot, type SuspectId,
 } from './types'
 import { FIELD_BUDGET, TALK_CAP, WEAPONS, WEAPON_TRACE } from './data/config'
 import { chalkData, renderChalkboard } from './ui/chalkboard'
+import {
+  createInquiry, discover, hear, learnFact, revise, heldClueIds,
+  type InquiryState,
+} from './engine/inquiry'
+import { applyGc001Tension, gc001Claim, gc001Fact, gc001KnownFacts } from './data/gc001-inquiry'
 import { renderSidebar, type SidebarSuspect } from './ui/sidebar'
 import { createNotebookDrawer, type DrawerHandle } from './ui/drawer'
 import { heldRecordsFrom, renderCaseReview } from './ui/caseReview'
@@ -124,6 +130,11 @@ interface UI {
    * (팀 3-2-(5)-(2) 3단계). 판정이 아니라 "내가 방금 어디까지 봤는지" 의 표시다.
    */
   lastWho: SuspectId | null
+  /**
+   * **조사 계층** (V0.2 · ADR 031) — Claim·Fact·Evidence 의 상태와 가설.
+   * `game`(자원·채점)과 나란히 든다. gc001 에서만 채워지고, 다른 사건에서는 빈 채로 남는다.
+   */
+  inq: InquiryState
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
   /** AI 파이프라인 판을 펼쳤는가 */
   dash: boolean
@@ -235,6 +246,13 @@ const ui: UI = {
   note: null,
   stamped: new Set(),
   lastWho: null,
+  /**
+   * 조사 계층의 시작점 — **처음부터 아는 사실만** 들고 시작한다 (브리핑에 있던 것).
+   * gc001 이 아니면 이 목록이 비어서 계층 전체가 조용히 잠든다.
+   */
+  inq: IS_GC001
+    ? gc001KnownFacts().reduce<InquiryState>((s, f) => learnFact(s, f.id), createInquiry())
+    : createInquiry(),
   dash: false,
   opening: false,
   journalSeen: 0,
@@ -622,6 +640,7 @@ function exploreRoom(): HTMLElement {
         if (ui.game.investigationsLeft <= 0 && ev.requires.length === 0) return
         play('paper')
         mark({ k: 'lookup', ev: id })
+        noteDiscovery(id)
         act(() => lookupEvidence(ui.game, id))
         ui.explore?.handle?.setMarkers(exploreMarkers())
       },
@@ -749,6 +768,7 @@ function onScenePick(id: string): void {
     })
     return
   }
+  noteDiscovery(id)
   ui.game = lookupEvidence(ui.game, id)
   mark({ k: 'lookup', ev: id })
   playAny('pickup')
@@ -2115,7 +2135,10 @@ function board(): HTMLElement {
     const b = h('button', undefined,
       `[${e.id}] ${label} — ${use} (${free ? '무료 — 자물쇠 값은 치렀다' : '조사 1회'})`) as HTMLButtonElement
     b.disabled = ui.busy || (ui.game.investigationsLeft <= 0 && e.requires.length === 0)
-    b.onclick = () => { play('paper'); mark({ k: 'lookup', ev: e.id }); act(() => lookupEvidence(ui.game, e.id)) }
+    b.onclick = () => {
+      play('paper'); mark({ k: 'lookup', ev: e.id }); noteDiscovery(e.id)
+      act(() => lookupEvidence(ui.game, e.id))
+    }
     focusKey(b, `lookup:${e.id}`)
     into.appendChild(b)
   }
@@ -2275,6 +2298,55 @@ function openCaseReview(): void {
   queueMicrotask(() => (ov.querySelector('button') as HTMLButtonElement | null)?.focus())
 }
 
+/**
+ * ── 조사 계층 배선 (V0.2 · ADR 031) ──
+ *
+ * 서버가 규칙 엔진을 돌리려면 **플레이어의 지식**을 알아야 한다. 진실은 보내지 않는다 —
+ * 손에 쥔 Clue id 와 진술의 상태뿐이고, 둘 다 플레이어가 이미 화면에서 보는 것이다.
+ */
+function inquiryPayload(presentedClueIds?: string[]): {
+  heldClueIds?: string[]
+  claimStates?: Record<string, string>
+  presentedClueIds?: string[]
+} {
+  if (!IS_GC001) return {}
+  const claimStates = Object.fromEntries(
+    Object.entries(ui.inq.claims).map(([id, t]) => [id, t.state]),
+  )
+  return {
+    // 엔진이 이미 쥔 기록(E*)도 조사 계층의 손에 든 것으로 함께 센다 — 두 목록이 갈라지면
+    // 규칙 엔진이 "아직 없는 근거" 로 문을 닫는다
+    heldClueIds: [...new Set([...heldClueIds(ui.inq), ...ui.game.cards])],
+    claimStates,
+    ...(presentedClueIds ? { presentedClueIds } : {}),
+  }
+}
+
+/**
+ * 서버가 돌린 규칙 엔진의 결과를 상태로 옮긴다.
+ *
+ * **여기서 판정하지 않는다.** 들은 진술을 `KNOWN` 으로 넣고, 인물이 말을 고쳤다면
+ * 원본과 수정본을 나란히 남기고(명세 §15), 확인한 사실을 기록한다. 그다음 손에 든 Clue 로
+ * 흔들릴 만한 진술만 `QUESTIONABLE` 로 올린다 — 거짓말이라고 말하지 않는다 (AC-12).
+ */
+function applyInquiry(inq: AskInquiry | undefined): void {
+  if (!IS_GC001 || !inq) return
+  let next = ui.inq
+  for (const id of inq.claimIds) next = hear(next, id)
+  for (const id of inq.factIds) next = learnFact(next, id)
+  if (inq.revisionOf) {
+    const [from, to] = inq.revisionOf
+    next = revise(next, from, to).state
+  }
+  ui.inq = applyGc001Tension(next)
+}
+
+/** 기록을 확보했다 — 조사 계층에도 알린다. 흔들리는 진술은 그 즉시 다시 계산된다 */
+function noteDiscovery(evId: string): void {
+  if (!IS_GC001) return
+  ui.inq = applyGc001Tension(discover(ui.inq, evId))
+}
+
 async function doAsk(s: SuspectId, question: string): Promise<void> {
   const q = question.trim()
   if (!q || ui.busy || talksLeft(ui.game, s) <= 0) return
@@ -2292,11 +2364,19 @@ async function doAsk(s: SuspectId, question: string): Promise<void> {
     suspectId: s, personaId: CASE.suspects[s].personaId,
     question: q, pressure: before.pressure[s],
     history: ui.chats[s]!.map((c) => ({ q: c.q, a: c.a })),
+    ...inquiryPayload(),
   })
 
-  // 폴백이면 조사 횟수를 돌려준다 — AI 실패의 대가를 플레이어가 치르지 않는다
+  /**
+   * **비용 판정이 바뀌었다** (명세 §5 · AC-02·03). 예전에는 `fallback` 하나로 환불했는데,
+   * V0.2 의 폴백은 규칙이 사건 데이터의 문장으로 답하는 **정상 응답**이다 (AC-13).
+   * 정보를 받았으면 비용을 치른다. 시스템 실패(키 없음·레이트·네트워크)만 환불한다.
+   */
   setStage(r.fallback ? 'idle' : 'verifying', r.fallback ? FALLBACK_LABEL : undefined)
-  if (r.fallback) ui.game = before
+  if (!chargesQuestion(r)) ui.game = before
+  const note = costNote(r)
+  if (note) ui.note = note
+  applyInquiry(r.inquiry)
 
   mark({ k: 'ask', who: s, preset: PRESETS.some((p) => p.q === q), fallback: r.fallback })
   ui.chats[s] = [...ui.chats[s]!, { q, a: r.reply.speech, fallback: r.fallback, tell: r.reply.tell, st: r.reply.statement }]
@@ -2338,8 +2418,10 @@ async function doPresent(s: SuspectId, evId: string): Promise<void> {
     presentedEvidence: cardSummary(CASE, evId),
     pressure: before.pressure[s],
     history: ui.chats[s]!.map((c) => ({ q: c.q, a: c.a })),
+    ...inquiryPayload([evId]),
   })
-  if (r.fallback) ui.game = before
+  if (!chargesQuestion(r)) ui.game = before
+  applyInquiry(r.inquiry)
 
   // **판별은 엔진이 소유한다.** 폴백이면 해금 여부를 알려선 안 된다 —
   // 해금 쌍은 범인에게만 있어서 그 한 줄이 곧 정답이다 (`presentReveal` 주석).
@@ -3476,10 +3558,22 @@ const DEV_JUMP = import.meta.env.DEV
   ? new URLSearchParams(location.search).get('dev')
   : null
 
+/**
+ * DEV 훅 — 조사 계층은 화면에 다 드러나지 않는다 (Claim 상태·확인한 Fact).
+ * `__cs`·`__ex`·`__st` 와 같은 이유로 상태를 밖에서 들여다볼 창을 하나 낸다.
+ * 프로덕션 번들에는 없다.
+ */
+if (import.meta.env.DEV) {
+  ;(window as unknown as Record<string, unknown>).__ui = ui
+}
+
 if (DEV_JUMP === 'act2') {
   const q = new URLSearchParams(location.search)
   const want = Math.max(0, Math.min(FIELD_BUDGET, Number(q.get('ev') ?? 3)))
-  for (const e of CASE.evidence.slice(0, want)) ui.game = lookupEvidence(ui.game, e.id)
+  for (const e of CASE.evidence.slice(0, want)) {
+    noteDiscovery(e.id)
+    ui.game = lookupEvidence(ui.game, e.id)
+  }
   ui.game = timeUp(ui.game)          // 시간 종료 = 예산 소진 (기획서 §2) — 제2막 게이트가 열린다
   syncChapter()
   ui.wall = false                    // 첫 화면을 칠판으로 (검증 대상)

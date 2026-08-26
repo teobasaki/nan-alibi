@@ -16,10 +16,15 @@
 
 import { generateValidCase } from '../../src/engine/validate'
 import { buildPersonaPrefix, buildTurn, RESPONSE_SCHEMA } from '../../src/engine/prompt'
-import { verifyReply, fallbackReply } from '../../src/engine/verify'
+import { verifyReply, fallbackReply, extractTimes } from '../../src/engine/verify'
 import { applyWorld } from '../../src/data/worlds'
 import { gc001Case } from '../../src/data/gc001'
-import type { SuspectId } from '../../src/types'
+import { classify } from '../../src/engine/intent'
+import { allowedResponse, renderAllowedBlock, ruleFallbackSpeech } from '../../src/engine/knowledge'
+import { GC001_KNOWLEDGE } from '../../src/data/gc001-knowledge'
+import { gc001Claim, gc001Fact } from '../../src/data/gc001-inquiry'
+import type { ClaimState } from '../../src/engine/inquiry'
+import { slotLabel, SLOTS, type SuspectId } from '../../src/types'
 
 interface Env {
   OPENAI_API_KEY?: string
@@ -39,6 +44,17 @@ interface Body {
   presentedEvidence?: string
   pressure?: number
   history?: { q: string; a: string }[]
+  /**
+   * ── 조사 계층 (V0.2, gc001 전용) ──
+   * **진실이 아니라 플레이어의 지식이다.** 손에 쥔 Clue id 와 진술 상태를 받아
+   * 서버가 규칙 엔진을 돌려 *이 턴에 말해도 되는 범위*를 정한다 (명세 §35).
+   *
+   * 허용 범위를 클라이언트가 계산해 보내지 않는 이유: 그러면 무엇을 말할 수 있는지를
+   * 클라이언트가 정하게 된다. 규칙은 서버(코드)가 소유한다.
+   */
+  heldClueIds?: string[]
+  claimStates?: Record<string, ClaimState>
+  presentedClueIds?: string[]
 }
 
 /**
@@ -170,19 +186,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (body.question.length > 200) return bad('질문이 너무 길다 (200자 상한)')
 
-  // 남용 방어 — 폴백으로 떨어뜨리되 **이유를 숨기지 않는다** (클라이언트가 조사 횟수를 환불한다)
-  if (!originOk(request)) {
-    return Response.json({ reply: fallbackReply(body.personaId), fallback: true, reason: 'bad_origin' }, { status: 403 })
-  }
-  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
-  if (!rateOk(ip)) {
-    return Response.json({ reply: fallbackReply(body.personaId), fallback: true, reason: 'rate_limited' }, { status: 429 })
-  }
-
-  if (!env.OPENAI_API_KEY) {
-    // 폴백 3층: 키 없음 → 게임은 멈추지 않고 계속 진행되어야 한다
-    return Response.json({ reply: fallbackReply(body.personaId), fallback: true, reason: 'no_key' })
-  }
+  // ⚠️ 키 없음 판정은 사건을 재구성한 **뒤**로 내렸다 — 규칙 기반 폴백(AC-13)이
+  // 조사 계층을 필요로 하기 때문이다. 로컬 `npm run dev` 가 항상 이 경로를 탄다.
 
   /**
    * 사건 재구성 — **클라이언트가 보는 사건과 같은 옷**이어야 한다.
@@ -194,12 +199,107 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     ? gc001Case()
     : applyWorld(generateValidCase(body.seed).case, body.world)
   const prefix = buildPersonaPrefix(c, body.suspectId, body.personaId)
-  const turn = buildTurn({
-    question: body.question,
-    presentedEvidence: body.presentedEvidence,
-    pressure: body.pressure ?? 0,
-    history: body.history ?? [],
-  })
+
+  /**
+   * ── 조사 계층: **질문을 읽고, 말할 수 있는 범위를 먼저 정한다** (V0.2 §35).
+   *
+   * `PLAYER QUESTION → INTENT → RULE ENGINE → 허용 Claim/Fact → PERSONA AI`
+   *
+   * gc001 에만 적용한다 — 시드 사건에는 손으로 쓴 규칙 표가 없다(ADR 031).
+   * 결과 블록은 **프리픽스가 아니라 턴**에 붙는다: 프리픽스는 판 내내 바이트 고정이어야
+   * 프롬프트 캐시가 살아 있고, 이 블록은 매 턴 달라진다.
+   */
+  const inquiry = body.caseId === 'gc001'
+    ? (() => {
+      const names = Object.fromEntries(Object.values(c.suspects).map((s) => [s.name, s.id]))
+      const intent = classify(body.question, {
+        speaker: body.suspectId,
+        names,
+        slotLabels: SLOTS.map((t) => slotLabel(c, t)),
+        presentedClueIds: body.presentedClueIds,
+      })
+      const allowed = allowedResponse({
+        suspectId: body.suspectId,
+        intent: intent.intent,
+        held: body.heldClueIds ?? [],
+        claimStates: body.claimStates ?? {},
+        presentedClueIds: body.presentedClueIds,
+        confidence: intent.confidence,
+        rules: GC001_KNOWLEDGE,
+      })
+      return { intent, allowed }
+    })()
+    : null
+
+  const look = { claim: (id: string) => gc001Claim(id)?.text, fact: (id: string) => gc001Fact(id)?.text }
+  /**
+   * **이 턴에 허용된 문장에 있는 시각만** 검증기에 함께 넘긴다 (V0.2).
+   * 조사 계층의 사실에는 칸 밖 시각(20:40·21:04·21:11·21:15·21:30)이 있고, 그것을 말하는 것은
+   * 정당하다. 그러나 목록을 통째로 열어 주지는 않는다 — 허용된 문장에 없는 시각은 여전히 유령이다.
+   */
+  const extraTimes = inquiry
+    ? [...new Set([...inquiry.allowed.claimIds, ...inquiry.allowed.factIds]
+      .map((id) => look.claim(id) ?? look.fact(id) ?? '')
+      .flatMap((text) => extractTimes(text)))]
+    : undefined
+  const turn = [
+    buildTurn({
+      question: body.question,
+      presentedEvidence: body.presentedEvidence,
+      pressure: body.pressure ?? 0,
+      history: body.history ?? [],
+    }),
+    inquiry ? renderAllowedBlock(inquiry.allowed, look) : '',
+  ].filter(Boolean).join('\n\n')
+
+  /**
+   * 폴백 응답 — **규칙이 있으면 규칙이 말한다** (AC-13).
+   * 회피 대사만 돌려주면 AI 장애 중에는 사건이 한 발도 못 나간다. 허용된 진술·사실이 있으면
+   * 그 문장을 그대로 말한다 — 투박하지만 사건은 진행된다. 문장은 사건 데이터의 것이라
+   * 여기서 새 사실이 생기지 않는다.
+   */
+  const fallback = (): ReturnType<typeof fallbackReply> => {
+    const base = fallbackReply(body.personaId)
+    if (!inquiry) return base
+    const speech = ruleFallbackSpeech(inquiry.allowed, look)
+    return speech ? { ...base, speech } : base
+  }
+  /** 클라이언트가 상태기계를 돌리기 위해 받아 가는 것 — 진실은 없다 */
+  const inquiryOut = inquiry
+    ? {
+      intent: inquiry.intent.intent,
+      confidence: inquiry.intent.confidence,
+      time: inquiry.intent.time,
+      subjectId: inquiry.intent.subjectId,
+      mode: inquiry.allowed.mode,
+      claimIds: inquiry.allowed.claimIds,
+      factIds: inquiry.allowed.factIds,
+      reaction: inquiry.allowed.reaction,
+      revisionOf: inquiry.allowed.revisionOf,
+    }
+    : undefined
+
+  /**
+   * ── 남용 방어와 키 확인은 **사건을 재구성한 뒤**에 한다 ──
+   *
+   * 순서를 뒤집은 이유: 막힌 요청에도 **규칙 기반 폴백**(AC-13)과 조사 계층 결과를 실어 보내야
+   * 사건이 진행된다. 예전에는 이 검사들이 맨 앞에 있어서 `fallbackReply()`(회피 대사)만 나갔고,
+   * 로컬 개발에서는 그 경로가 100%였다(브리지가 Origin 헤더를 안 넘겨 전부 403 이었다).
+   * 재구성 비용은 결정론 생성 1회(수 ms)다 — 정보가 나오지 않는 것보다 싸다.
+   */
+  if (!originOk(request)) {
+    return Response.json({ reply: fallback(), fallback: true, reason: 'bad_origin', inquiry: inquiryOut }, { status: 403 })
+  }
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
+  if (!rateOk(ip)) {
+    return Response.json({ reply: fallback(), fallback: true, reason: 'rate_limited', inquiry: inquiryOut }, { status: 429 })
+  }
+
+  if (!env.OPENAI_API_KEY) {
+    // 폴백 3층: 키 없음 → 게임은 멈추지 않는다. 규칙이 대신 말한다 (AC-13).
+    return Response.json({ reply: fallback(), fallback: true, reason: 'no_key', inquiry: inquiryOut })
+  }
+
   // 옷이 다르면 프리픽스가 다르다 — 캐시 그룹도 옷까지 포함해야 히트가 산다
   const cacheKey = `alibi-${body.caseId ?? body.world ?? 'hotel'}-${body.seed}-${body.suspectId}`
 
@@ -212,18 +312,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       failures.push(r.failure)
       continue
     }
-    const v = verifyReply(r.parsed, c, body.suspectId)
+    const v = verifyReply(r.parsed, c, body.suspectId, extraTimes)
     if (v.ok) {
-      return Response.json({ reply: v.reply, fallback: false, attempt, usage: r.usage })
+      return Response.json({ reply: v.reply, fallback: false, attempt, usage: r.usage, inquiry: inquiryOut })
     }
     failures.push(`${v.reason}: ${v.detail}`)
   }
 
-  // 2층: 사전 작성 회피 대사. 조사 횟수는 소모되지 않는다.
+  /**
+   * 2층: 규칙이 말한다 (AC-13). **`fallback: true` 의 뜻이 바뀌었다** —
+   * 예전에는 "조사 횟수를 환불한다" 는 신호였지만, 명세 §5 는 *정상 응답이면 항상 차감*,
+   * *시스템 오류면 차감하지 않음* 으로 정책을 통일했다. 검증 실패 뒤의 규칙 응답은
+   * **정상 응답**이므로 비용을 받는다 (AC-02). 환불 판정은 클라이언트가 `reason` 으로 한다.
+   */
   return Response.json({
-    reply: fallbackReply(body.personaId),
+    reply: fallback(),
     fallback: true,
     reason: 'verification_failed',
     failures,
+    inquiry: inquiryOut,
   })
 }

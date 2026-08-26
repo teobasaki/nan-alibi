@@ -67,9 +67,21 @@ function pagesFunctions(): Plugin {
           const chunks: Buffer[] = []
           for await (const c of req) chunks.push(c as Buffer)
           const body = Buffer.concat(chunks)
+          /**
+           * **브라우저가 보낸 헤더를 그대로 넘긴다.**
+           * 예전에는 `Content-Type` 하나만 넣었다. 그래서 `Origin` 이 없었고,
+           * `interrogate.ts` 의 오리진 검사가 로컬 요청을 전부 **403 bad_origin** 으로 막았다 —
+           * 로컬 심문이 항상 폴백 대사였던 진짜 이유가 이것이다. 프로덕션에서만 도는 코드는
+           * 개발 중에 아무도 확인하지 못한다(이 플러그인의 존재 이유가 바로 그 문장이다).
+           */
+          const headers = new Headers({ 'Content-Type': 'application/json' })
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (v === undefined) continue
+            headers.set(k, Array.isArray(v) ? v.join(', ') : v)
+          }
           const request = new Request(`http://localhost${req.url}`, {
             method: req.method,
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: body.length ? body : undefined,
           })
           const response: Response = await handler({ request, env: readVars() })

@@ -51,16 +51,26 @@ export function extractTimes(text: string): string[] {
   return out
 }
 
-/** 12시간 표기를 24시간으로 — "10시 20분" 은 밤 10시를 뜻할 수 있다 */
-function timeMatchesCase(c: CaseFile, t: string): boolean {
+/**
+ * 12시간 표기를 24시간으로 — "10시 20분" 은 밤 10시를 뜻할 수 있다.
+ *
+ * @param extra 사건의 **칸이 아닌 정당한 시각들** (V0.2 조사 계층).
+ *   조사 계층의 Fact·Claim 에는 칸(21:00·21:10·21:16·21:18·21:21) 밖의 시각이 있다 —
+ *   20:40 받침대 점검, 21:04 문 열림, 21:11 권한 발급, 21:15 통화 종료, 21:30 보고 예약.
+ *   이 시각들은 사건에 **실재**하므로 유령이 아니다. 다만 아무 시각이나 허용하면 검사가
+ *   무의미해지므로, **그 턴에 말해도 되는 문장에 실제로 등장한 시각만** 받는다.
+ */
+function timeMatchesCase(c: CaseFile, t: string, extra?: readonly string[]): boolean {
   const slots = caseSlots(c)
-  if (slots.includes(t)) return true
+  if (slots.includes(t) || extra?.includes(t)) return true
   const [h, m] = t.split(':') as [string, string]
   const alt = `${String((Number(h) + 12) % 24).padStart(2, '0')}:${m}`
-  return slots.includes(alt)
+  return slots.includes(alt) || (extra?.includes(alt) ?? false)
 }
 
-export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResult {
+export function verifyReply(
+  raw: unknown, c: CaseFile, s: SuspectId, extraTimes?: readonly string[],
+): VerifyResult {
   // ── 모양 검사 ──
   if (typeof raw !== 'object' || raw === null) {
     return { ok: false, reason: 'shape', detail: '객체가 아니다' }
@@ -108,7 +118,7 @@ export function verifyReply(raw: unknown, c: CaseFile, s: SuspectId): VerifyResu
   }
 
   // ── 검사 2: 본문의 시각이 사건에 실재하는가 ──
-  const badTime = extractTimes(speech).find((t) => !timeMatchesCase(c, t))
+  const badTime = extractTimes(speech).find((t) => !timeMatchesCase(c, t, extraTimes))
   if (badTime) {
     return { ok: false, reason: 'phantom-time', detail: `사건에 없는 시각: ${badTime}` }
   }

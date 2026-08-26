@@ -26,6 +26,27 @@ export interface AskInput {
   presentedEvidence?: string
   pressure: number
   history: { q: string; a: string }[]
+  /**
+   * ── 조사 계층 (V0.2) ── **플레이어의 지식**을 보낸다. 진실은 여기에 없다.
+   * 서버가 이것으로 규칙 엔진을 돌려 이 턴에 말해도 되는 범위를 정한다 (명세 §35).
+   */
+  heldClueIds?: string[]
+  claimStates?: Record<string, string>
+  presentedClueIds?: string[]
+}
+
+/** 서버가 돌린 규칙 엔진의 결과 — 클라이언트가 Claim 상태기계를 돌리는 재료 */
+export interface AskInquiry {
+  intent: string
+  confidence: number
+  time?: string
+  subjectId?: SuspectId
+  mode: 'ANSWER' | 'DEFLECT' | 'REVISE' | 'UNSURE' | 'CLARIFY'
+  claimIds: string[]
+  factIds: string[]
+  reaction: string
+  /** [원본, 수정] — 있으면 이번 턴에 말이 바뀌었다 */
+  revisionOf?: [string, string]
 }
 
 export interface AskResult {
@@ -33,6 +54,7 @@ export interface AskResult {
   fallback: boolean
   reason?: string
   ms: number
+  inquiry?: AskInquiry
 }
 
 const TIMEOUT_MS = 12_000
@@ -49,9 +71,17 @@ export async function ask(input: AskInput): Promise<AskResult> {
       body: JSON.stringify(input),
       signal: ctl.signal,
     })
-    const data = (await res.json()) as { reply?: PersonaReply; fallback?: boolean; reason?: string }
+    const data = (await res.json()) as {
+      reply?: PersonaReply; fallback?: boolean; reason?: string; inquiry?: AskInquiry
+    }
     if (!data.reply) throw new Error(data.reason ?? 'bad response')
-    return { reply: data.reply, fallback: Boolean(data.fallback), reason: data.reason, ms: performance.now() - t0 }
+    return {
+      reply: data.reply,
+      fallback: Boolean(data.fallback),
+      reason: data.reason,
+      ms: performance.now() - t0,
+      inquiry: data.inquiry,
+    }
   } catch (e) {
     // 폴백 3층: 네트워크·타임아웃. 게임은 멈추지 않는다.
     return {
