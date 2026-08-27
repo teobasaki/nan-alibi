@@ -61,12 +61,12 @@ const HYPOTHESIS_LABEL: Record<HypothesisStatus, string> = {
 }
 /**
  * 탭 순서·라벨 — 정본 3.2.4·3.2.13 에 맞춘다.
- * 「사건 개요 · 용의자 진술 · 증거 · 타임라인 · 추론」
+ * 「사건 개요 · 용의자 증언 · 증거 · 타임라인 · 추론」
  * id 는 상태·테스트·외부 참조가 쓰므로 바꾸지 않는다. 바뀌는 것은 보이는 순서와 라벨.
  */
 export const TABS: { id: InquiryTab; no: string; label: string }[] = [
   { id: 'overview', no: '01', label: '사건 개요' },
-  { id: 'testimony', no: '02', label: '용의자 진술' },
+  { id: 'testimony', no: '02', label: '용의자 증언' },
   { id: 'evidence', no: '03', label: '증거' },
   { id: 'timeline', no: '04', label: '타임라인' },
   { id: 'deduction', no: '05', label: '추론' },

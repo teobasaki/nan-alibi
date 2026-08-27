@@ -976,6 +976,8 @@ function cardWallPage(): HTMLElement {
   const freshOut = cards.some((c) => c.cleared && !ui.wallStamped.has(c.id))
 
   page.appendChild(renderWall(cards, {
+    // MIG-003: 소거를 안 보여주는 사건에서는 소거 안내 문장도 없다
+    showClearing: SYSTEM_CLEARING,
     // 사진 열쇠는 **배역 태그**다 — 슬롯 id 를 그대로 넘기면 조용히 전원 명패가 된다
     portrait: (id) => portraitFor(castTagFor(id, CASE_TAG)),
     personaLine: (s) => {

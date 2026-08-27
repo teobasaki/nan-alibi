@@ -84,6 +84,12 @@ export interface WallOpts {
   stampedSeen: Set<string>
   /** 카드가 처음 꽂히는 스태거 연출을 돌릴 것인가 — 첫 진입에만 */
   entering: boolean
+  /**
+   * 자동 소거를 화면에 드러내는가 (MIG-003). 기본은 기존 동작(`true`).
+   * `false` 면 소거를 설명하는 안내 문장도 함께 사라진다 — 끝까지 나타나지 않는
+   * 표식을 찾게 만들면 안내가 아니라 함정이다.
+   */
+  showClearing?: boolean
   onPick(s: SuspectId): void
 }
 
@@ -102,8 +108,15 @@ const el = (tag: string, cls?: string, text?: string): HTMLElement => {
 export function renderWall(cards: WallCard[], opts: WallOpts): HTMLElement {
   const wrap = el('div', 'cwall')
   wrap.appendChild(el('div', 'cwall-cap', '용의자 다섯 — 한 명이 범인이다'))
-  wrap.appendChild(el('div', 'cwall-sub',
-    '카드를 누르면 취조실로 데려온다. 붉은 대각선은 기록으로 소거된 사람이다 — 진술이 아니라 기록만이 사람을 지운다.'))
+  /**
+   * 안내 한 줄. **소거를 설명하는 문장은 소거가 보일 때만 있다** (MIG-003) —
+   * GC-001 처럼 표시를 끈 사건에서 이 문장이 남으면, 끝까지 나타나지 않는 표식을
+   * 찾게 만든다. 카드 하나라도 소거로 그려졌는지를 보고 정한다.
+   */
+  const showClearing = opts.showClearing ?? true
+  wrap.appendChild(el('div', 'cwall-sub', showClearing
+    ? '카드를 누르면 취조실로 데려온다. 붉은 대각선은 기록으로 소거된 사람이다 — 진술이 아니라 기록만이 사람을 지운다.'
+    : '카드를 누르면 취조실로 데려온다. 누구를 지울지는 당신이 정한다 — 시스템은 사람을 지우지 않는다.'))
 
   const board = el('div', 'cwall-board')
   cards.forEach((c, i) => {
