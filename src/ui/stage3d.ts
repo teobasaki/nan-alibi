@@ -22,6 +22,38 @@
  * 사람이 가만히 서 있을 때 실제로 하는 것이 그것이고, 클립보다 상태에 잘 반응한다.
  */
 
+/**
+ * 압박도 → 카메라 거리 배율의 **한 프레임 진행** (순수 함수).
+ *
+ * ## 보장
+ * - 출력은 항상 [1 - MAX_ZOOM_SHRINK, 1] 범위 안에 있다 (상한·하한 모두 경계됨).
+ * - pressure 0 이면 target=1 → 원래 거리로 돌아간다 (갇히지 않음).
+ * - `reducedMotion=true` 이면 항상 1 을 반환한다 (거리 변동 없음).
+ * - 단조 램프: 한 프레임 변화량은 ±(MAX_ZOOM_SHRINK × ZOOM_LERP) 을 절대 넘지 않는다.
+ *
+ * 테스트가 이 함수를 잠근다 — 3D 없이도 판정할 수 있는 구간이다 (sceneRules 와 같은 이유).
+ */
+export const PRESSURE_ZOOM = {
+  /** pressure 100 일 때 거리가 줄어드는 최대 비율. 0.06 = 6% (0.95m 기준 5.7cm) */
+  MAX_SHRINK: 0.06,
+  /** 프레임당 지수 접근 계수. 0.03 → 60fps 기준 ~1.1초에 63% 도달 */
+  LERP: 0.03,
+} as const
+
+export function pressureZoomBias(
+  pressure: number,
+  currentBias: number,
+  reducedMotion: boolean,
+): number {
+  if (reducedMotion) return 1
+  const p = Math.max(0, Math.min(100, pressure))
+  const target = 1 - (p / 100) * PRESSURE_ZOOM.MAX_SHRINK
+  // 지수 접근(램프) — 한 프레임 변화량은 항상 작다
+  const next = currentBias + (target - currentBias) * PRESSURE_ZOOM.LERP
+  // 부동소수 잔차로 범위를 벗어나지 않도록 클램프
+  return Math.max(1 - PRESSURE_ZOOM.MAX_SHRINK, Math.min(1, next))
+}
+
 export interface Stage3D {
   /** 압박 0~100 — 호흡이 빨라지고 몸이 굳는다 */
   setPressure(v: number): void
@@ -320,6 +352,9 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
     const { groundIt, measureBox, measureY, measuredHeight } = await import('./skinBounds')
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
     const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js')
+
+    /** prefers-reduced-motion: reduce → 카메라 거리 변동을 끈다 (팀 3-3-(3) 2단계 · 접근성) */
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
     const w = host.clientWidth || 320
     const h = host.clientHeight || 380
@@ -950,7 +985,7 @@ export async function mount(host: HTMLElement, slug: string): Promise<Stage3D | 
        * 끌고 있는 동안에는 둘 다 멈춘다 — 두 힘이 싸우면 멀미가 난다.
        */
       if (!dragging) {
-        zoomBias += ((1 - (pressure / 100) * 0.06) - zoomBias) * 0.03
+        zoomBias = pressureZoomBias(pressure, zoomBias, reducedMotion)
         const floating = performance.now() - idleSince > 1200
         if (floating) drift += 0.0016
         applyCam(
