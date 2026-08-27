@@ -260,9 +260,10 @@
 /* 범행 시각 머리에 「추정 범행시간」 배지 — 시안은 밝은 배지 */
 .cb-tag-crime {
   display: inline-block;
-  margin-top: 4px;
-  padding: 1px 6px;
-  font-size: 10px;
+  margin-top: 5px;
+  padding: 2px 9px;
+  white-space: nowrap;
+  font-size: 10.5px;
   letter-spacing: 1.2px;
   color: var(--cb-verm);
   border: 1px solid var(--cb-verm);
@@ -349,10 +350,11 @@
 }
 
 /* ── 상태 표시 배지 (물음표·경고·체크) ── */
+/**
+ * 상태 표시는 **아이콘 자리**에 온다 (시안). 기록 아이콘이 있으면 그 옆(구석)으로 물러나고,
+ * 없으면 아이콘이 서야 할 자리를 대신 채운다 — 시안의 `?` 는 칸의 왼쪽·위에 있다.
+ */
 .cb-status {
-  position: absolute;
-  top: 3px;
-  right: 4px;
   z-index: 3;
   width: 16px;
   height: 16px;
@@ -360,6 +362,21 @@
   place-items: center;
   pointer-events: none;
 }
+/* 기록 아이콘이 이미 있는 칸에서는 구석으로 — 두 그림이 겹치지 않게 */
+.cb-cell-in:has(.cb-icon) > .cb-status,
+.cb-cell > .cb-status {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+}
+/* 아무것도 모르는 칸 — 물음표 하나가 칸의 얼굴이다 */
+.cb-cell-in > .cb-status:only-child {
+  position: static;
+  width: 22px;
+  height: 22px;
+  opacity: .62;
+}
+.cb-cell-in > .cb-status:only-child .cb-status-svg { width: 20px; height: 20px; }
 .cb-status-svg {
   width: 14px;
   height: 14px;
