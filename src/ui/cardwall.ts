@@ -35,9 +35,25 @@ export interface WallCard {
   traj: string
 }
 
+/**
+ * MIG-003: 카드 월 데이터 생성 옵션.
+ * 정본 지시: Core Loop Migration 「시스템의 자동 후보 제외 제거」
+ *          · 재편성안 3.1.1 「증거 자동 해석·용의자 자동 제외 문제」
+ */
+export interface WallDataOpts {
+  /**
+   * 시스템 자동 소거를 화면에 드러낼 것인가.
+   * - `true`(기본값): 기존 동작 — candidatesFrom 결과로 카드 .out + 인장
+   * - `false`: GC-001 정책 — 소거 판정은 엔진이 그대로 하되 카드에 드러내지 않는다
+   */
+  showClearing?: boolean
+}
+
 /** 카드 데이터 — 규칙은 engine 이 소유하고, 여기서는 읽어서 늘어놓기만 한다. */
-export function wallData(c: CaseFile, g: GameState): WallCard[] {
+export function wallData(c: CaseFile, g: GameState, opts?: WallDataOpts): WallCard[] {
   const cands = candidatesFrom(c, new Set(g.cards))
+  // MIG-003: showClearing 이 false 면 소거를 화면에 드러내지 않는다 (기본값 true — 기존 동작)
+  const showClearing = opts?.showClearing ?? true
   return SUSPECTS.map((s) => {
     const sus = c.suspects[s]
     const traj = SLOTS
@@ -52,7 +68,7 @@ export function wallData(c: CaseFile, g: GameState): WallCard[] {
       relation: sus.relation,
       talks: g.talks[s],
       cap: TALK_CAP,
-      cleared: !cands.includes(s),
+      cleared: showClearing ? !cands.includes(s) : false,
       stamps: g.foundContradictions.filter((k) => k.split('|')[1] === s).length,
       traj,
     }

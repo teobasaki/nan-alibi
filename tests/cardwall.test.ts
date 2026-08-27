@@ -4,7 +4,7 @@
  * 두 값이 어긋나면 격자와 벽이 다른 말을 하는 화면이 된다.
  */
 import { describe, it, expect } from 'vitest'
-import { wallData } from '../src/ui/cardwall'
+import { wallData, renderWall } from '../src/ui/cardwall'
 import { generateValidCase } from '../src/engine/validate'
 import { availableEvidence, createGame, interview, lookupEvidence } from '../src/engine/game'
 import { candidatesFrom } from '../src/engine/solver'
@@ -65,5 +65,65 @@ describe('카드 월 데이터 — 규칙은 engine 이 소유한다', () => {
     const traj = wallData(c, g).find((x) => x.id === 'S1')!.traj
     expect(traj).not.toBe('')
     if (c.world) expect(traj).toContain(c.world.slotLabels[0])
+  })
+})
+
+describe('카드 월 — MIG-003 소거 정책 (showClearing)', () => {
+  it('showClearing=false 일 때 candidatesFrom 이 사람을 좁혀도 cleared 가 거짓이다', () => {
+    // 범행 시각 기록을 모두 조회해 소거를 만든다
+    let g = createGame(CASE)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const cands = candidatesFrom(CASE, new Set(g.cards))
+    const cards = wallData(CASE, g, { showClearing: false })
+    // 엔진은 여전히 소거를 판정하지만 화면에는 드러나지 않는다
+    expect(cands.length).toBeLessThan(5)   // 소거가 실제로 일어남
+    expect(cards.every((c) => !c.cleared)).toBe(true)
+  })
+
+  it('showClearing=false 일 때 DOM 에 소거 표시(.out·인장·소거 aria-label)가 없다', () => {
+    let g = createGame(CASE)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const cards = wallData(CASE, g, { showClearing: false })
+    const root = renderWall(cards, {
+      portrait: () => null,
+      personaLine: () => '성향',
+      stampedSeen: new Set(),
+      entering: false,
+      onPick: () => {},
+    })
+    // .out 클래스 카드 없음
+    expect(root.querySelectorAll('.pcard.out')).toHaveLength(0)
+    // 인장(.pcard-out) 없음
+    expect(root.querySelectorAll('.pcard-out')).toHaveLength(0)
+    // aria-label 에 '소거' 문구 없음
+    const labels = Array.from(root.querySelectorAll('[aria-label]'))
+      .map((el) => el.getAttribute('aria-label')!)
+    expect(labels.every((l) => !l.includes('소거'))).toBe(true)
+  })
+
+  it('showClearing 을 생략하면(기본값) 기존과 동일하게 소거 표시된다', () => {
+    let g = createGame(CASE)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const cards = wallData(CASE, g)
+    expect(cards.some((c) => c.cleared)).toBe(true)
+  })
+
+  it('showClearing=true 는 명시적으로도 기존 동작이다', () => {
+    let g = createGame(CASE)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const cards = wallData(CASE, g, { showClearing: true })
+    expect(cards.some((c) => c.cleared)).toBe(true)
   })
 })

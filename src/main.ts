@@ -190,6 +190,17 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 const IS_GC001 = new URLSearchParams(location.search).get('case') === 'gc001'
 
 /**
+ * MIG-003: 시스템 자동 소거를 화면에 표시할 것인가.
+ * GC-001 에서는 표시하지 않는다 — 소거 판정(candidatesFrom)은 엔진이 그대로 하되
+ * 화면이 그것을 드러내지 않는다. 생성 사건(400-seed 월드)은 기존 동작 유지.
+ *
+ * 정본 지시: Core Loop Migration 「시스템의 자동 후보 제외 제거」
+ *          · 재편성안 3.1.1 「증거 자동 해석·용의자 자동 제외 문제」
+ *          · 「GC-001 에 V2 를 먼저 분리 적용」 권고
+ */
+const SYSTEM_CLEARING = !IS_GC001
+
+/**
  * 월드 팩 선택 (P1) — `?world=auction|studio|theater`. 없으면 호텔.
  * 모르는 값은 applyWorld 가 원본을 돌려주므로 오타가 빈 화면이 되지 않는다.
  * gc001 은 자기 월드를 갖고 있어 이 축과 겹치지 않는다.
@@ -579,7 +590,8 @@ function exploreSeats(): Seat[] {
     done: (ui.chats[s]?.length ?? 0) > 0,
     // 이 사람에게서 찾아낸 모순 수 — 이름표에 뜬다
     stamps: ui.game.foundContradictions.filter((k) => k.split('|')[1] === s).length,
-    cleared: !cands.includes(s),
+    // MIG-003: GC-001 에서는 소거를 화면에 드러내지 않는다 — 사람은 자리에 계속 앉아 있다
+    cleared: SYSTEM_CLEARING ? !cands.includes(s) : false,
   }))
 }
 
@@ -952,7 +964,7 @@ function cardWallPage(): HTMLElement {
   const entering = !ui.wallSeen
   ui.wallSeen = true
 
-  const cards = wallData(CASE, ui.game)
+  const cards = wallData(CASE, ui.game, { showClearing: SYSTEM_CLEARING })
   // 새로 소거된 사람이 있으면 인장이 찍힌다 — 소리는 한 번만 (renderWall 이 set 에 기록)
   const freshOut = cards.some((c) => c.cleared && !ui.wallStamped.has(c.id))
 
@@ -1088,6 +1100,8 @@ function act2Main(): HTMLElement {
       stampedSeen: ui.stamped,
       // 방금 나온 취조실의 그 사람 — 돌아온 자리를 표가 기억한다 (팀 3-2-(5)-(2) 3단계)
       litSuspect: ui.lastWho,
+      // MIG-003: GC-001 에서는 시스템 자동 소거를 화면에 드러내지 않는다
+      showClearing: SYSTEM_CLEARING,
     }),
     {
       pickCell: (s, t) => pickCard(claimCardId(s as SuspectId, t as Slot)),

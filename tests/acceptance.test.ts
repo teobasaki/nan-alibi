@@ -356,3 +356,27 @@ describe('§39 금지 6 — 잘못된 질문에 무료 재시도를 주지 않�
     expect(chargesQuestion({ fallback: false })).toBe(true)
   })
 })
+
+describe('MIG-003 — GC-001 에서 시스템 자동 소거를 화면에 표시하지 않는다', () => {
+  it('showClearing=false: chalkData suspects 에 cleared 가 하나도 없다', async () => {
+    let g = createGame(CASE)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const { chalkData } = await import('../src/ui/chalkboard')
+    const d = chalkData(CASE, g, { selected: [], showClearing: false })
+    expect(d.suspects.every((s) => !s.cleared)).toBe(true)
+  })
+
+  it('showClearing=false: wallData cards 에 cleared 가 하나도 없다', async () => {
+    let g = createGame(CASE)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const { wallData } = await import('../src/ui/cardwall')
+    const cards = wallData(CASE, g, { showClearing: false })
+    expect(cards.every((c) => !c.cleared)).toBe(true)
+  })
+})

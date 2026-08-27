@@ -13,7 +13,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { chalkData, renderChalkboard, type ChalkBoardData } from '../src/ui/chalkboard'
 import { gc001Case } from '../src/data/gc001'
-import { createGame, interview } from '../src/engine/game'
+import { createGame, interview, availableEvidence, lookupEvidence } from '../src/engine/game'
 import { CRIME_SLOT, slotLabel, SLOTS, SUSPECTS } from '../src/types'
 
 const SLOT_LABELS = ['21:00', '21:10', '21:16', '21:18', '21:21']
@@ -134,5 +134,67 @@ describe('칠판 — 라벨은 사건이 소유한다 (불변식 6)', () => {
     // 범행 시각에만 표가 하나 더 붙는다
     expect(root.querySelector('.cb-slot.crime .cb-slot-t')?.textContent)
       .toBe(slotLabel(c, CRIME_SLOT))
+  })
+})
+
+describe('칠판 — MIG-003 소거 정책 (showClearing)', () => {
+  it('showClearing=false 일 때 candidatesFrom 이 사람을 좁혀도 cleared 가 거짓이다', () => {
+    const c = gc001Case()
+    // 기록을 모두 조회해 소거를 유발한다
+    let g = createGame(c)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const d = chalkData(c, g, { selected: [], showClearing: false })
+    // 모든 사람이 cleared=false
+    expect(d.suspects.every((s) => !s.cleared)).toBe(true)
+  })
+
+  it('showClearing=false 일 때 분필 줄·「기록으로 소거」태그·소거 aria-label 이 DOM 에 없다', () => {
+    const c = gc001Case()
+    let g = createGame(c)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const d = chalkData(c, g, { selected: [], showClearing: false })
+    const root = renderChalkboard(d, { pickCell: () => {} })
+    // 분필 소거선 없음
+    expect(root.querySelectorAll('.cb-strike')).toHaveLength(0)
+    // '기록으로 소거' 태그 없음
+    expect(root.querySelectorAll('.cb-tag-out')).toHaveLength(0)
+    // .out 클래스 행머리 없음
+    expect(root.querySelectorAll('.cb-name.out')).toHaveLength(0)
+    // aria-label 에 '소거' 문구 없음
+    const labels = Array.from(root.querySelectorAll('[aria-label]'))
+      .map((el) => el.getAttribute('aria-label')!)
+    expect(labels.every((l) => !l.includes('소거'))).toBe(true)
+  })
+
+  it('showClearing 을 생략하면(기본값) 기존과 동일하게 소거 표시된다', () => {
+    const c = gc001Case()
+    // 범행 시각 기록을 모두 조회해 소거를 만든다
+    let g = createGame(c)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const d = chalkData(c, g, { selected: [] })
+    // 기존 동작: 후보가 아닌 사람은 cleared=true
+    expect(d.suspects.some((s) => s.cleared)).toBe(true)
+    const root = renderChalkboard(d, { pickCell: () => {} })
+    expect(root.querySelectorAll('.cb-tag-out').length).toBeGreaterThan(0)
+  })
+
+  it('showClearing=true 는 명시적으로도 기존 동작이다', () => {
+    const c = gc001Case()
+    let g = createGame(c)
+    for (const e of availableEvidence(g)) {
+      if (g.investigationsLeft <= 0) break
+      g = lookupEvidence(g, e.id)
+    }
+    const d = chalkData(c, g, { selected: [], showClearing: true })
+    expect(d.suspects.some((s) => s.cleared)).toBe(true)
   })
 })

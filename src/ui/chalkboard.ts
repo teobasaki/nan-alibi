@@ -103,6 +103,15 @@ export interface ChalkOpts {
   hint?: string
   /** 행 하나를 밝혀 둔다 (마지막으로 만난 사람 등). 조명이며 판정이 아니다 */
   litSuspect?: string | null
+  /**
+   * MIG-003: 시스템 자동 소거를 화면에 드러낼 것인가.
+   * - `true`(기본값): 기존 동작 — candidatesFrom 결과로 이름에 분필 줄·「기록으로 소거」 태그 표시
+   * - `false`: GC-001 정책 — 소거 판정은 엔진이 그대로 하되 화면은 드러내지 않는다
+   *
+   * 정본 지시: Core Loop Migration 「시스템의 자동 후보 제외 제거」
+   *          · 재편성안 3.1.1 「증거 자동 해석·용의자 자동 제외 문제」
+   */
+  showClearing?: boolean
 }
 
 /**
@@ -118,6 +127,8 @@ export function chalkData(c: CaseFile, g: GameState, o: ChalkOpts): ChalkBoardDa
     return `${p[1]}:${p[2]}`
   }))
   const seen = o.stampedSeen
+  // MIG-003: showClearing 이 false 면 소거를 화면에 드러내지 않는다 (기본값 true — 기존 동작)
+  const showClearing = o.showClearing ?? true
 
   const slots: ChalkSlot[] = SLOTS.map((t) => {
     const n = c.evidence.filter((e) => e.slot === t && g.cards.includes(e.id)).length
@@ -132,7 +143,7 @@ export function chalkData(c: CaseFile, g: GameState, o: ChalkOpts): ChalkBoardDa
     id: s,
     name: c.suspects[s].name,
     job: c.suspects[s].job,
-    cleared: !cands.includes(s),
+    cleared: showClearing ? !cands.includes(s) : false,
   }))
 
   return {
