@@ -83,13 +83,15 @@ export function inquiryView(
     .map(([id, state]) => ({ id, label: src.evidenceLabel(id), state }))
   const clues: InquiryClueRow[] = [
     ...claims.map((c) => ({ id: c.id, kind: 'CLAIM' as const,
-      label: `${c.speakerName}${c.at ? ` · ${c.at}` : ''} — “${c.text}”`, detail: CLAIM_STATE_LABEL[c.state] })),
+      label: `${c.speakerName}${c.at ? ` · ${c.at}` : ''} — "${c.text}"`, detail: CLAIM_STATE_LABEL[c.state] })),
     ...facts.map((f) => ({ id: f.id, kind: 'FACT' as const, label: f.text, detail: `출처 · ${f.source}` })),
     ...evidence.map((e) => ({ id: e.id, kind: 'EVIDENCE' as const, label: e.label, detail: EV_STATE_LABEL[e.state] })),
   ]
   return { claims, facts, evidence, clues, shaky, suspect: s.suspect, people: src.people,
     memo: s.memo, hypotheses: s.hypotheses, links: s.links, activeTab }
 }
+
+/* ────────────────────────────────────────────────────────────────────── */
 
 const el = (tag: string, cls?: string, text?: string): HTMLElement => {
   const n = document.createElement(tag); if (cls) n.className = cls
@@ -99,13 +101,15 @@ const el = (tag: string, cls?: string, text?: string): HTMLElement => {
 const cap = (title: string, tally?: string): HTMLElement => {
   const n = el('div', 'iq-cap', title); if (tally) n.appendChild(el('span', 'iq-cap-s', tally)); return n
 }
+
+/* ── 진술 ── */
 function claimRow(r: InquiryClaimRow, isRevision: boolean): HTMLElement {
   const box = el('div', `iq-claim s-${r.state.toLowerCase()}${isRevision ? ' rev' : ''}`)
   const head = el('div', 'iq-claim-h')
   head.append(el('span', 'iq-who', isRevision ? '고친 말' : r.speakerName))
   if (r.at) head.append(el('span', 'iq-at', r.at))
   head.append(el('span', 'iq-state', CLAIM_STATE_LABEL[r.state]))
-  box.append(head, el('div', 'iq-quote', `“${r.text}”`)); return box
+  box.append(head, el('div', 'iq-quote', `"${r.text}"`)); return box
 }
 function claimsSection(v: InquiryView): HTMLElement {
   const sec = el('section', 'iq-sec'); sec.appendChild(cap('들은 말', `${v.claims.length}건`))
@@ -118,31 +122,48 @@ function claimsSection(v: InquiryView): HTMLElement {
   }
   return sec
 }
+
+/* ── 사실 ── */
 function factsSection(v: InquiryView): HTMLElement {
   const sec = el('section', 'iq-sec'); sec.appendChild(cap('확인된 사실', `${v.facts.length}건`))
   if (!v.facts.length) sec.appendChild(el('div', 'iq-empty', '기록을 조회하거나 물어야 한다.'))
   for (const f of v.facts) { const row = el('div', 'iq-fact'); row.append(el('div', 'iq-fact-t', f.text), el('div', 'iq-fact-s', `출처 · ${f.source}`)); sec.appendChild(row) }
   return sec
 }
+
+/* ── 기록 ── */
 function evidenceSection(v: InquiryView): HTMLElement {
   const sec = el('section', 'iq-sec'); sec.appendChild(cap('확보한 기록', `${v.evidence.length}건`))
   if (!v.evidence.length) sec.appendChild(el('div', 'iq-empty', '아직 확보한 기록이 없다.'))
   for (const e of v.evidence) { const row = el('div', 'iq-ev'); row.append(el('span', 'iq-ev-t', e.label), el('span', 'iq-ev-s', EV_STATE_LABEL[e.state])); sec.appendChild(row) }
   return sec
 }
+
+/* ── 의심 인물 ── */
 function suspectSection(v: InquiryView, on: InquiryHandlers): HTMLElement {
   const sec = el('section', 'iq-sec iq-suspect'); sec.appendChild(cap('지금 가장 의심되는 사람', '정답 제출이 아니다'))
   const list = el('div', 'iq-people')
-  for (const p of v.people) { const active = v.suspect === p.id; const b = el('button', `iq-person${active ? ' on' : ''}`) as HTMLButtonElement
-    b.type = 'button'; b.setAttribute('aria-pressed', String(active)); b.append(el('span', 'iq-radio', active ? '●' : '○'), el('span', undefined, p.name)); b.onclick = () => on.pickSuspect(active ? null : p.id); list.appendChild(b) }
+  for (const p of v.people) {
+    const active = v.suspect === p.id
+    const b = el('button', `iq-person${active ? ' on' : ''}`) as HTMLButtonElement
+    b.type = 'button'; b.setAttribute('aria-pressed', String(active))
+    b.append(el('span', 'iq-radio', active ? '●' : '○'), el('span', undefined, p.name))
+    b.onclick = () => on.pickSuspect(active ? null : p.id)
+    list.appendChild(b)
+  }
   sec.appendChild(list); return sec
 }
+
+/* ── 메모 ── */
 function memoSection(v: InquiryView, on: InquiryHandlers): HTMLElement {
   const sec = el('section', 'iq-sec'); sec.appendChild(cap('메모'))
   const ta = el('textarea', 'iq-memo') as HTMLTextAreaElement; ta.value = v.memo; ta.rows = 4
-  ta.placeholder = '떠오른 것을 적어 둔다 — 시스템은 이것을 읽지 않는다.'; ta.setAttribute('aria-label', '수사 메모')
+  ta.placeholder = '떠오른 것을 적어 둔다 — 시스템은 이것을 읽지 않는다.'
+  ta.setAttribute('aria-label', '수사 메모')
   ta.onchange = ta.onblur = () => on.setMemo(ta.value); sec.appendChild(ta); return sec
 }
+
+/* ── 단서 선택 ── */
 function clueSelect(v: InquiryView, placeholder: string, used: string[], add: (id: string) => void): HTMLSelectElement {
   const s = el('select', 'iq-clue-select') as HTMLSelectElement
   const first = document.createElement('option'); first.value = ''; first.textContent = placeholder; s.appendChild(first)
@@ -154,6 +175,8 @@ function clueTags(v: InquiryView, ids: string[], remove: (id: string) => void): 
   for (const id of ids) { const c = v.clues.find((x) => x.id === id); const b = el('button', 'iq-hyp-tag', `${c?.label ?? id}  ×`) as HTMLButtonElement; b.type = 'button'; b.onclick = () => remove(id); box.appendChild(b) }
   return box
 }
+
+/* ── 가설 카드 ── */
 function hypothesisCard(v: InquiryView, h: Hypothesis, on: InquiryHandlers): HTMLElement {
   const card = el('article', 'iq-hyp')
   const top = el('div', 'iq-hyp-top'); top.appendChild(el('span', 'iq-hyp-id', h.id))
@@ -172,6 +195,8 @@ function hypothesisCard(v: InquiryView, h: Hypothesis, on: InquiryHandlers): HTM
     box.appendChild(clueSelect(v, placeholder, [...h.supportClueIds, ...h.counterClueIds], (id) => on.saveHypothesis({ ...h, [key]: [...h[key], id] }))); card.appendChild(box) }
   return card
 }
+
+/* ── 추론 탭 ── */
 function deduction(v: InquiryView, on: InquiryHandlers): HTMLElement {
   const wrap = el('div', 'iq-deduction')
   const hs = el('section', 'iq-sec'); const hd = cap('내 가설', `${v.hypotheses.length}개`)
@@ -188,21 +213,96 @@ function deduction(v: InquiryView, on: InquiryHandlers): HTMLElement {
   return wrap
 }
 
+/* ── 사건 타임라인 시각 바 ── */
+function timelineBar(v: InquiryView): HTMLElement {
+  const bar = el('div', 'iq-timeline-bar')
+  bar.appendChild(el('div', 'iq-timeline-bar-title', '사건 타임라인'))
+  const track = el('div', 'iq-timeline-track')
+  // Collect unique times from claims
+  const times = [...new Set(v.claims.filter((c) => c.at).map((c) => c.at!))]
+    .sort((a, b) => a.localeCompare(b))
+  if (times.length >= 2) {
+    const min = times[0]!
+    const max = times[times.length - 1]!
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return (h ?? 0) * 60 + (m ?? 0) }
+    const range = toMin(max) - toMin(min) || 1
+    for (const t of times) {
+      const pct = ((toMin(t) - toMin(min)) / range) * 100
+      const dot = el('div', 'iq-tl-dot')
+      dot.style.left = `${pct}%`
+      // Mark "21:16" as crime time (if present)
+      if (t === '21:16') { dot.classList.add('crime') }
+      track.appendChild(dot)
+      const lbl = el('div', 'iq-tl-label', t)
+      lbl.style.left = `${pct}%`
+      if (t === '21:16') { lbl.classList.add('crime') }
+      track.appendChild(lbl)
+    }
+  }
+  bar.appendChild(track)
+  return bar
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 메인 렌더
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export function renderInquiry(v: InquiryView, on: InquiryHandlers): HTMLElement {
   const root = el('div', 'iq iq-notebook')
+
+  /* ── 상단 5탭 ── */
   const nav = el('div', 'iq-tabs'); nav.setAttribute('role', 'tablist')
-  for (const t of TABS) { const active = v.activeTab === t.id; const b = el('button', `iq-tab${active ? ' on' : ''}`) as HTMLButtonElement; b.type = 'button'; b.dataset.tab = t.id; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(active)); b.append(el('span', 'iq-tab-no', t.no), el('span', 'iq-tab-label', t.label)); b.onclick = () => on.changeTab(t.id); nav.appendChild(b) }
+  for (const t of TABS) {
+    const active = v.activeTab === t.id
+    const b = el('button', `iq-tab${active ? ' on' : ''}`) as HTMLButtonElement
+    b.type = 'button'; b.dataset.tab = t.id
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(active))
+    b.append(el('span', 'iq-tab-no', t.no), el('span', 'iq-tab-label', t.label))
+    b.onclick = () => on.changeTab(t.id)
+    nav.appendChild(b)
+  }
   root.appendChild(nav)
+
+  /* ── 탭 페이지 ── */
   const page = el('div', `iq-page tab-${v.activeTab}`); page.setAttribute('role', 'tabpanel')
+
   if (v.activeTab === 'overview') {
+    // 사건 개요 탭: 의심 인물 + 핵심 사실 + 관련 증거/증언
     page.append(suspectSection(v, on))
-    if (v.shaky.length) { const sec = el('section', 'iq-sec iq-next'); sec.appendChild(cap('확인이 필요한 진술', `${v.shaky.length}건`)); const ul = el('ul', 'iq-shaky'); for (const id of v.shaky) { const c = v.claims.find((x) => x.id === id); if (c) ul.appendChild(el('li', undefined, `${c.speakerName}${c.at ? ` · ${c.at}` : ''} — “${c.text}”`)) } sec.appendChild(ul); page.appendChild(sec) }
-    const cards = el('div', 'iq-overview-grid'); cards.append(factsSection(v), claimsSection(v)); page.appendChild(cards); page.appendChild(memoSection(v, on))
-  } else if (v.activeTab === 'evidence') page.append(evidenceSection(v), factsSection(v))
-  else if (v.activeTab === 'testimony') page.appendChild(claimsSection(v))
-  else if (v.activeTab === 'timeline') {
-    const sec = el('section', 'iq-sec iq-timeline'); sec.appendChild(cap('사건 타임라인', `${v.claims.filter((c) => c.at).length}개 시각`))
-    for (const c of [...v.claims].filter((x) => x.at).sort((a, b) => a.at!.localeCompare(b.at!))) { const r = el('div', 'iq-time'); r.append(el('time', undefined, c.at), el('span', 'iq-time-who', c.speakerName), el('span', 'iq-time-text', c.text)); sec.appendChild(r) } page.appendChild(sec)
-  } else page.appendChild(deduction(v, on))
-  root.appendChild(page); return root
+    if (v.shaky.length) {
+      const sec = el('section', 'iq-sec iq-next')
+      sec.appendChild(cap('확인이 필요한 진술', `${v.shaky.length}건`))
+      const ul = el('ul', 'iq-shaky')
+      for (const id of v.shaky) {
+        const c = v.claims.find((x) => x.id === id)
+        if (c) ul.appendChild(el('li', undefined, `${c.speakerName}${c.at ? ` · ${c.at}` : ''} — "${c.text}"`))
+      }
+      sec.appendChild(ul); page.appendChild(sec)
+    }
+    const cards = el('div', 'iq-overview-grid')
+    cards.append(factsSection(v), claimsSection(v))
+    page.appendChild(cards)
+    page.appendChild(memoSection(v, on))
+    // 사건 타임라인 바 (하단)
+    if (v.claims.some((c) => c.at)) page.appendChild(timelineBar(v))
+  } else if (v.activeTab === 'evidence') {
+    page.append(evidenceSection(v), factsSection(v))
+  } else if (v.activeTab === 'testimony') {
+    page.appendChild(claimsSection(v))
+  } else if (v.activeTab === 'timeline') {
+    const sec = el('section', 'iq-sec iq-timeline')
+    sec.appendChild(cap('사건 타임라인', `${v.claims.filter((c) => c.at).length}개 시각`))
+    for (const c of [...v.claims].filter((x) => x.at).sort((a, b) => a.at!.localeCompare(b.at!))) {
+      const r = el('div', 'iq-time')
+      r.append(el('time', undefined, c.at), el('span', 'iq-time-who', c.speakerName), el('span', 'iq-time-text', c.text))
+      sec.appendChild(r)
+    }
+    page.appendChild(sec)
+    // Timeline bar at bottom
+    if (v.claims.some((c) => c.at)) page.appendChild(timelineBar(v))
+  } else {
+    page.appendChild(deduction(v, on))
+  }
+
+  root.appendChild(page)
+  return root
 }

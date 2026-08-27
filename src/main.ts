@@ -362,31 +362,63 @@ function fadeOut(ov: HTMLElement): void {
 
 /* ─────────── 상단 바 ─────────── */
 function topbar(): HTMLElement {
-  const bar = h('div', 'topbar')
-  bar.appendChild(h('h1', undefined, `FIVE ALIBIS — ${CASE.title}`))
-  bar.appendChild(h('div', 'brief',
+  const bar = h('header', `topbar${ui.chapter2 ? ' case-topbar' : ''}`)
+  const title = h('div', 'case-title')
+  title.appendChild(h('h1', undefined, `FIVE ALIBIS — ${CASE.title}`))
+  title.appendChild(h('div', 'brief',
     `${CASE.venue.name} ${CASE.venue.room} · 피해자 ${CASE.victim.name}(${CASE.victim.title}) · 추정 범행 ${SLOT_L(CRIME_SLOT)}`))
+  bar.appendChild(title)
 
-  // 조사 pip 은 삭제했다 — 일지의 여백 눈금이 같은 정보를 더 잘 말한다(ADR 018 3단계).
-  // 같은 것을 두 곳에서 말하면 하나는 잉여이고, 눈금 쪽이 무엇에 썼는지까지 말한다.
+  if (ui.chapter2) {
+    const info = focusKey(h('button', 'case-tool', '▤  사건 정보'), 'case-info') as HTMLButtonElement
+    info.onclick = openBriefing
+    bar.appendChild(info)
+  }
 
   // AI 파이프라인 판 — 무엇이 무엇을 하고 있는지 여는 곳
-  const dash = focusKey(h('button', `dashbtn${ui.dash ? ' on' : ''}`, '⚙ AI'), 'dash') as HTMLButtonElement
+  const dash = focusKey(h('button', `dashbtn case-tool${ui.dash ? ' on' : ''}`, '⚙  설정'), 'dash') as HTMLButtonElement
   dash.setAttribute('aria-expanded', String(ui.dash))
   dash.setAttribute('aria-label', 'AI 파이프라인 설정')
   dash.onclick = () => { ui.dash = !ui.dash; play('paper'); render() }
   bar.appendChild(dash)
 
-  const mute = focusKey(h('button', 'mutebtn', isMuted() ? '♪ 꺼짐' : '♪ 켜짐'), 'mute') as HTMLButtonElement
+  const mute = focusKey(h('button', 'mutebtn case-tool sound-tool', isMuted() ? '♪ 꺼짐' : '♪ 켜짐'), 'mute') as HTMLButtonElement
   mute.setAttribute('aria-label', isMuted() ? '소리 켜기' : '소리 끄기')
   mute.onclick = () => { setMuted(!isMuted()); if (!isMuted()) play('paper'); render() }
   bar.appendChild(mute)
 
-  const btn = h('button', undefined, '최종 추론') as HTMLButtonElement
+  if (ui.chapter2) {
+    const learned = Object.keys(ui.inq.claims).length + ui.inq.facts.length
+      + CASE.evidence.filter((e) => ui.game.cards.includes(e.id)).length
+    const total = Math.max(1, CASE.evidence.length + 12 + 10)
+    const progress = h('div', 'case-progress')
+    progress.appendChild(h('span', undefined, '사건 진행률'))
+    progress.appendChild(h('b', undefined, `${Math.min(99, Math.round(learned / total * 100))}%`))
+    bar.appendChild(progress)
+  }
+
+  const btn = h('button', 'case-submit', '최종 추론') as HTMLButtonElement
   focusKey(btn, 'submit')
   btn.onclick = openSubmit
   bar.appendChild(btn)
   return bar
+}
+
+/** 레퍼런스의 책상·갓등·서류를 만드는 장식층. 정보와 입력은 기존 부품이 소유한다. */
+function caseRoomSet(): HTMLElement {
+  const set = h('div', 'case-room-set')
+  set.setAttribute('aria-hidden', 'true')
+  set.append(
+    h('div', 'case-lamp'),
+    h('div', 'desk-paper paper-a', '사건 기록'),
+    h('div', 'desk-paper paper-b', '증거 목록'),
+    h('div', 'desk-map'),
+    h('div', 'desk-magnifier'),
+    h('div', 'desk-pen'),
+    h('div', 'desk-mug'),
+    h('div', 'desk-task', '다음 목표\n알리바이의 충돌 지점을 찾아 진실을 좁혀라.'),
+  )
+  return set
 }
 
 /* ─────────── 왼쪽: 용의자 ─────────── */
@@ -3628,7 +3660,9 @@ function render(): void {
    * 제1막(챕터1)은 옛 2단을 그대로 쓴다. 3D 가 실패했을 때의 폴백 경로라 건드리지 않는다.
    */
   if (ui.chapter2) {
-    const act2 = h('div', `act2${ui.active ? ' interview' : ''}${ui.busy ? ' answering' : ''}`)
+    const landing = !ui.active && !ui.explore && !ui.wall
+    const act2 = h('div', `act2${landing ? ' case-room' : ''}${ui.active ? ' interview' : ''}${ui.busy ? ' answering' : ''}`)
+    if (landing) act2.appendChild(caseRoomSet())
     act2.appendChild(sidebarEl())
     const main = h('div', 'act2-main')
     main.appendChild(act2Main())

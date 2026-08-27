@@ -1,78 +1,59 @@
 import '../styles/drawer.css'
 /**
- * 수사일지 드로어 — **우측에서 빼꼼 나온 수첩.**
- *
- * ## 왜 항상 펼쳐 두지 않는가
- * 지금까지 수사일지는 화면 오른쪽에 **항상 펼쳐진 채** 있었다. 늘 보이는 것은 곧
- * 안 보이는 것이 된다 — 읽을지 말지를 고르지 않으니 펼치는 동작도, 덮는 동작도 없다.
- * 수첩은 **필요할 때 꺼내 보는 물건**일 때만 물건으로 읽힌다. 그래서 기본 상태를
- * "가장자리에 꽂혀 있음" 으로 되돌리고, 꺼내는 행동을 플레이어에게 돌려준다.
+ * 수사일지 드로어 — **우측에서 빼꼼 나온 가죽 장정 수첩.**
  *
  * ## 세 상태
  * ```
- *  쉼(idle)   책등(--nbk-peek, 40px)만 화면 오른쪽에 걸친다. 높이는 화면의 72%
- *  호버        폭의 45%가 더 나오고 표면을 빛 한 줄이 스친다 ("보고 있다"는 표시)
- *              키보드 포커스(`:has(:focus-visible)`)와 `peek(true)` 도 같은 자리로 간다
- *  열림        표지가 경첩(책등)을 축으로 젖혀지고 종이가 드러난다
+ *  쉼(idle)   책등만 화면 오른쪽에 걸친다
+ *  호버        폭의 45%가 더 나옴 + 빛 반사 → 터치에는 `.is-peek` 으로 내밈
+ *  열림        표지 젖혀짐 + 종이 내용 표시 + 우측 번호 인덱스 탭
  * ```
- * 상태 전환은 전부 `src/styles/drawer.css` 가 소유한다. **호버는 JS 로 잡지 않는다** —
- * `mouseenter/mouseleave` 는 전환 중에 요소가 커서 밑에서 빠져나가면 `leave` 를 흘려
- * 수첩이 나온 채 얼어붙는다. `:hover` 는 브라우저가 그 정합을 책임진다.
  *
  * ## 이 모듈이 하지 않는 것
- * - **내용을 만들지 않는다.** 일지 본문은 `setContent(node)` 로 밖에서 주입한다.
- *   여기서 일지를 그리면 `journalLines()`(engine 이 소유한 번역)와 두 번째 구현이 생긴다.
- * - **판정하지 않는다.** 상태를 읽지도 쓰지도 않는다. 껍데기 하나와 세 상태가 전부다.
- * - **전역을 import 하지 않는다.** `ui`·`sound`·`engine` 어느 것도 붙잡지 않는다 —
- *   그래야 헤드리스 테스트와 프로브에서 단독으로 선다.
+ * - 내용을 만들지 않는다 (setContent 로 밖에서 주입)
+ * - 판정/상태를 읽거나 쓰지 않는다
+ * - 전역 모듈을 import 하지 않는다
  *
- * ## 리스너 (이 저장소는 누수 이력이 있다)
- * 모든 리스너는 두 개의 `AbortController` 에 매달려 있고, `dispose()` 가 둘 다 끊는다.
- * - **평생(life)**: 손잡이 클릭 · 닫기 클릭 · 막 클릭 — 만들 때 붙고 dispose 에서 끊긴다
- * - **열린 동안(open)**: `Esc` 키(document) — 열 때 붙고 닫을 때 끊긴다.
- *   전역 키 리스너를 닫힌 채로 들고 있지 않는다.
- * "바깥 클릭으로 닫기" 도 document 리스너가 아니라 **막(scrim) 한 장**이 받는다.
- * 전역 클릭 리스너는 잊는 순간 누수이고, 클릭이 뒤 화면으로 새면 **닫으려던 클릭이
- * 게임을 조작한다.**
- *
- * ## 그림이 안 보이면
- * `src/styles/drawer.css` 가 로드되지 않은 것이다. 배선은 사람이 한다
- * (`main.ts` 의 `import './styles/drawer.css'` 또는 `style.css` 상단 `@import`).
+ * ## 리스너
+ * AbortController 두 개(life, scope). dispose() 가 전부 끊는다.
  */
 
+import type { InquiryTab } from './inquiryPanel'
+
 export interface DrawerHandle {
-  /** 뿌리 노드. 이미 `opts.mount`(기본 `document.body`)에 붙어 있다 */
   el: HTMLElement
   open(): void
   close(): void
   isOpen(): boolean
-  /** 수사일지 내용은 밖에서 주입한다 — 이 모듈은 일지를 그리지 않는다 */
   setContent(node: HTMLElement): void
   /**
-   * 호버와 **같은 자리**로 손수 내밀었다 넣는다 (호버는 여전히 CSS 가 쥔다).
-   * 두 가지 때문에 있다: ① **터치에는 호버가 없다** — 손가락만 있는 화면에서는
-   * 수첩이 영영 안 나온다 ② 새 일지 줄이 적혔을 때 한 번 내밀어 눈길을 준다.
-   * 열려 있는 동안은 아무 일도 하지 않는다(이미 다 나와 있다).
+   * 호버와 같은 자리로 내밈/넣음 (터치용 + 새 줄 알림용).
    */
   peek(on?: boolean): void
-  /** 리스너 해제 + DOM 제거. 두 번 불러도 안전하다 */
+  /** 우측 인덱스 탭의 활성 상태를 갱신한다 */
+  setActiveTab(tab: InquiryTab): void
   dispose(): void
 }
 
 export interface DrawerOpts {
   onOpen?(): void
   onClose?(): void
-  /** 붙일 곳 — 기본 `document.body` */
   mount?: HTMLElement
-  /** 책등에 세로로 새겨지는 이름 */
   label?: string
-  /** 펼친 면의 머리글 */
   caption?: string
-  /** 머리글 옆 한 줄 (없으면 자리를 비운다) */
   hint?: string
-  /** 열렸을 때 뒤를 덮는 막. 기본 켠다 — 이것이 "바깥 클릭으로 닫기" 의 실체다 */
   scrim?: boolean
+  /** 우측 인덱스 탭 클릭 핸들러 */
+  onTabClick?(tab: InquiryTab): void
 }
+
+const TABS: { id: InquiryTab; no: string; label: string }[] = [
+  { id: 'overview', no: '01', label: '개요' },
+  { id: 'evidence', no: '02', label: '증거' },
+  { id: 'testimony', no: '03', label: '증언' },
+  { id: 'timeline', no: '04', label: '타임라인' },
+  { id: 'deduction', no: '05', label: '추론' },
+]
 
 const el = (tag: string, cls?: string, text?: string): HTMLElement => {
   const n = document.createElement(tag)
@@ -82,29 +63,25 @@ const el = (tag: string, cls?: string, text?: string): HTMLElement => {
 }
 
 /**
- * 수첩을 하나 만들어 화면 오른쪽 가장자리에 꽂는다.
- *
- * ```ts
- * const nb = createNotebookDrawer({ onOpen: () => play('paper') })
- * nb.setContent(renderJournal(lines))   // 내용은 밖에서
- * // …
- * nb.dispose()
- * ```
+ * 가죽 장정 수사일지를 하나 만들어 화면 오른쪽 가장자리에 꽂는다.
  */
 export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
   const label = opts.label ?? '수사일지'
   const caption = opts.caption ?? '수사일지'
 
   /* ── DOM ──────────────────────────────────────────────────────────
-   * .nbk (막 + 수첩)
+   * .nbk
+   *   ├ .nbk-scrim
    *   └ .nbk-book
-   *       ├ .nbk-ribbon           책갈피 (표지 뒤, 아래로 꼬리만)
-   *       ├ .nbk-spine            책등 — 쉼 상태에서 유일하게 보이는 부분
-   *       ├ .nbk-leaf             제본된 면
-   *       │   ├ .nbk-paper        회백색 종이 (머리글 + 본문)
-   *       │   └ .nbk-cover        표지 — 열리면 경첩을 축으로 젖혀진다
-   *       ├ .nbk-sheen            반짝임 (호버에서만)
-   *       └ .nbk-grab             보이는 수첩 전체가 하나의 단추
+   *       ├ .nbk-ribbon
+   *       ├ .nbk-spine (.nbk-title)
+   *       ├ .nbk-edges           쌓인 종이 가장자리
+   *       ├ .nbk-leaf
+   *       │   ├ .nbk-paper       크림색 종이 (머리글 + 본문)
+   *       │   └ .nbk-cover       표지 — 열리면 경첩 축으로 젖혀짐
+   *       ├ .nbk-idx             우측 번호 인덱스 탭
+   *       ├ .nbk-sheen           반짝임
+   *       └ .nbk-grab            클릭 영역
    */
   const root = el('div', 'nbk')
   if (opts.scrim === false) root.classList.add('no-scrim')
@@ -118,6 +95,9 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
   const spine = el('div', 'nbk-spine')
   spine.appendChild(el('span', 'nbk-title', label))
   book.appendChild(spine)
+
+  // 쌓인 종이 가장자리
+  book.appendChild(el('div', 'nbk-edges'))
 
   const leaf = el('div', 'nbk-leaf')
   const paper = el('div', 'nbk-paper')
@@ -136,10 +116,28 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
   paper.appendChild(body)
   leaf.appendChild(paper)
   leaf.appendChild(el('div', 'nbk-cover'))
-  /* 닫힌 동안 안쪽은 **없는 것**으로 둔다 — 표지 뒤의 글이 탭으로 잡히면
-     보이지 않는 곳으로 포커스가 사라진다 */
   leaf.setAttribute('inert', '')
   book.appendChild(leaf)
+
+  // 우측 번호 인덱스 탭 (01~05)
+  const idx = el('nav', 'nbk-idx')
+  idx.setAttribute('aria-label', '수사일지 탭 인덱스')
+  const tabBtns: HTMLButtonElement[] = []
+  for (const t of TABS) {
+    const btn = el('button', 'nbk-idx-tab') as HTMLButtonElement
+    btn.type = 'button'
+    btn.dataset.tab = t.id
+    btn.setAttribute('aria-label', `${t.no} ${t.label}`)
+    btn.innerHTML = `<span class="nbk-idx-no">${t.no}</span><br><span class="nbk-idx-label">${t.label}</span>`
+    btn.addEventListener('click', () => {
+      opts.onTabClick?.(t.id)
+    })
+    tabBtns.push(btn)
+    idx.appendChild(btn)
+  }
+  // Default first tab active
+  tabBtns[0]?.classList.add('on')
+  book.appendChild(idx)
 
   const sheen = el('div', 'nbk-sheen')
   sheen.appendChild(el('i'))
@@ -162,28 +160,14 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
   /* ── 상태 ── */
   let open = false
   let dead = false
-  /** 평생 리스너 — dispose 에서만 끊긴다 */
   const life = new AbortController()
-  /** 열린 동안만 사는 리스너 (Esc) */
   let scope: AbortController | null = null
-  /** 열기 직전에 포커스를 갖고 있던 것 — 닫을 때 돌려준다 */
   let returnTo: HTMLElement | null = null
 
   const focus = (n: HTMLElement): void => {
-    try { n.focus({ preventScroll: true }) } catch { /* 포커스는 연출이다 — 실패해도 진행 */ }
+    try { n.focus({ preventScroll: true }) } catch { /* */ }
   }
 
-  /**
-   * **열린 동안 뒤 화면을 봉한다** (감사 확정건).
-   *
-   * 막(scrim)은 **클릭만** 막는다. Tab 은 그 막을 그냥 통과해서, 펼친 수첩 뒤의 칠판·
-   * 사이드바·최종 추론 버튼으로 포커스가 빠져나갔다 — 보이지 않는 곳으로 포커스가 가면
-   * 사용자는 자기가 어디에 있는지 알 수 없고, 그 상태의 Enter 는 되돌릴 수 없는 행동을 한다.
-   *
-   * `inert` 는 **형제에게** 건다. 우리 뿌리를 뺀 나머지 형제 전부다 — 우리가 얹은 것만
-   * 되돌리기 위해 표식(`data-nbk-sealed`)을 남긴다. 원래 `inert` 였던 형제(다른 모달)를
-   * 우리가 닫을 때 풀어 주면 그쪽이 조용히 새기 때문이다.
-   */
   const sealBehind = (on: boolean): void => {
     const parent = root.parentElement
     if (!parent) return
@@ -230,7 +214,6 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
     grab.tabIndex = 0
     sealBehind(false)
 
-    // 포커스가 덮이는 면 안에 있으면 손잡이로 데려온다 — 안 그러면 body 로 떨어진다
     if (book.contains(document.activeElement)) focus(returnTo?.isConnected ? returnTo : grab)
     returnTo = null
     opts.onClose?.()
@@ -238,7 +221,7 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
 
   function onKey(e: KeyboardEvent): void {
     if (e.key !== 'Escape' || !open) return
-    e.stopPropagation()          // Esc 하나가 수첩과 그 뒤 화면을 동시에 닫지 않게
+    e.stopPropagation()
     e.preventDefault()
     doClose()
   }
@@ -261,6 +244,12 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
       if (dead) return
       root.classList.toggle('is-peek', on)
     },
+    setActiveTab(tab: InquiryTab) {
+      if (dead) return
+      for (const btn of tabBtns) {
+        btn.classList.toggle('on', btn.dataset.tab === tab)
+      }
+    },
     dispose() {
       if (dead) return
       dead = true
@@ -269,7 +258,6 @@ export function createNotebookDrawer(opts: DrawerOpts = {}): DrawerHandle {
       scope = null
       life.abort()
       returnTo = null
-      // 봉인을 먼저 푼다 — 뿌리를 지워 버리면 형제의 inert 를 되돌릴 손이 없어진다
       sealBehind(false)
       root.remove()
     },

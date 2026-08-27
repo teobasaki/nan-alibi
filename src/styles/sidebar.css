@@ -411,3 +411,28 @@
   .fa-sb-folder:hover .fa-sb-fold,
   .fa-sb-folder:focus-visible .fa-sb-fold { filter: brightness(1.22); }
 }
+
+/* 사건실 랜딩에서는 목록이 화면 패널이 아니라 책상 옆 dossier 더미다. */
+.case-room .fa-sb {
+  --fa-sb-panel:#21180f; --fa-sb-panel-2:#36281d; --fa-sb-line:#4a3524;
+  background:linear-gradient(90deg,#17110c,#2d2117 48%,#17110d); border-radius:3px;
+}
+.case-room .fa-sb-list { padding:6px 7px 10px; gap:5px; background:linear-gradient(90deg,rgba(0,0,0,.32),transparent 20%,rgba(0,0,0,.28)); }
+.case-room .fa-sb-row {
+  min-height:0; padding:6px 8px; gap:9px; border:1px solid #75654e !important; border-radius:1px;
+  color:#2a2118; background:
+    repeating-linear-gradient(180deg,transparent 0 18px,rgba(96,76,52,.08) 18px 19px),
+    linear-gradient(150deg,#d0c4aa,#a99b7f);
+  box-shadow:0 4px 7px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.3); transform:rotate(var(--dossier-turn,0deg));
+}
+.case-room .fa-sb-row:nth-child(2n){--dossier-turn:.5deg}.case-room .fa-sb-row:nth-child(3n){--dossier-turn:-.45deg}
+.case-room .fa-sb-row::after { content:attr(data-id); position:absolute; left:-1px; top:8px; padding:2px 5px; color:#efe4d1; background:#725443; font:9px var(--fa-mono,monospace); box-shadow:1px 2px 3px rgba(0,0,0,.35); }
+.case-room .fa-sb-row:hover { background-color:#ddcfb5; filter:brightness(1.08); }
+.case-room .fa-sb-row.on { box-shadow:0 5px 9px rgba(0,0,0,.52),inset 0 0 0 2px #96793c; }
+.case-room .fa-sb-row::before { left:auto; right:8px; top:8px; bottom:auto; width:9px; height:9px; border-radius:50%; transform:none; background:#a8382c; box-shadow:0 2px 3px rgba(0,0,0,.5); }
+.case-room .fa-sb-row.on::before { transform:none; }
+.case-room .fa-sb-face { margin-left:12px; height:74%; filter:grayscale(1) sepia(.35) contrast(1.1); border-color:#6c5d49; }
+.case-room .fa-sb-name { color:#2b2118; font-size:14px; font-weight:700; }
+.case-room .fa-sb-row.on .fa-sb-name { color:#6b2f24; }
+.case-room .fa-sb-job,.case-room .fa-sb-n { color:#625443; }
+.case-room .fa-sb-bar { background:#8e806b; }.case-room .fa-sb-bar u{background:#6f5417}

@@ -529,3 +529,10 @@
   /* 손가락에는 호버가 없다 — 쪽지는 누른 동안 뜬다 */
   .cb-btn:active .cb-tip { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* 사건실 세트의 금속 모서리와 더 두꺼운 목재 프레임 */
+.case-room .cb-frame { position:relative; padding:20px 20px 0; border-radius:2px; background:repeating-linear-gradient(93deg,rgba(0,0,0,.28) 0 3px,rgba(255,255,255,.018) 3px 7px),linear-gradient(178deg,#5a402c,#2b1b12 25%,#160e09); }
+.case-room .cb-frame::before,.case-room .cb-frame::after { content:''; position:absolute; z-index:5; width:42px; height:42px; border:5px solid #181817; box-shadow:inset 0 0 0 2px #5b5142,0 2px 4px #000; pointer-events:none; }
+.case-room .cb-frame::before { left:4px; top:4px; border-right:0; border-bottom:0; }
+.case-room .cb-frame::after { right:4px; bottom:4px; border-left:0; border-top:0; }
+.case-room .cb-surface { padding:20px 24px 16px; }

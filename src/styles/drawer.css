@@ -1,57 +1,48 @@
 @import './tokens.css';
 
 /*
- * 수사일지 드로어 — **우측 가장자리에 꽂힌 수첩.** (`src/ui/drawer.ts` 의 그림)
+ * 수사일지 드로어 — **우측 가장자리에 꽂힌 가죽 장정 수첩.**
  *
- * ## 이 파일이 따로 있는 이유
- * `src/style.css` 는 이번 개편에서 여러 손이 동시에 만지는 파일이다. 드로어는
- * 한 덩어리로 붙였다 떼었다 할 수 있어야 하므로 **자기 그림을 자기가 들고 다닌다.**
- * 배선(로드)은 사람이 한다 — `main.ts` 에서 `import './styles/drawer.css'` 하거나
- * `style.css` 상단에서 `@import` 한다. 로드되지 않으면 수첩은 **보이지 않는다**(그림이 전부 여기 있다).
+ * ## 시각 목표 (레퍼런스 "open notebook" 스크린샷)
+ * - 우측에 상당한 크기의 가죽 장정 수사일지
+ * - 쌓인 종이 가장자리 (page edges)
+ * - 따뜻하게 바랜 크림색 종이
+ * - 상단 5개 탭 + 우측 번호 인덱스 탭 (01~05)
+ * - 절제된 먹선/붉은 강조
+ * - 모듈 카드 (물리적 클립/접힘/그림자)
+ * - 배경은 보이지만 어두움
  *
  * ## 세 상태를 CSS 가 소유한다
  *   쉼   `.nbk-book`                       → 책등(`--nbk-peek`)만 화면에 걸친다
- *   호버 `.nbk-book:hover / :has(:focus-visible)` → 폭의 `--nbk-out`(45%)만큼 더 나오고 빛이 스친다
- *        `.nbk.is-peek` (호출부가 손으로 내밀 때 — 터치에는 호버가 없다) 도 같은 자리
+ *   호버 `.nbk-book:hover / :has(:focus-visible)` → 폭의 `--nbk-out`만큼 더 나오고 빛이 스친다
+ *        `.nbk.is-peek` (호출부가 손으로 내밀 때)
  *   열림 `.nbk.is-open`                    → 완전히 들어오고 표지가 젖혀진다
- *
- * **호버를 JS 로 잡지 않았다.** `mouseenter/mouseleave` 는 창 밖으로 커서가 튀거나
- * 전환 중에 요소가 커서 밑에서 빠져나가면 `leave` 를 흘려서 **수첩이 나온 채 얼어붙는다.**
- * `:hover` 는 브라우저가 그 정합을 책임진다 — 리스너도 0개다(이 저장소는 리스너 누수 이력이 있다).
- *
- * ## 색: **바랜 종이 한 장** (팀 3-2-(5)-(3) 1단계)
- * 팀 지시가 바뀌었다 — 예전에는 "누런내" 지적을 받아 회백색(#e7e5e0)으로 당겨 놨는데,
- * 3-2-(5)-(3) 이 *"종이의 바랜 색감, 먹선, 거친 그림자 … 도입부 카툰의 종이 질감과 같은
- * 시각 언어를 공유"* 를 지시했다. **최신 지시가 이긴다** — 색은 이제 `tokens.css` 의
- * `--fa-paper*` 에서 온다. 파일철·프로파일링 문서와 같은 종이여야 하고, 그 종이는 하나뿐이다.
- * `paper.webp`·`leather.webp` 는 여전히 색을 빌리지 않고 **명암만** 빌린다(`grayscale()`).
- * 텍스처가 없어도(파일 부재) 배경 그라디언트만 남아 조용히 성립한다.
- * 판정색(빨강·초록)은 껍데기에 한 곳도 쓰지 않는다 — 드로어는 상태를 그리지 않고 담기만 한다.
  */
 
 .nbk {
   /* ── 치수 ── */
-  --nbk-w: min(760px, 48vw);
-  --nbk-h: clamp(460px, calc(100vh - 92px), 900px);   /* 화면 높이의 60~80% 안 */
-  --nbk-peek: 48px;                     /* 쉼 상태에서 걸치는 책등 폭 */
-  --nbk-out: 45%;                       /* 호버에서 더 나오는 양 (수첩 폭 기준) */
-  --nbk-z: 65;                          /* 판(60)보다 위, 커튼(90)보다 아래 */
+  --nbk-w: min(780px, 50vw);
+  --nbk-h: clamp(520px, calc(100vh - 64px), 920px);
+  --nbk-peek: 52px;
+  --nbk-out: 45%;
+  --nbk-z: 65;
 
   /* ── 전환 ── */
-  --nbk-dur: 280ms;
+  --nbk-dur: 300ms;
   --nbk-ease: cubic-bezier(.22, .86, .3, 1);
 
-  /* ── 색: 바랜 종이 · 채도 낮춘 가죽. 정본은 tokens.css ── */
+  /* ── 색: 바랜 종이 · 가죽 ── */
   --nbk-paper-hi: var(--fa-paper-hi, #efe9da);
   --nbk-paper-lo: var(--fa-paper-lo, #d6cdb8);
   --nbk-ink: var(--fa-paper-ink, #221b14);
   --nbk-ink-soft: var(--fa-paper-ink-soft, #5e5343);
   --nbk-rule: var(--fa-paper-edge, rgba(90, 74, 52, .26));
-  --nbk-brass: var(--fa-brass, #96793c);          /* 놋쇠 한 점 — 여기서만 색이 산다 */
+  --nbk-brass: var(--fa-brass, #96793c);
   --nbk-leather: var(--fa-wood-900, #1f1610);
   --nbk-leather-hi: var(--fa-wood-700, #372619);
+  --nbk-leather-mid: #2d1f15;
 
-  /* style.css 없이(프로브 단독) 세워도 서체가 무너지지 않게 폴백을 안고 간다 */
+  /* ── 활자 ── */
   --nbk-serif: var(--serif, AppleMyungjo, Batang, 'Nanum Myeongjo', 'Apple SD Gothic Neo', serif);
   --nbk-sans: 'Apple SD Gothic Neo', system-ui, sans-serif;
   --nbk-mono: var(--mono, 'SF Mono', 'D2Coding', ui-monospace, Menlo, monospace);
@@ -59,19 +50,15 @@
   position: fixed;
   inset: 0;
   z-index: var(--nbk-z);
-  pointer-events: none;                 /* 막(scrim)과 수첩만 입력을 받는다 */
+  pointer-events: none;
 }
 
-/* ── 막 — 열렸을 때 뒤를 눌러 준다. 여기를 누르면 닫힌다 ─────────────────
- * "바깥 클릭으로 닫힘" 을 document 레벨 리스너 대신 이 한 장으로 구현한다.
- * 전역 리스너는 dispose 를 잊는 순간 그대로 누수가 되고, 클릭이 뒤 화면으로
- * 새어 나가 **닫으려던 클릭이 게임을 조작하는** 사고를 만든다.
- */
+/* ── 막 (scrim) ─────────────────────────────────────────────────── */
 .nbk-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(10, 8, 7, .46);
-  backdrop-filter: blur(1.5px);
+  background: rgba(8, 6, 5, .52);
+  backdrop-filter: blur(2px);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--nbk-dur) ease;
@@ -87,40 +74,27 @@
   width: var(--nbk-w);
   height: var(--nbk-h);
   pointer-events: auto;
-  border-radius: 5px 3px 3px 5px;
-  filter: drop-shadow(-10px 12px 26px rgba(0, 0, 0, .55));
+  border-radius: 6px 4px 4px 6px;
+  filter: drop-shadow(-12px 14px 30px rgba(0, 0, 0, .6));
   transition: transform var(--nbk-dur) var(--nbk-ease), filter var(--nbk-dur) ease;
-  /* 쉼 — 책등만 걸친다 */
   transform: translate3d(calc(100% - var(--nbk-peek)), -50%, 0);
 }
 
-/* 호버 — 폭의 45% 가 더 나온다.
- * 같은 자리를 **셋**이 공유한다:
- *   `:hover`             마우스
- *   `:has(:focus-visible)` 키보드 (탭으로 온 사람도 수첩을 본다)
- *   `.is-peek`           호출부가 손으로 (`handle.peek(true)`)
- *
- * **`:focus-within` 이 아니라 `:focus-visible` 인 이유** (실측으로 잡은 것):
- * 닫을 때 포커스를 손잡이로 돌려주므로, `:focus-within` 이면 마우스로 「닫기」를
- * 누른 사람의 화면에서도 **수첩이 반쯤 나온 채 남는다.** 포커스 링도 안 보이니
- * 이유를 알 수 없는 상태가 된다. 키보드로 온 포커스에만 반응해야 한다.
- * 손잡이가 따로 있는 이유: **터치에는 호버가 없다.** 손가락만 있는 화면에서
- * 수첩은 영영 안 나오는 물건이 된다. 새 일지 줄이 적혔을 때 한 번 내미는 용도도 같다.
- */
+/* 호버 */
 .nbk:not(.is-open) .nbk-book:hover,
 .nbk:not(.is-open) .nbk-book:has(:focus-visible),
 .nbk.is-peek:not(.is-open) .nbk-book {
   transform: translate3d(calc(100% - var(--nbk-peek) - var(--nbk-out)), -50%, 0);
-  filter: drop-shadow(-16px 16px 34px rgba(0, 0, 0, .62)) brightness(1.08);
+  filter: drop-shadow(-18px 18px 38px rgba(0, 0, 0, .65)) brightness(1.06);
 }
 
-/* 열림 — 다 들어온다 */
+/* 열림 */
 .nbk.is-open .nbk-book {
   transform: translate3d(0, -50%, 0);
-  filter: drop-shadow(-18px 18px 40px rgba(0, 0, 0, .66));
+  filter: drop-shadow(-20px 20px 44px rgba(0, 0, 0, .7));
 }
 
-/* ── 책등 — 화면에 걸치는 그 한 뼘. 세로로 이름이 새겨져 있다 ────────── */
+/* ── 책등 ─────────────────────────────────────────────────────────── */
 .nbk-spine {
   position: absolute;
   left: 0;
@@ -128,37 +102,39 @@
   bottom: 0;
   width: var(--nbk-peek);
   z-index: 1;
-  border-radius: 5px 0 0 5px;
+  border-radius: 6px 0 0 6px;
   overflow: hidden;
   background: linear-gradient(90deg,
-    #191413 0%, var(--nbk-leather) 22%, var(--nbk-leather-hi) 58%, #201a18 100%);
-  /* 어두운 판 위의 어두운 가죽은 배경에 먹힌다 — 모서리 한 줄이 물건의 윤곽을 세운다 */
-  box-shadow: inset 1px 0 0 rgba(214, 190, 150, .17);
+    #141110 0%, var(--nbk-leather) 18%, var(--nbk-leather-mid) 40%,
+    var(--nbk-leather-hi) 62%, #1a1410 100%);
+  box-shadow:
+    inset 1px 0 0 rgba(214, 190, 150, .14),
+    inset -2px 0 6px rgba(0, 0, 0, .4);
 }
-/* 가죽 결 — 색이 아니라 **명암만** 빌린다 (누런내 제거의 핵심) */
+/* 가죽 결 */
 .nbk-spine::before,
 .nbk-cover::before {
   content: '';
   position: absolute;
   inset: 0;
   background: url('/nb/leather.webp') repeat;
-  background-size: 220px 220px;
-  filter: grayscale(.85) contrast(1.06);
+  background-size: 200px 200px;
+  filter: grayscale(.85) contrast(1.1);
   mix-blend-mode: overlay;
-  opacity: .5;
+  opacity: .45;
   pointer-events: none;
 }
-/* 책등의 놋쇠 띠 두 줄 — 서가에 꽂힌 책의 문법 */
+/* 책등 놋쇠 띠 */
 .nbk-spine::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   background: linear-gradient(180deg,
-    transparent 0 7.4%, rgba(138, 118, 73, .5) 7.4% 8%, transparent 8% 10%,
-    rgba(138, 118, 73, .3) 10% 10.4%, transparent 10.4% 89.6%,
-    rgba(138, 118, 73, .3) 89.6% 90%, transparent 90% 92%,
-    rgba(138, 118, 73, .5) 92% 92.6%, transparent 92.6% 100%);
+    transparent 0 6%, rgba(138, 118, 73, .55) 6% 6.5%, transparent 6.5% 8.5%,
+    rgba(138, 118, 73, .35) 8.5% 8.9%, transparent 8.9% 91.1%,
+    rgba(138, 118, 73, .35) 91.1% 91.5%, transparent 91.5% 93.5%,
+    rgba(138, 118, 73, .55) 93.5% 94%, transparent 94% 100%);
 }
 .nbk-title {
   position: absolute;
@@ -166,12 +142,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  writing-mode: vertical-rl;            /* 책등이므로 세로쓰기 */
+  writing-mode: vertical-rl;
   font-family: var(--nbk-serif);
   font-size: 14px;
   letter-spacing: 5px;
   color: #b3a184;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, .65);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .7);
   transition: color var(--nbk-dur) ease;
   z-index: 1;
 }
@@ -179,73 +155,97 @@
 .nbk:not(.is-open) .nbk-book:has(:focus-visible) .nbk-title,
 .nbk.is-peek:not(.is-open) .nbk-title { color: #e3d3ae; }
 
-/* 책갈피 리본 — 닫힌 책 아래로 삐져나온 한 가닥. 표지 뒤에 있으므로
-   책 밖으로 나온 꼬리만 보인다 (수첩으로 읽히게 하는 가장 싼 장치) */
+/* 책갈피 리본 */
 .nbk-ribbon {
   position: absolute;
-  left: calc(var(--nbk-peek) - 13px);
+  left: calc(var(--nbk-peek) - 14px);
   top: 0;
-  bottom: -22px;
-  width: 9px;
+  bottom: -24px;
+  width: 10px;
   z-index: 0;
   background: linear-gradient(90deg, #5d4f36, #8a7649 45%, #4e422e);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 9px), 0 100%);
-  opacity: .9;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 10px), 0 100%);
+  opacity: .88;
 }
 
-/* ── 페이지 자리 — 표지가 젖혀지면 여기가 드러난다 ───────────────────── */
+/* ── 쌓인 종이 가장자리 (page edges) ───────────────────────────────── */
+.nbk-edges {
+  position: absolute;
+  left: var(--nbk-peek);
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+/* 종이 층 4장 — 아래로 갈수록 넓어지며 쌓인 느낌 */
+.nbk-edges::before,
+.nbk-edges::after {
+  content: '';
+  position: absolute;
+  border-radius: 0 3px 3px 0;
+}
+.nbk-edges::before {
+  right: -3px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: linear-gradient(180deg,
+    #d4ccb4 0%, #c8bfa5 20%, #d0c8b0 50%, #c5bca2 80%, #d2cab2 100%);
+  box-shadow:
+    1px 0 0 rgba(90, 74, 52, .18),
+    -1px 0 0 rgba(0, 0, 0, .08);
+}
+.nbk-edges::after {
+  right: -6px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: linear-gradient(180deg,
+    #cec5ad 0%, #c0b79d 30%, #c8bfa5 60%, #beb593 100%);
+  box-shadow:
+    1px 0 0 rgba(90, 74, 52, .12),
+    -1px 0 0 rgba(0, 0, 0, .06);
+}
+
+/* ── 페이지 자리 ─────────────────────────────────────────────────── */
 .nbk-leaf {
   position: absolute;
   left: var(--nbk-peek);
   right: 0;
   top: 0;
   bottom: 0;
-  perspective: 1700px;                  /* 표지가 진짜로 젖혀지게 */
+  perspective: 1700px;
 }
 
-/* ── 종이 — 바랜 한 장 ─────────────────────────────────────────────── */
+/* ── 종이 ─────────────────────────────────────────────────────────── */
 .nbk-paper {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 4px 4px 0;
   color: var(--nbk-ink);
   font-family: var(--nbk-sans);
-  background: linear-gradient(180deg, var(--nbk-paper-hi), var(--nbk-paper-lo));
+  background: linear-gradient(168deg, var(--nbk-paper-hi) 0%, var(--nbk-paper-lo) 100%);
   box-shadow:
-    inset 16px 0 24px -14px rgba(38, 34, 28, .5),   /* 제본 골의 그늘 */
-    inset 0 0 42px rgba(96, 92, 80, .16);
+    inset 18px 0 28px -16px rgba(38, 34, 28, .55),
+    inset 0 0 48px rgba(96, 92, 80, .12),
+    inset 0 2px 0 rgba(255, 255, 255, .2);
 
-  /*
-   * ★ **경계에서 팔레트를 다시 묶는다** — 이 여덟 줄이 blocker 하나를 고친다.
-   *
-   * 드로어에 주입되는 내용(`rightPage()`)은 원래 **어두운 판** 위에 그려질 마크업이고,
-   * 그 규칙들은 전부 `style.css` 의 팔레트 변수(`--ink`·`--muted`·`--line`·`--panel-2`…)를
-   * 읽는다. 밝은 종이 안에 그대로 넣으면 밝은 글자가 밝은 종이에 얹힌다 —
-   * **실측 1.03:1, 드로어 안 글자 10개가 전부 안 읽혔다.** (감사 최우선 blocker)
-   *
-   * 색을 하나하나 덮어쓰지 않는 이유: 주입되는 마크업은 이 파일이 소유하지 않는다.
-   * 클래스를 열거하면 다음에 새 줄이 들어올 때 또 안 보인다. **변수를 다시 묶으면
-   * 아직 존재하지 않는 마크업까지 종이 위에서 읽힌다.**
-   *
-   * 판정색(빨강·초록)도 함께 묶는다 — 어두운 판용 채도로는 종이에서 형광펜처럼 뜬다.
-   */
+  /* 팔레트 재바인딩 */
   --bg: var(--fa-paper, #e6dfcd);
   --panel: rgba(255, 255, 255, .4);
   --panel-2: rgba(255, 255, 255, .52);
   --line: var(--nbk-rule);
   --ink: var(--nbk-ink);
   --muted: var(--nbk-ink-soft);
-  --amber: #6f5417;                       /* 놋쇠 잉크 — 종이 위 5.2:1 (실측) */
+  --amber: #6f5417;
   --red: var(--fa-red-seal, #a8382c);
   --green: #3c6349;
 }
-/* 종이 결 — 텍스처의 **명암만** (원본은 누렇다). 없으면 이 층이 통째로 빠질 뿐이다.
- * `paper.webp` 는 3D 수첩의 UV 아틀라스라 여러 장의 필기가 한 장에 모여 있다.
- * 512 로 깔면 그 **그림들이 그림으로 보인다**(실측: 종이 오른쪽에 세로 이음매가 섰다).
- * 180 까지 줄여 결로 만든다 — 우리가 빌리는 건 무늬가 아니라 거칠기다. */
+/* 종이 결 텍스처 */
 .nbk-paper::before {
   content: '';
   position: absolute;
@@ -255,7 +255,8 @@
   background-size: 180px 180px;
   filter: grayscale(1) contrast(.8);
   mix-blend-mode: multiply;
-  opacity: .06;
+  opacity: .07;
+  z-index: 0;
 }
 
 /* ── 머리 ── */
@@ -266,17 +267,17 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding: 14px 16px 8px;
-  border-bottom: 1px solid rgba(90, 86, 74, .28);
-  margin: 0 12px 0 14px;
+  padding: 16px 18px 10px 16px;
+  border-bottom: 1px solid rgba(90, 86, 74, .22);
+  margin: 0 14px 0 16px;
 }
 .nbk-cap h2 {
   margin: 0;
   font-family: var(--nbk-serif);
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 1.5px;
-  color: #35332e;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  color: #2a2721;
 }
 .nbk-cap .nbk-sub {
   font-size: 11px;
@@ -287,40 +288,34 @@
 .nbk-x {
   font: inherit;
   font-size: 11.5px;
-  /* 밝은 종이 위의 옅은 단추는 **없는 것처럼 보인다**(실측: 알파 .3 테두리가 리샘플에서 사라졌다).
-     종이보다 살짝 눌러 앉힌 카드처럼 만들어 손에 잡히게 한다 */
   color: #3d3b33;
   background: rgba(255, 255, 255, .55);
-  border: 1px solid rgba(72, 68, 58, .42);
+  border: 1px solid rgba(72, 68, 58, .38);
   border-radius: 3px;
-  padding: 3px 9px;
+  padding: 4px 11px;
   cursor: pointer;
   box-shadow: 0 1px 0 rgba(255, 255, 255, .5), inset 0 1px 0 rgba(255, 255, 255, .55);
   transition: border-color .15s, color .15s, background .15s;
 }
-.nbk-x:hover { border-color: var(--nbk-brass); color: #2b2924; background: rgba(255, 255, 255, .8); }
+.nbk-x:hover { border-color: var(--nbk-brass); color: #2b2924; background: rgba(255, 255, 255, .82); }
 .nbk-x:focus-visible { outline: 2px solid var(--nbk-brass); outline-offset: 1px; }
 
-/* ── 본문 — 내용은 밖에서 주입한다 (setContent) ───────────────────────── */
+/* ── 본문 ─────────────────────────────────────────────────────────── */
 .nbk-body {
   position: relative;
   z-index: 1;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  overscroll-behavior: contain;         /* 일지를 끝까지 굴려도 뒤 화면이 안 밀린다 */
-  padding: 12px 16px 18px 14px;
+  overscroll-behavior: contain;
+  padding: 14px 18px 20px 16px;
   font-size: 13px;
-  /* 괘선 20px 리듬 위에 글이 **올라탄다** — 행간을 리듬과 같은 값으로 못 박는다 */
   line-height: 20px;
   word-break: keep-all;
-  /* 괘선은 종이 전체가 아니라 쓰는 자리에만 있다. `local` 이라 내용과 함께 굴러간다 —
-     `.nbk-paper` 에 깔면 스크롤할 때 글만 움직이고 줄은 제자리에 서서 종이가 유리가 된다 */
   background-image: repeating-linear-gradient(180deg,
     transparent 0 19px, var(--nbk-rule) 19px 20px);
   background-attachment: local;
-  background-position: 0 12px;          /* padding-top 만큼 내려 첫 줄에 맞춘다 */
-  /* 펼쳐진 **뒤에** 글씨가 올라온다 — 표지가 젖혀지는 동안 내용이 비치면 종이가 유리가 된다 */
+  background-position: 0 14px;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 150ms ease, transform 150ms ease;
@@ -328,15 +323,13 @@
 .nbk.is-open .nbk-body {
   opacity: 1;
   transform: none;
-  transition: opacity 240ms ease 250ms, transform 260ms var(--nbk-ease) 250ms;
+  transition: opacity 240ms ease 260ms, transform 260ms var(--nbk-ease) 260ms;
 }
-.nbk-body::-webkit-scrollbar { width: 8px; }
-.nbk-body::-webkit-scrollbar-thumb { background: rgba(90, 86, 74, .3); border-radius: 4px; }
+.nbk-body::-webkit-scrollbar { width: 7px; }
+.nbk-body::-webkit-scrollbar-thumb { background: rgba(90, 86, 74, .28); border-radius: 4px; }
+.nbk-body::-webkit-scrollbar-track { background: transparent; }
 
-/* 주입되는 내용이 기댈 최소한의 활자 — 이것만 있으면 아무 노드나 얹어도 종이 위에서 읽힌다.
- * **세로 간격은 전부 0 아니면 20 의 배수다.** 하나라도 어긋나면 그 아래 모든 줄이
- * 괘선에서 밀려 나가고, 종이는 "줄 위에 쓴 글" 이 아니라 "줄무늬 배경에 얹은 글" 이 된다.
- * 손으로 적은 일지는 원래 줄과 줄 사이에 여백이 없다 — 그 밀도가 이 물건의 성격이다. */
+/* 본문 활자 규칙 */
 .nbk-body h3 {
   margin: 20px 0 0;
   font-family: var(--nbk-serif);
@@ -344,7 +337,6 @@
   font-weight: 500;
   letter-spacing: 1px;
   color: #56534a;
-  /* 19 + 경계선 1 = 20. 리듬을 지키려고 행간에서 1px 을 빌린다 */
   line-height: 19px;
   border-bottom: 1px solid rgba(90, 86, 74, .22);
 }
@@ -353,7 +345,7 @@
 .nbk-body ul { margin: 0; padding-left: 18px; }
 .nbk-body li { margin: 0; }
 .nbk-body .nbk-note {
-  display: block;                       /* 조서는 본문 **아래** 들여쓴 한 줄이다 */
+  display: block;
   font-family: var(--nbk-mono);
   font-size: 10.5px;
   line-height: 20px;
@@ -363,81 +355,127 @@
 }
 .nbk-body .nbk-empty { color: var(--nbk-ink-soft); font-style: italic; }
 
-/* ── 주입된 옛 우측 패널 마크업을 종이에 눕힌다 ───────────────────────
- * 위의 팔레트 재바인딩이 **색**을 고치고, 아래 대여섯 줄이 **판**을 고친다 —
- * 어두운 판을 전제로 깔려 있던 배경·그늘·괘선은 변수가 아니라 리터럴이라 변수로 못 지운다.
- * (구조는 손대지 않는다. 수사일지 정보구조 개편은 팀 명세 3-2-(3) 이고 아직 미수령이다.)
- */
+/* ── 주입된 마크업 호환 ─────────────────────────────────────────── */
 .nbk-body .nb-page {
   background: none;
   box-shadow: none;
   padding: 0;
 }
-/* 어두운 판의 앰버 괘선 — 종이에는 이미 자기 괘선이 있다. 두 벌은 격자무늬가 된다 */
 .nbk-body .nb-page::before { display: none; }
 .nbk-body .col { padding: 0; overflow: visible; }
 .nbk-body .col + .col { border-left: 0; }
-/* 종이 위의 단추 — 눌러 앉힌 카드처럼. 종이보다 밝고 먹선으로 테를 두른다 */
 .nbk-body button {
   border-radius: 3px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, .45), inset 0 1px 0 rgba(255, 255, 255, .5);
 }
 .nbk-body button:hover:not(:disabled) { border-color: var(--nbk-brass); background: rgba(255, 255, 255, .78); }
-/* 조서 줄의 초록 세로선 — 종이에서는 먹선이다 */
 .nbk-body .jl-note { color: var(--nbk-ink-soft); border-left-color: var(--nbk-rule); }
-/* 증거 카드는 이미 종이(#f4efe4)다. 종이 위 종이라 테두리 하나로 층을 만든다 */
 .nbk-body .evcard { box-shadow: 0 1px 2px rgba(60, 50, 34, .16); }
 
-/* ── 표지 — 클릭하면 젖혀진다 ─────────────────────────────────────────
- * 경첩은 책등의 오른쪽 모서리(=`.nbk-leaf` 의 왼쪽 변)다. 실제 책이 도는 축과 같다.
- * 뒷면을 따로 만들지 않았다: 표지는 좌우대칭이라 뒤집혀도 같은 그림이고,
- * 두 면을 쓰려면 `preserve-3d` 가 필요한데 그러면 끝의 `opacity` 페이드가
- * 3D 를 평면으로 접어버려 **젖혀지다 말고 툭 튀는** 프레임이 생긴다.
- */
+/* ── 우측 인덱스 탭 (01~05 번호 탭) ─────────────────────────────── */
+.nbk-idx {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.nbk.is-open .nbk-idx {
+  pointer-events: auto;
+  opacity: 1;
+  transition: opacity 240ms ease 350ms;
+}
+.nbk-idx-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 52px;
+  border: 0;
+  padding: 0;
+  border-radius: 0 4px 4px 0;
+  font-family: var(--nbk-serif);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  color: #bfb49a;
+  cursor: pointer;
+  background: linear-gradient(90deg, #2a1e16 0%, var(--nbk-leather-mid) 50%, var(--nbk-leather-hi) 100%);
+  box-shadow:
+    1px 2px 4px rgba(0, 0, 0, .35),
+    inset 0 1px 0 rgba(255, 255, 255, .05);
+  transition: color .15s, background .15s, box-shadow .15s;
+}
+.nbk-idx-tab:hover {
+  color: #e8dcc4;
+  background: linear-gradient(90deg, #382a1e 0%, #4a3626 50%, #5a4230 100%);
+}
+.nbk-idx-tab.on {
+  color: #f4ece0;
+  background: linear-gradient(90deg, var(--nbk-paper-lo) 0%, var(--nbk-paper-hi) 60%, #f2ece2 100%);
+  color: var(--nbk-ink);
+  font-weight: 700;
+  box-shadow:
+    2px 2px 6px rgba(0, 0, 0, .3),
+    inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+.nbk-idx-tab:focus-visible { outline: 2px solid var(--nbk-brass); outline-offset: 1px; }
+.nbk-idx-no { font-size: 10px; }
+.nbk-idx-label {
+  writing-mode: vertical-rl;
+  font-size: 9px;
+  letter-spacing: .5px;
+  margin-top: 2px;
+}
+
+/* ── 표지 ─────────────────────────────────────────────────────────── */
 .nbk-cover {
   position: absolute;
   inset: 0;
   z-index: 2;
   overflow: hidden;
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 4px 4px 0;
   transform-origin: left center;
   transform: rotateY(0deg);
-  background: linear-gradient(115deg,
-    #221c1a 0%, var(--nbk-leather) 30%, var(--nbk-leather-hi) 64%, #241d1b 100%);
-  /* 닫힐 때의 값 — 표지가 곧장 덮인다 */
-  transition: transform 320ms var(--nbk-ease), opacity 180ms ease;
+  background: linear-gradient(120deg,
+    #1c1613 0%, var(--nbk-leather) 25%, var(--nbk-leather-mid) 50%,
+    var(--nbk-leather-hi) 70%, #201a16 100%);
+  transition: transform 340ms var(--nbk-ease), opacity 180ms ease;
 }
-/* 표지에 눌러 찍은 테두리 — 가죽 장정의 문법 */
+/* 가죽 테두리 프레임 */
 .nbk-cover::after {
   content: '';
   position: absolute;
-  inset: 14px 16px;
+  inset: 16px 18px;
   pointer-events: none;
-  border: 1px solid rgba(138, 118, 73, .3);
+  border: 1px solid rgba(138, 118, 73, .28);
   box-shadow:
-    inset 0 0 0 3px rgba(0, 0, 0, .22),
-    inset 0 0 0 4px rgba(138, 118, 73, .14),
-    0 1px 0 rgba(255, 235, 200, .05);
+    inset 0 0 0 3px rgba(0, 0, 0, .2),
+    inset 0 0 0 4px rgba(138, 118, 73, .12),
+    0 1px 0 rgba(255, 235, 200, .04);
   border-radius: 2px;
 }
-/* 열릴 때 — 젖혀지고 나서 사라진다. 끝까지 남겨 두면 젖혀진 표지가 메인 화면을 통째로 가린다 */
 .nbk.is-open .nbk-cover {
   transform: rotateY(-134deg);
   opacity: 0;
   pointer-events: none;
-  transition: transform 430ms var(--nbk-ease) 70ms, opacity 200ms ease 280ms;
+  transition: transform 440ms var(--nbk-ease) 70ms, opacity 200ms ease 300ms;
 }
 
-/* ── 반짝임 — "마우스를 인식하고 있다" 는 표시 ────────────────────────
- * 표지·책등 위를 빛 한 줄이 스친다. 호버에서만 돌고, 열리면 꺼진다.
- */
+/* ── 반짝임 ─────────────────────────────────────────────────────── */
 .nbk-sheen {
   position: absolute;
   inset: 0;
   z-index: 3;
   overflow: hidden;
   pointer-events: none;
-  border-radius: 5px 3px 3px 5px;
+  border-radius: 6px 4px 4px 6px;
   opacity: 0;
   transition: opacity 180ms ease;
 }
@@ -446,13 +484,13 @@
   top: -20%;
   bottom: -20%;
   left: 0;
-  width: 34%;                           /* 넓으면 조명이고, 좁아야 **스치는 빛**이다 */
+  width: 34%;
   transform: translateX(-190%) skewX(-14deg);
   background: linear-gradient(105deg,
     transparent 12%,
-    rgba(255, 248, 232, .05) 34%,
-    rgba(255, 250, 240, .24) 50%,
-    rgba(255, 248, 232, .05) 66%,
+    rgba(255, 248, 232, .04) 34%,
+    rgba(255, 250, 240, .2) 50%,
+    rgba(255, 248, 232, .04) 66%,
     transparent 88%);
 }
 .nbk:not(.is-open) .nbk-book:hover .nbk-sheen,
@@ -470,9 +508,7 @@
   100% { transform: translateX(330%) skewX(-14deg); opacity: 0; }
 }
 
-/* ── 손잡이 — 보이는 수첩 전체가 하나의 단추다 ───────────────────────
- * 투명한 판 하나로 둔다. 책등·표지는 그림이므로 접근성 이름을 갖지 않는다.
- */
+/* ── 손잡이 ─────────────────────────────────────────────────────── */
 .nbk-grab {
   position: absolute;
   inset: 0;
@@ -482,18 +518,12 @@
   padding: 0;
   background: transparent;
   cursor: pointer;
-  border-radius: 5px 3px 3px 5px;
+  border-radius: 6px 4px 4px 6px;
 }
 .nbk-grab:focus-visible { outline: 2px solid var(--nbk-brass); outline-offset: -3px; }
 .nbk.is-open .nbk-grab { pointer-events: none; cursor: default; }
 
-/* ── 판이 올라오면 수첩은 그 방에 없다 ────────────────────────────────
- * 드로어는 `--nbk-z: 65` 로 서류 오버레이(`.overlay`, z 10)보다 **위**에 있다. 그래서
- * 결과 화면·최종 추론 판이 떠 있는 동안에도 수첩이 살아 있었고, **제출이 끝난 뒤에도
- * 상태를 바꿀 수 있었다** (감사 확정건). z 를 낮추는 대신 존재를 지운다 —
- * z 만 낮추면 판 뒤에 반쯤 보이는 물건이 남아 "눌러도 아무 일 없는 것" 이 된다.
- * `display: none` 은 포커스까지 함께 걷어 간다.
- */
+/* ── 판이 올라오면 수첩은 숨는다 ────────────────────────────────── */
 body:has(.overlay) .nbk,
 body:has(.startpage) .nbk,
 body:has(.curtain) .nbk,
@@ -501,20 +531,22 @@ body:has(.bookov) .nbk { display: none; }
 
 /* ── 좁은 화면 ── */
 @media (max-width: 560px) {
-  .nbk { --nbk-w: 94vw; --nbk-peek: 30px; --nbk-out: 34%; }
+  .nbk { --nbk-w: 94vw; --nbk-peek: 34px; --nbk-out: 34%; }
   .nbk-title { font-size: 12.5px; letter-spacing: 3px; }
   .nbk-cover::after { inset: 10px 12px; }
+  .nbk-idx { right: 0; }
+  .nbk-idx-tab { width: 26px; height: 42px; font-size: 9px; }
 }
-/* 낮은 화면에서는 60~80% 규칙보다 읽히는 것이 먼저다 */
-@media (max-height: 560px) { .nbk { --nbk-h: 88vh; } }
+@media (max-height: 560px) { .nbk { --nbk-h: 90vh; } }
 
-/* ── 모션을 끈 사람에게는 즉시 ──────────────────────────────────────── */
+/* ── 모션 끈 사람 ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .nbk-book,
   .nbk-cover,
   .nbk-body,
   .nbk-scrim,
   .nbk-sheen,
+  .nbk-idx,
   .nbk-title { transition: none !important; }
   .nbk-sheen > i { animation: none !important; opacity: 1; transform: none; width: 100%; }
   .nbk-paper::before { display: none; }

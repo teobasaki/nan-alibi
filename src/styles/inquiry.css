@@ -3,12 +3,11 @@
 /*
  * 수사일지의 조사 면 (`src/ui/inquiryPanel.ts`).
  *
- * 이 면은 **수첩 종이 위**에 눕는다. 그래서 색을 스스로 정하지 않고 팔레트 변수를 읽는다 —
- * 드로어가 경계에서 팔레트를 다시 묶어 두었으므로(`.nbk-paper`), 여기서는 `var(--ink)` 하나로
- * 종이 위에서도 어두운 판 위에서도 읽힌다. 그게 blocker 하나를 고치고 배운 것이다.
- *
- * 상태는 **색만으로 말하지 않는다** (DESIGN-GUIDE §2): 왼쪽 눈금(형태) + 상태 이름(활자)이
- * 색과 함께 간다. 흑백으로 캡처해도 무엇이 흔들리는 진술인지 읽힌다.
+ * 시각 목표: 레퍼런스 "open notebook" — 가죽 장정 수사일지의 펼쳐진 면.
+ * - 상단 5탭은 종이 위 물리적 탭 (활성 탭 아래에 붉은 밑줄)
+ * - 모듈 카드는 클립/접힘/그림자로 물리적 질감
+ * - 절제된 먹선 + 붉은 강조
+ * - 해당 면은 수첩 종이 위에 눕는다 (팔레트 변수 사용)
  */
 
 .iq {
@@ -20,7 +19,6 @@
   word-break: keep-all;
 }
 
-/* 괘선 리듬(20px)을 지키기 위해 세로 간격은 20의 배수만 쓴다 (드로어 본문 규칙) */
 .iq-sec { margin: 0 0 20px; }
 .iq-sec:last-child { margin-bottom: 0; }
 
@@ -29,10 +27,13 @@
   align-items: baseline;
   gap: 8px;
   font-family: var(--fa-serif, serif);
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
   line-height: 19px;
-  color: var(--muted, #5e5343);
+  color: var(--ink, #221b14);
+  letter-spacing: .3px;
   border-bottom: 1px solid var(--line, rgba(90, 74, 52, .26));
+  padding-bottom: 4px;
 }
 .iq-cap-s {
   margin-left: auto;
@@ -41,44 +42,175 @@
   letter-spacing: .02em;
   color: var(--muted, #5e5343);
   opacity: .85;
+  font-weight: 400;
 }
 
 .iq-empty { font-size: 11.5px; line-height: 20px; color: var(--muted, #5e5343); font-style: italic; }
 
-/* ── 현재 의심 인물 — 정답 제출이 아니다 ── */
-.iq-people { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 4px; }
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 상단 5탭 — 물리적 종이 탭 느낌
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-notebook { min-height: 100%; }
+.iq-tabs {
+  position: sticky;
+  top: -14px;
+  z-index: 4;
+  display: flex;
+  gap: 0;
+  margin: -14px -18px 16px -16px;
+  padding: 0;
+  background: linear-gradient(180deg,
+    rgba(239, 233, 218, .97) 0%,
+    rgba(232, 226, 208, .95) 100%);
+  border-bottom: 2px solid rgba(90, 74, 52, .2);
+  box-shadow: 0 2px 6px rgba(60, 50, 34, .08);
+}
+.iq-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 6px 9px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: var(--muted, #5e5343);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  position: relative;
+  transition: color .15s, border-color .15s;
+  box-shadow: none !important;
+}
+.iq-tab:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background: rgba(90, 74, 52, .15);
+}
+.iq-tab:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .3) !important;
+  color: var(--ink, #221b14);
+}
+.iq-tab.on {
+  color: var(--ink, #221b14);
+  border-bottom-color: var(--red, #a8382c);
+  font-weight: 700;
+  background: rgba(255, 255, 255, .18) !important;
+}
+.iq-tab.on::before { display: none; }
+.iq-tab.on + .iq-tab::before { display: none; }
+.iq-tab-no {
+  font: 8px/1 var(--fa-mono, monospace);
+  opacity: .5;
+  display: none; /* 번호는 우측 인덱스 탭에 있으므로 상단에서는 숨긴다 */
+}
+.iq-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.iq-page { padding-bottom: 20px; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 모듈 카드 — 물리적 클립/접힘/그림자
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.iq-overview-grid > .iq-sec {
+  position: relative;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid rgba(90, 74, 52, .18);
+  background: rgba(255, 255, 255, .28);
+  border-radius: 2px;
+  box-shadow:
+    0 2px 5px rgba(60, 50, 34, .1),
+    0 0 0 1px rgba(255, 255, 255, .2) inset;
+}
+/* 클립 장식 — 카드 왼쪽 상단 */
+.iq-overview-grid > .iq-sec::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 16px;
+  width: 14px;
+  height: 22px;
+  border-radius: 2px 2px 7px 7px;
+  background: linear-gradient(180deg,
+    rgba(150, 121, 60, .7) 0%,
+    rgba(138, 118, 73, .5) 60%,
+    rgba(150, 121, 60, .3) 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+}
+/* 접힌 모서리 — 카드 우하단 */
+.iq-overview-grid > .iq-sec::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(135deg,
+    rgba(214, 205, 184, .9) 0%,
+    rgba(214, 205, 184, .9) 50%,
+    transparent 50%);
+  border-top-left-radius: 2px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 현재 의심 인물
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-people { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 5px; }
 .iq-person {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   font: inherit;
   font-size: 11.5px;
   line-height: 16px;
   color: var(--ink, #221b14);
-  background: transparent;
+  background: rgba(255, 255, 255, .35);
   border: 1px solid var(--line, rgba(90, 74, 52, .26));
   border-radius: 2px;
   cursor: pointer;
+  transition: border-color .12s, background .12s, box-shadow .12s;
 }
-.iq-person:hover { border-color: var(--amber, #6f5417); }
-/* 고른 사람 — 색 + 눈금 + 채워진 표식 셋이 함께 간다 */
-.iq-person.on {
-  color: var(--amber, #6f5417);
+.iq-person:hover {
   border-color: var(--amber, #6f5417);
-  box-shadow: inset 2px 0 0 var(--amber, #6f5417);
-  font-weight: 500;
+  background: rgba(255, 255, 255, .55);
+}
+.iq-person.on {
+  color: var(--red, #a8382c);
+  border-color: var(--red, #a8382c);
+  box-shadow: inset 2px 0 0 var(--red, #a8382c), 0 1px 3px rgba(168, 56, 44, .12);
+  font-weight: 600;
+  background: rgba(255, 255, 255, .5);
 }
 .iq-radio { font-size: 9px; }
 
-/* ── 확인이 필요한 진술 (다음 질문거리) ── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 확인이 필요한 진술
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-shaky { margin: 0; padding: 4px 0 0 16px; }
 .iq-shaky li { font-size: 11.5px; line-height: 20px; color: var(--ink, #221b14); }
 
-/* ── 진술 한 장 ── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 진술 한 장
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-claim {
-  padding: 4px 0 4px 9px;
+  padding: 5px 0 5px 10px;
   border-left: 2px solid var(--line, rgba(90, 74, 52, .26));
+  margin-bottom: 2px;
 }
 .iq-claim-h {
   display: flex;
@@ -88,7 +220,7 @@
   line-height: 20px;
   color: var(--muted, #5e5343);
 }
-.iq-who { font-family: var(--fa-serif, serif); font-size: 11.5px; color: var(--ink, #221b14); }
+.iq-who { font-family: var(--fa-serif, serif); font-size: 11.5px; color: var(--ink, #221b14); font-weight: 600; }
 .iq-at { font-family: var(--fa-mono, ui-monospace, monospace); font-size: 10px; }
 .iq-state {
   margin-left: auto;
@@ -98,7 +230,7 @@
 }
 .iq-quote { font-size: 12px; line-height: 20px; }
 
-/* 상태별 — 눈금 색과 상태 글자 색이 함께 움직인다 */
+/* 상태별 */
 .iq-claim.s-questionable { border-left-color: var(--amber, #6f5417); }
 .iq-claim.s-questionable .iq-state { color: var(--amber, #6f5417); }
 .iq-claim.s-challenged { border-left-color: var(--amber, #6f5417); border-left-style: dashed; }
@@ -107,20 +239,20 @@
 .iq-claim.s-confirmed .iq-state { color: var(--green, #3c6349); }
 .iq-claim.s-disproved { border-left-color: var(--red, #a8382c); }
 .iq-claim.s-disproved .iq-state { color: var(--red, #a8382c); }
-/* 어긋난 진술은 글자에도 줄이 지난다 — 색이 안 보이는 화면에서도 읽힌다.
-   지우지는 않는다: 무엇이 어떻게 바뀌었는지가 정보이기 때문이다 (명세 §15) */
 .iq-claim.s-disproved .iq-quote { text-decoration: line-through; text-decoration-thickness: 1px; opacity: .82; }
 
-/* 고쳐 말한 것 — 원본 바로 아래에 들여 붙는다 */
+/* 고쳐 말한 것 */
 .iq-claim.rev {
   margin-left: 14px;
   border-left-color: var(--green, #3c6349);
-  background: linear-gradient(90deg, rgba(60, 99, 73, .07), transparent 60%);
+  background: linear-gradient(90deg, rgba(60, 99, 73, .06), transparent 60%);
 }
 .iq-claim.rev .iq-who { font-family: var(--fa-mono, ui-monospace, monospace); font-size: 9.5px; color: var(--green, #3c6349); }
 
-/* ── 사실 ── */
-.iq-fact { padding: 4px 0 4px 9px; border-left: 2px solid var(--green, #3c6349); }
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 사실
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-fact { padding: 5px 0 5px 10px; border-left: 2px solid var(--green, #3c6349); margin-bottom: 2px; }
 .iq-fact-t { font-size: 12px; line-height: 20px; }
 .iq-fact-s {
   font-family: var(--fa-mono, ui-monospace, monospace);
@@ -129,7 +261,9 @@
   color: var(--muted, #5e5343);
 }
 
-/* ── 기록 ── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 기록
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-ev { display: flex; align-items: baseline; gap: 8px; line-height: 20px; }
 .iq-ev-t { font-size: 11.5px; }
 .iq-ev-s {
@@ -139,11 +273,13 @@
   color: var(--muted, #5e5343);
 }
 
-/* ── 메모 ── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 메모
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-memo {
   width: 100%;
   margin-top: 4px;
-  padding: 6px 8px;
+  padding: 7px 9px;
   font: inherit;
   font-size: 11.5px;
   line-height: 20px;
@@ -151,46 +287,87 @@
   background: rgba(255, 255, 255, .38);
   border: 1px solid var(--line, rgba(90, 74, 52, .26));
   border-radius: 2px;
-  resize: vertical;
+  resize: none;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: inset 0 1px 3px rgba(60, 50, 34, .06);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
 }
-.iq-memo:focus { outline: none; border-color: var(--amber, #6f5417); }
+.iq-memo:focus { outline: none; border-color: var(--amber, #6f5417); box-shadow: inset 0 1px 3px rgba(60, 50, 34, .06), 0 0 0 2px rgba(111, 84, 23, .18); }
 
 .iq-person:focus-visible,
 .iq-memo:focus-visible { outline: 2px solid var(--amber, #6f5417); outline-offset: 1px; }
 
-/* ── 레퍼런스: 상단 5탭 + 카드형 수사일지 ── */
-.iq-notebook { min-height: 100%; }
-.iq-tabs {
-  position: sticky; top: -12px; z-index: 4; display: grid; grid-template-columns: repeat(5, 1fr);
-  margin: -12px -16px 18px -14px; padding: 0 14px;
-  background: linear-gradient(180deg, rgba(239,233,218,.98), rgba(230,223,205,.96));
-  border-bottom: 1px solid var(--line);
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 관련 증거/증언 목록 (레퍼런스: 핀/기록/증언 태그)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq select, .iq textarea {
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--ink);
+  background: rgba(255, 255, 255, .42);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font: inherit;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
 }
-.iq-tab {
-  display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0;
-  padding: 10px 4px 8px; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
-  color: var(--muted); background: transparent; box-shadow: none !important; font-size: 11px;
+.iq select:focus-visible, .iq textarea:focus-visible {
+  border-color: var(--amber, #6f5417);
+  box-shadow: 0 0 0 2px rgba(111, 84, 23, .18);
+  outline: none;
 }
-.iq-tab:hover:not(:disabled) { background: rgba(255,255,255,.25) !important; }
-.iq-tab.on { color: var(--ink); border-bottom-color: var(--red); font-weight: 700; }
-.iq-tab-no { font: 8px/1 var(--fa-mono, monospace); opacity: .6; }
-.iq-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.iq-page { padding-bottom: 20px; }
-.iq-overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.iq-overview-grid > .iq-sec { padding: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.22); }
+.iq select {
+  min-height: 30px;
+  padding: 4px 28px 4px 7px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235e5343' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 6px;
+  cursor: pointer;
+}
+.iq textarea {
+  resize: none;
+}
 
-.iq select, .iq textarea { color: var(--ink); background: rgba(255,255,255,.42); border: 1px solid var(--line); border-radius: 2px; font: inherit; }
-.iq select { min-height: 30px; padding: 4px 7px; }
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 추론 탭 — 가설 카드
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-deduction { display: flex; flex-direction: column; gap: 14px; }
-.iq-add { margin-left: auto; padding: 3px 8px; font-size: 10px; }
-.iq-hyp { margin-top: 10px; padding: 11px; border: 1px solid rgba(91,72,48,.34); background: rgba(255,255,255,.28); box-shadow: 0 2px 5px rgba(60,45,25,.1); }
+.iq-add { margin-left: auto; padding: 3px 9px; font-size: 10px; }
+.iq-hyp {
+  position: relative;
+  margin-top: 10px;
+  padding: 12px 13px;
+  border: 1px solid rgba(91, 72, 48, .28);
+  background: rgba(255, 255, 255, .32);
+  border-radius: 2px;
+  box-shadow:
+    0 2px 6px rgba(60, 45, 25, .1),
+    0 0 0 1px rgba(255, 255, 255, .15) inset;
+}
+/* 가설 카드 클립 장식 */
+.iq-hyp::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: 18px;
+  width: 12px;
+  height: 20px;
+  border-radius: 2px 2px 6px 6px;
+  background: linear-gradient(180deg,
+    rgba(150, 121, 60, .6) 0%,
+    rgba(138, 118, 73, .4) 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .15);
+}
 .iq-hyp-top { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
-.iq-hyp-id { font: 10px/1 var(--fa-mono, monospace); color: var(--red); }
+.iq-hyp-id { font: 10px/1 var(--fa-mono, monospace); color: var(--red); font-weight: 700; }
 .iq-hyp-status { margin-left: auto; }
 .iq-hyp-del { padding: 4px 7px; font-size: 10px; color: var(--muted); }
 .iq-hyp-text { width: 100%; padding: 7px 8px; line-height: 1.55; resize: vertical; }
 .iq-hyp-who { width: 100%; margin-top: 6px; }
-.iq-hyp-role { margin-top: 9px; padding-left: 9px; border-left: 2px solid var(--green); }
+.iq-hyp-role { margin-top: 9px; padding-left: 10px; border-left: 2px solid var(--green); }
 .iq-hyp-role.counter { border-left-color: var(--red); }
 .iq-hyp-role-k { font: 10px/18px var(--fa-mono, monospace); color: var(--muted); }
 .iq-hyp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -203,17 +380,176 @@
 .iq-link { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto; gap: 6px; align-items: center; margin-top: 6px; padding: 7px; border-bottom: 1px dashed var(--line); font-size: 10.5px; }
 .iq-link span:not(.iq-link-arrow) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .iq-link button { padding: 3px 6px; font-size: 9px; }
-.iq-proof { width: 100%; padding: 10px; border-color: var(--red) !important; color: var(--red); font-family: var(--fa-serif, serif); }
+.iq-proof {
+  width: 100%;
+  padding: 11px;
+  border-color: var(--red) !important;
+  color: var(--red);
+  font-family: var(--fa-serif, serif);
+  font-weight: 600;
+  letter-spacing: .3px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 타임라인 탭
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-timeline { position: relative; }
-.iq-time { display: grid; grid-template-columns: 48px 64px 1fr; gap: 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed var(--line); }
-.iq-time time { font: 11px var(--fa-mono, monospace); color: var(--red); }
+.iq-time {
+  display: grid;
+  grid-template-columns: 48px 64px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.iq-time time { font: 11px var(--fa-mono, monospace); color: var(--red); font-weight: 700; }
 .iq-time-who { font-family: var(--fa-serif, serif); font-weight: 700; }
 .iq-time-text { font-size: 11px; }
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 사건 개요 탭 — 사진 카드 (레퍼런스: 현장 사진)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-photo-card {
+  position: relative;
+  float: right;
+  margin: 0 0 10px 14px;
+  width: 140px;
+  background: #f8f5ef;
+  border: 1px solid rgba(90, 74, 52, .2);
+  border-radius: 2px;
+  padding: 6px 6px 22px;
+  box-shadow: 0 2px 8px rgba(60, 50, 34, .14), 0 1px 0 rgba(255, 255, 255, .3) inset;
+  transform: rotate(1.5deg);
+}
+/* 사진 클립 */
+.iq-photo-card::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: 12px;
+  width: 16px;
+  height: 24px;
+  border-radius: 2px 2px 8px 8px;
+  background: linear-gradient(180deg,
+    rgba(150, 121, 60, .65) 0%,
+    rgba(138, 118, 73, .45) 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+}
+.iq-photo-card img {
+  width: 100%;
+  border-radius: 1px;
+  display: block;
+}
+.iq-photo-card figcaption {
+  margin-top: 4px;
+  font-size: 9px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 핵심 사실 체크리스트 (레퍼런스: ✓ 목록)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-checklist { list-style: none; padding: 0; margin: 4px 0 0; }
+.iq-checklist li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 11.5px;
+  line-height: 20px;
+}
+.iq-checklist li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--green, #3c6349);
+  font-weight: 700;
+  font-size: 12px;
+}
+.iq-checklist li .iq-hl {
+  color: var(--red, #a8382c);
+  font-weight: 700;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * "더 보기" 버튼
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-more {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 3px 10px;
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .35);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.iq-more:hover { border-color: var(--amber); color: var(--ink); }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 사건 타임라인 바 (하단 시각적 타임라인)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.iq-timeline-bar {
+  position: relative;
+  margin-top: 16px;
+  padding: 20px 0 28px;
+  border-top: 1px solid var(--line);
+}
+.iq-timeline-bar-title {
+  font: 12px/1 var(--fa-serif, serif);
+  color: var(--ink);
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+.iq-timeline-track {
+  position: relative;
+  height: 2px;
+  background: var(--line);
+  margin: 0 10px;
+}
+.iq-timeline-track::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+}
+.iq-tl-dot {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 2px solid var(--line);
+  transform: translate(-50%, -50%);
+}
+.iq-tl-dot.crime {
+  width: 12px;
+  height: 12px;
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(168, 56, 44, .2);
+}
+.iq-tl-label {
+  position: absolute;
+  top: 10px;
+  transform: translateX(-50%);
+  font: 9px var(--fa-mono, monospace);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.iq-tl-label.crime { color: var(--red); font-weight: 700; font-size: 11px; top: -18px; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 반응형
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 @media (max-width: 760px) {
   .iq-overview-grid { grid-template-columns: 1fr; }
   .iq-tab { flex-direction: column; gap: 2px; padding-inline: 1px; }
   .iq-tab-label { font-size: 9px; }
   .iq-link-new { grid-template-columns: 1fr; }
   .iq-link-arrow { text-align: center; }
+  .iq-photo-card { float: none; margin: 0 auto 10px; }
 }
