@@ -1,7 +1,19 @@
 # STATE — nan-alibi (FIVE ALIBIS)
 
 > 덮어쓰는 세이브 파일. 항상 "지금" 기준. 히스토리는 [journal/](journal/), 결정 근거는 [decisions/](decisions/).
-> 마지막 갱신: 2026-08-10
+> 마지막 갱신: 2026-08-27
+
+## 2026-08-27 현재 — GC-001 V0.2 W7/W8 및 비주얼 레퍼런스 반영 완료
+
+- **W7 수사일지:** 사건 개요·증거·증언·타임라인·추론 5탭, 가설 생성/삭제, 주체·명제·상태 편집, 지지/반대 단서 배치, 명시적 연결 그래프를 구현했다. 선택 단서가 하나의 연결 그래프를 만들지 못하면 명제가 맞아도 `UNPROVEN`이다 (`221728b`).
+- **비주얼:** 랜딩을 상부 갓등, 목재·금속 프레임 칠판, 좌측 dossier, 책상 전경, 우측 가죽 수첩 책등의 물리적 사건실로 개편했다. 열린 수첩은 가죽 프레임·종이 적층·상단 5탭·우측 번호 인덱스를 쓴다 (`091ea31`).
+- **W8 GC-001 기록 접근:** `CaseFile.evidenceAccess: 'open'`을 GC-001에만 적용했다. E8/E9의 `requires`는 solver/호환 메타데이터로 보존하지만 런타임의 `availableEvidence`·`lockedRecords`·`lookupEvidence`에서는 필수 해금 사슬로 쓰지 않는다. 현장 조사 예산은 그대로 소비하며 generated 400-seed 사건은 기존 gate를 유지한다 (`fb0c209`).
+- **검증:** `npm run verify` — 33파일 **527테스트**, functions 타입검사, 프로덕션 빌드 통과. 브라우저에서 시작 기록 9건/E8·E9 직접 접근/locked 0, 연결된 Proof Path B `PROVEN`, 불완전 논증 `UNPROVEN`과 복구 버튼, 1440/1280/1100 가로 무오버플로를 확인했다. 수첩 visible text 29개는 4.5:1 미달 0개(최저 5.45:1), 배경 `inert=true`다.
+- **배포:** `https://nan-alibi.pages.dev/?case=gc001` HTTP 200. 로컬/프로덕션 번들 일치: `index-DfVPwOV2.js`, `index-DeHtJSzr.css`.
+- **정직한 비주얼 한계:** 공급 레퍼런스의 물리적 구도와 재질 계층은 반영했지만, 사진 콜라주·커스텀 아이콘·배지·장식 밀도는 원본보다 단순하다. 정확한 아트 복제를 완료했다고 보지 않는다.
+- **보존 중인 별도 변경:** `public/characters/appraiser.sit.opt.glb`, `public/characters/nephew.sit.opt.glb`는 이번 작업과 무관한 미커밋 변경으로 계속 제외한다.
+
+아래의 과거 W7/W8 미완료 표기는 이 현재 상태에 의해 대체된다.
 
 ## 목표 (이게 되면 끝났다고 말할 수 있는 조건)
 

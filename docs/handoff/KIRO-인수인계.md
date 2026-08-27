@@ -1,6 +1,20 @@
 # Kiro 인수인계 — FIVE ALIBIS
 
-> 작성 2026-08-27. 인계자: Claude Code(로컬 CLI) → 인수자: Kiro 위의 Claude.
+> 작성 2026-08-27. 인계자: Claude Code(로컬 CLI) → 인수자: Kiro.
+>
+> **최종 갱신(2026-08-27):** 이 문서 아래쪽의 "미푸시", "W7/W8 남음", "324테스트" 같은
+> 진행 중 표기는 당시 기록이다. 현재는 V0.2 W7/W8과 supplied visual references까지 구현·푸시·배포됐다.
+> 최신 커밋은 `221728b`(가설/연결 편집), `091ea31`(물리적 사건실/가죽 수첩), `fb0c209`
+> (GC-001 open evidence)다. `npm run verify`는 **527테스트**와 타입검사·빌드를 통과했다.
+> 프로덕션 `https://nan-alibi.pages.dev/?case=gc001`은 HTTP 200이며 로컬/프로덕션 번들은
+> `index-DfVPwOV2.js`, `index-DeHtJSzr.css`로 일치한다.
+>
+> GC-001은 시작부터 E8/E9 포함 기록 9건을 독립 조사할 수 있지만 현장 조사 예산은 유지한다.
+> E8/E9 `requires`는 solver/호환 메타데이터로 남고 generated 400-seed 사건의 기존 gate는 불변이다.
+> 수사일지는 5탭과 편집 가능한 가설/지지·반대 단서/연결 그래프를 제공하며, 단서 그래프가
+> 끊기면 proposition이 맞아도 `UNPROVEN`이다. 브라우저에서 Path B `PROVEN`과 불완전 논증
+> `UNPROVEN`을 모두 확인했다. 비주얼은 레퍼런스의 물리적 구도를 반영했으나 사진 콜라주와
+> 아이콘·장식 밀도는 더 단순하다. 별도 GLB 두 파일은 여전히 미커밋 상태로 보존한다.
 >
 > **이 문서는 "지금 어디까지 왔고 왜 이렇게 생겼나"만 다룬다.**
 > 스택·불변식·저장소 지도·커밋 규약은 [`AGENTS.md`](../../AGENTS.md)에 이미 있다. **그것을 먼저 읽어라.**
