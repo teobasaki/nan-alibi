@@ -76,6 +76,18 @@ export interface SidebarSuspect {
   talkCap: number
   /** 상태 배지 — 엔진이 계산한 값을 그대로 받는다 (이 파일은 판정하지 않는다) */
   badge: SuspectBadge
+  /**
+   * 이 인물에 관련된 단서(Claim) 수 — 엔진이 계산해 넘긴다.
+   * (정본 3.2.16 2단계: 관련 단서 수)
+   * 0 이면 그리지 않는다. 기본값 0 — 기존 호출부가 깨지지 않는다.
+   */
+  relatedClueCount?: number
+  /**
+   * 이 인물의 진술 변화(REVISED·QUESTIONABLE·CHALLENGED) 수 — 엔진이 계산해 넘긴다.
+   * (정본 3.2.16 2단계: 진술 변화 수)
+   * 0 이면 그리지 않는다. 기본값 0 — 기존 호출부가 깨지지 않는다.
+   */
+  statementChangeCount?: number
 }
 
 export interface SidebarHandlers {
@@ -173,6 +185,11 @@ function suspectRow(): HTMLButtonElement {
   talk.appendChild(el('i', 'fa-sb-bar')).appendChild(el('u'))
   talk.appendChild(el('em', 'fa-sb-n'))
   meta.appendChild(talk)
+  /* 수치 배지(단서 수·진술 변화 수) — paintRow 가 값을 바른다 */
+  const stats = el('span', 'fa-sb-stats')
+  stats.appendChild(el('span', 'fa-sb-stat-clue'))
+  stats.appendChild(el('span', 'fa-sb-stat-change'))
+  meta.appendChild(stats)
   /* 상태 배지 — 칸의 하단에 칩으로 붙는다. paintRow 가 값을 바른다 */
   meta.appendChild(el('span', 'fa-sb-badge'))
   row.appendChild(meta)
@@ -219,6 +236,31 @@ function paintRow(row: HTMLButtonElement, p: SidebarSuspect, index: number): voi
   // aria-current 는 "지금 여기"를 읽어준다. active 를 색으로만 두면 스크린리더에서 사라진다.
   if (p.active) row.setAttribute('aria-current', 'true')
   else row.removeAttribute('aria-current')
+
+  /* ── 수치 배지: 관련 단서 수 · 진술 변화 수 (정본 3.2.16 2단계) ── */
+  const clueEl = row.querySelector<HTMLElement>('.fa-sb-stat-clue')!
+  const clueCount = p.relatedClueCount ?? 0
+  if (clueCount > 0) {
+    clueEl.textContent = `단서 ${clueCount}`
+    clueEl.classList.add('on')
+    clueEl.setAttribute('aria-label', `관련 단서 ${clueCount}건`)
+  } else {
+    clueEl.textContent = ''
+    clueEl.classList.remove('on')
+    clueEl.removeAttribute('aria-label')
+  }
+
+  const changeEl = row.querySelector<HTMLElement>('.fa-sb-stat-change')!
+  const changeCount = p.statementChangeCount ?? 0
+  if (changeCount > 0) {
+    changeEl.textContent = `말 바뀜 ${changeCount}`
+    changeEl.classList.add('on')
+    changeEl.setAttribute('aria-label', `진술 변화 ${changeCount}건`)
+  } else {
+    changeEl.textContent = ''
+    changeEl.classList.remove('on')
+    changeEl.removeAttribute('aria-label')
+  }
 
   /* ── 상태 배지 (칩) ── */
   const badge = row.querySelector<HTMLElement>('.fa-sb-badge')!

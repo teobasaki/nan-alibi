@@ -2213,8 +2213,8 @@ body::after {
   --bg: #090d10;
   --panel: #12181d;
   --panel-2: #192229;
-  --line: #344047;
-  --ink: #ece7dd;
+  --line: #2e373d;
+  --ink: #e8ecee;
   --muted: #858f94;
   --amber: #d39a45;
   --red: #a73e35;
@@ -2301,7 +2301,7 @@ body::after {
   border-color: #4b565c;
   filter: grayscale(.75) contrast(1.16) brightness(.74);
 }
-:is(.nb, .act2).interview .sname { color: #e6e4de; font-size: 12.5px; }
+:is(.nb, .act2).interview .sname { color: #e4e8ea; font-size: 12.5px; }
 :is(.nb, .act2).interview .sjob,
 :is(.nb, .act2).interview .sprog { color: #7e898f; font-size: 9.5px; }
 :is(.nb, .act2).interview .sprog.has { color: #79adc8; }
@@ -2376,7 +2376,7 @@ body::after {
   text-align: right;
 }
 :is(.nb, .act2).interview .portrait .name {
-  color: #dcd8cf;
+  color: #d6dce0;
   font-family: var(--serif);
   font-size: 12px;
 }
@@ -2430,7 +2430,7 @@ body::after {
 }
 :is(.nb, .act2).interview .bubble.a {
   align-self: flex-start;
-  color: #e6e0d7;
+  color: #e0e5e8;
   background: rgba(17, 22, 26, .94);
   border: 1px solid #333d43;
   border-left: 2px solid #4f7f99;
@@ -2446,7 +2446,7 @@ body::after {
   font-size: 9px;
   letter-spacing: .08em;
 }
-:is(.nb, .act2).interview .bubble.a .bubble-who { color: #a7a097; }
+:is(.nb, .act2).interview .bubble.a .bubble-who { color: #9ea5ab; }
 :is(.nb, .act2).interview .bubble-text { word-break: keep-all; }
 :is(.nb, .act2).interview .bubble .tell { font-size: 10.5px; }
 :is(.nb, .act2).interview .bubble .stmt {
@@ -2493,7 +2493,7 @@ body::after {
 :is(.nb, .act2).interview .chip {
   min-width: 0;
   padding: 7px 8px;
-  color: #c8c6c0;
+  color: #c2c8cc;
   background: #171d21;
   border-color: #354047;
   border-radius: 2px;
@@ -2524,7 +2524,7 @@ body::after {
 :is(.nb, .act2).interview .askrow input {
   min-width: 0;
   padding: 8px 10px;
-  color: #e5e2dc;
+  color: #e2e7ea;
   background: #090d10;
   border-color: #364047;
   border-radius: 2px;
@@ -2533,7 +2533,7 @@ body::after {
 :is(.nb, .act2).interview .askrow input:focus { border-color: #56839a; }
 :is(.nb, .act2).interview .askrow button {
   padding: 8px 15px;
-  color: #171009;
+  color: #11151a;
   background: #ce9847;
   border-color: #e0ae65;
   border-radius: 2px;
@@ -2577,7 +2577,7 @@ body::after {
 }
 :is(.nb, .act2).interview .ask-ev:hover:not(:disabled) { color: #dfe6e8; border-color: #4d7f9a; }
 :is(.nb, .act2).interview .ask-ev.on {
-  color: #17110a;
+  color: #11151a;
   background: #cf9a48;
   border-color: #e4b466;
 }
@@ -2591,11 +2591,16 @@ body::after {
  * *"용의자가 답변하는 순간에는 좌측 사이드바나 기타 인터페이스의 명도를 조금 낮추고,
  * 용의자와 대화 텍스트에만 시선이 집중되도록"* — 요소를 지우는 게 아니라 **빛을 뺀다.**
  * 대화 로그·무대·질문칩은 건드리지 않는다. 그 셋이 지금 유일하게 중요한 것이다.
+ *
+ * 2단계 강화: brightness .62 → .48, saturate .85 → .7 — 주변 UI 존재감을 더 낮춘다.
+ * 하단 ask 영역도 포함해 대화와 무대만 남긴다.
  */
 .act2.answering > :first-child,
 .act2.answering .ask-hand,
+.act2.answering .ask::before,
+.act2.answering .cost,
 .act2.answering .stage-label {
-  filter: brightness(.62) saturate(.85);
+  filter: brightness(.48) saturate(.7);
   transition: filter 260ms ease;
 }
 .act2 > :first-child { transition: filter 320ms ease; }

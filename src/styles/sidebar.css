@@ -470,6 +470,34 @@
   border-color: rgba(168, 56, 44, .42);
 }
 
+/**
+ * 수치 배지 — 「관련 단서 수 · 진술 변화 수」 (정본 3.2.16 2단계).
+ * 0 이면 그리지 않는다: 0 이 다섯 개 나란하면 「보면 바로 상태가 읽히는 UI」가 아니라
+ * 빈 칸의 나열이 된다. 색만으로 말하지 않으므로 낱말과 숫자를 함께 적는다.
+ */
+.fa-sb-stats { display: flex; gap: 5px; margin-top: 3px; }
+.fa-sb-stat-clue, .fa-sb-stat-change {
+  display: none;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-family: var(--fa-mono, ui-monospace, Menlo, monospace);
+  font-size: 9px;
+  letter-spacing: .2px;
+}
+.fa-sb-stat-clue.on {
+  display: inline-block;
+  color: var(--fa-brass, #96793c);
+  background: rgba(150, 121, 60, .14);
+  border-color: rgba(150, 121, 60, .4);
+}
+.fa-sb-stat-change.on {
+  display: inline-block;
+  color: var(--fa-red-chalk, #e8654c);
+  background: rgba(168, 56, 44, .14);
+  border-color: rgba(168, 56, 44, .4);
+}
+
 /* 단서 없음 ⚠ — 충돌보다 조용한 경고. 「갔는데 못 받았다」는 재방문 신호다 */
 .fa-sb-badge[data-badge="noclue"] {
   color: var(--fa-paper-ink-soft, #8a7c67);
@@ -531,32 +559,150 @@
   .fa-sb-folder:focus-visible .fa-sb-fold { filter: brightness(1.22); }
 }
 
-/* 사건실 랜딩에서는 목록이 화면 패널이 아니라 책상 옆 dossier 더미다. */
-.case-room .fa-sb {
-  --fa-sb-panel:#21180f; --fa-sb-panel-2:#36281d; --fa-sb-line:#4a3524;
-  background:linear-gradient(90deg,#17110c,#2d2117 48%,#17110d); border-radius:3px;
-}
-.case-room .fa-sb-list { padding:6px 7px 10px; gap:5px; background:linear-gradient(90deg,rgba(0,0,0,.32),transparent 20%,rgba(0,0,0,.28)); }
-.case-room .fa-sb-row {
-  min-height:0; padding:6px 8px; gap:9px; border:1px solid #75654e !important; border-radius:1px;
-  color:#2a2118; background:
-    repeating-linear-gradient(180deg,transparent 0 18px,rgba(96,76,52,.08) 18px 19px),
-    linear-gradient(150deg,#d0c4aa,#a99b7f);
-  box-shadow:0 4px 7px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.3); transform:rotate(var(--dossier-turn,0deg));
-}
-.case-room .fa-sb-row:nth-child(2n){--dossier-turn:.5deg}.case-room .fa-sb-row:nth-child(3n){--dossier-turn:-.45deg}
-/**
- * 옛 슬롯 표식(`S1`)은 지운다 — 시안의 번호는 `01`~`05` 이고 그것은 `.fa-sb-num` 이
- * 그린다. 둘을 같은 자리에 두면 뒤엣것이 앞엣것을 덮어 시안과 다른 글자가 남는다.
+/*
+ * ── 사건실 세트 — 「카드 나열이 아니라 서류가 쌓인 도구 지대」 ──
+ * (3.2.16 1단계: 오브젝트별 다른 실루엣 · 약간의 레이어 겹침 · 선택된 오브젝트의 존재감 차이)
+ *
+ * 카드별 회전 폭을 다르게(--dossier-turn), 서로 조금 겹치게,
+ * 가장자리를 꺾이거나 핀이 박힌 모양으로, 상하 그림자로 종이 두께.
  */
-.case-room .fa-sb-row::after { content:none; }
-.case-room .fa-sb-num { box-shadow:1px 2px 3px rgba(0,0,0,.35); }
-.case-room .fa-sb-row:hover { background-color:#ddcfb5; filter:brightness(1.08); }
-.case-room .fa-sb-row.on { box-shadow:0 5px 9px rgba(0,0,0,.52),inset 0 0 0 2px #96793c; }
-.case-room .fa-sb-row::before { left:auto; right:8px; top:8px; bottom:auto; width:9px; height:9px; border-radius:50%; transform:none; background:#a8382c; box-shadow:0 2px 3px rgba(0,0,0,.5); }
-.case-room .fa-sb-row.on::before { transform:none; }
-.case-room .fa-sb-face { margin-left:12px; height:74%; filter:grayscale(1) sepia(.35) contrast(1.1); border-color:#6c5d49; }
-.case-room .fa-sb-name { color:#2b2118; font-size:14px; font-weight:700; }
-.case-room .fa-sb-row.on .fa-sb-name { color:#6b2f24; }
-.case-room .fa-sb-job,.case-room .fa-sb-n { color:#625443; }
-.case-room .fa-sb-bar { background:#8e806b; }.case-room .fa-sb-bar u{background:#6f5417}
+.case-room .fa-sb {
+  --fa-sb-panel: #1b140e;
+  --fa-sb-panel-2: #36281d;
+  --fa-sb-line: #4a3524;
+  background:
+    /* 미세한 벽면 질감 */
+    repeating-linear-gradient(180deg, rgba(255,255,255,.008) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, #13100c, #2a1e15 48%, #13100c);
+  border-radius: 3px;
+  /* 사이드바 자체도 벽에서 약간 떠 있다 — 그림자로 공기 */
+  box-shadow: inset -1px 0 0 rgba(0,0,0,.4);
+}
+
+.case-room .fa-sb-list {
+  padding: 8px 8px 12px;
+  gap: 0;   /* 겹침은 negative margin 으로 만든다 */
+  background:
+    /* 수직으로 흐르는 벽 결 */
+    linear-gradient(90deg, rgba(0,0,0,.36), transparent 18%, transparent 82%, rgba(0,0,0,.28));
+}
+
+.case-room .fa-sb-row {
+  position: relative;
+  min-height: 0;
+  padding: 7px 9px 7px 28px;
+  gap: 9px;
+  /* 서류 겹침 효과 — 위 카드가 아래 카드를 조금 덮는다 */
+  margin-top: -3px;
+  /* 종이 재질 — 괘선 있는 바랜 종이 */
+  border: 1px solid #75654e !important;
+  border-radius: 2px 1px 2px 1px;   /* 완전한 직사각 아님 — 종이가 정확히 잘리지 않는다 */
+  color: #2a2118;
+  background:
+    /* 가로 괘선 — 종이임을 말하는 최소한의 표시 */
+    repeating-linear-gradient(180deg, transparent 0 18px, rgba(96,76,52,.08) 18px 19px),
+    /* 종이 면 그래디언트 — 조명 방향(좌상→우하) */
+    linear-gradient(152deg, #d4c8ac, #a99b7f 70%, #9e9070);
+  box-shadow:
+    /* 카드 아래 그림자 — 종이 두께 + 벽과의 거리 */
+    0 4px 8px rgba(0,0,0,.42),
+    0 1px 2px rgba(0,0,0,.3),
+    /* 안쪽 윗면 하이라이트 — 종이 모서리가 빛을 받음 */
+    inset 0 1px 0 rgba(255,255,255,.35);
+  transform: rotate(var(--dossier-turn, 0deg));
+  /* 선택 시 들림 전환 */
+  transition: background-color 150ms ease-out, transform 150ms ease-out, box-shadow 150ms ease-out;
+}
+.case-room .fa-sb-row:first-child { margin-top: 0; }
+
+/* 카드별 회전 변주 — 서류가 아무렇게나 쌓인 느낌 (Math.random 금지 — 고정 패턴) */
+.case-room .fa-sb-row:nth-child(1) { --dossier-turn: 0.3deg; }
+.case-room .fa-sb-row:nth-child(2) { --dossier-turn: -0.6deg; }
+.case-room .fa-sb-row:nth-child(3) { --dossier-turn: 0.5deg; }
+.case-room .fa-sb-row:nth-child(4) { --dossier-turn: -0.35deg; }
+.case-room .fa-sb-row:nth-child(5) { --dossier-turn: 0.45deg; }
+
+/* 핀 자국 — 왼쪽 상단에 고정핀이 꽂힌 흔적 (gradient로 표현) */
+.case-room .fa-sb-row::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #5c3a28 30%, #8a6040 50%, transparent 70%);
+  box-shadow: 0 1px 2px rgba(0,0,0,.5), inset 0 0 1px rgba(255,200,120,.3);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ─── 선택된 카드 — 더 들리고 그림자가 깊어진다 (대승 4) ─── */
+.case-room .fa-sb-row.on {
+  transform: rotate(var(--dossier-turn, 0deg)) translateY(-3px) scale(1.015);
+  box-shadow:
+    0 8px 14px rgba(0,0,0,.55),
+    0 3px 5px rgba(0,0,0,.35),
+    inset 0 0 0 2px #96793c,
+    inset 0 1px 0 rgba(255,255,255,.4);
+  background:
+    repeating-linear-gradient(180deg, transparent 0 18px, rgba(96,76,52,.08) 18px 19px),
+    linear-gradient(152deg, #ddd1b5, #b5a78b 70%, #a89c80);
+  z-index: 3;
+}
+
+/* 번호 배지 — 이 위치에서 핀 위에 올라온다 */
+.case-room .fa-sb-num { box-shadow: 1px 2px 3px rgba(0,0,0,.4); }
+
+/* 호버 — 카드가 살짝 들린다 */
+.case-room .fa-sb-row:hover {
+  background-color: transparent;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 18px, rgba(96,76,52,.08) 18px 19px),
+    linear-gradient(152deg, #ddd1b5, #b0a382 70%, #a59873);
+  transform: rotate(var(--dossier-turn, 0deg)) translateY(-2px);
+  box-shadow:
+    0 6px 12px rgba(0,0,0,.48),
+    0 2px 3px rgba(0,0,0,.3),
+    inset 0 1px 0 rgba(255,255,255,.38);
+  filter: none;
+}
+
+/* 선택 표시 — 핀이 꽂힌 빨간 점 (::before) */
+.case-room .fa-sb-row::before {
+  left: auto;
+  right: 8px;
+  top: 8px;
+  bottom: auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: none;
+  background: var(--fa-red-seal, #a8382c);
+  box-shadow: 0 2px 3px rgba(0,0,0,.5);
+}
+.case-room .fa-sb-row.on::before { transform: none; }
+
+/* 초상 — 그레이스케일 세피아 처리된 증명사진 느낌 */
+.case-room .fa-sb-face {
+  margin-left: 12px;
+  height: 74%;
+  filter: grayscale(1) sepia(.35) contrast(1.1);
+  border-color: #6c5d49;
+  border-radius: 2px;
+  /* 사진이 종이에 붙어 있는 느낌 — 약간의 그림자 */
+  box-shadow: 1px 1px 3px rgba(0,0,0,.3);
+}
+
+.case-room .fa-sb-name { color: #2b2118; font-size: 14px; font-weight: 700; }
+.case-room .fa-sb-row.on .fa-sb-name { color: #6b2f24; }
+.case-room .fa-sb-job, .case-room .fa-sb-n { color: #56473a; }
+.case-room .fa-sb-bar { background: #8e806b; }
+.case-room .fa-sb-bar u { background: #6f5417; }
+
+/* prefers-reduced-motion — 들림 전환만 끈다, 정적 상태는 유지 */
+@media (prefers-reduced-motion: reduce) {
+  .case-room .fa-sb-row,
+  .case-room .fa-sb-row.on { transition: none; }
+  .case-room .fa-sb-row:hover { transform: rotate(var(--dossier-turn, 0deg)); }
+}

@@ -629,7 +629,7 @@
   font-size: 11px;
   line-height: 18px;
   border-radius: 2px;
-  color: var(--fa-light, #e8e0d3);
+  color: var(--fa-light, #e4eaed);
 }
 .iq-stage-shaky { background: rgba(111, 84, 23, .18); border-left: 2px solid var(--fa-amber, #6f5417); }
 .iq-stage-suspect { background: rgba(168, 56, 44, .1); border-left: 2px solid var(--fa-red-chalk, #a8382c); }

@@ -501,18 +501,18 @@
 .cb-table .cb-row:nth-of-type(2) .cb-btn:focus-visible .cb-tip { transform: translate(-50%, 0); }
 
 /*
- * ── 밝혀진 행 (팀 3-2-(5)-(2) 3단계)
+ * ── 밝혀진 행 (팀 3-2-(5)-(2) 3단계 + 3.2.16 1단계 대승4: 선택된 오브젝트의 존재감 차이)
  *
  * 한 사람에게 눈이 가면 그 사람의 밤 전체가 조금 밝아진다 — 표가 배경이 아니라
  * 실제 수사 도구로 읽히는 지점이다. `.cb-row` 는 `display:contents` 라 행을 한 덩이로
  * 집을 수 없으므로, 칸이 `data-who` 를 이고 표가 `data-lit` 을 이는 방식으로 짝짓는다.
  * **판정이 아니라 조명이다** — 상태를 바꾸지 않고, 재렌더도 없다.
- * 밝히는 폭은 작게 잡는다(0.84 → 1.0). 크게 잡으면 안 밝은 행의 분필이 안 읽히고,
+ * 밝히는 폭은 작게 잡는다(0.82 → 1.0). 크게 잡으면 안 밝은 행의 분필이 안 읽히고,
  * "조명" 이 아니라 "비활성" 으로 보인다 — 소거는 이 표에서 이미 다른 신호(줄·표)를 갖는다.
  */
 .cb-table[data-lit] [data-who] {
-  opacity: .84;
-  transition: background-color .16s ease, opacity .16s ease;
+  opacity: .82;
+  transition: background-color .16s ease, opacity .16s ease, box-shadow .16s ease;
 }
 .cb-table[data-lit="S1"] [data-who="S1"],
 .cb-table[data-lit="S2"] [data-who="S2"],
@@ -520,7 +520,9 @@
 .cb-table[data-lit="S4"] [data-who="S4"],
 .cb-table[data-lit="S5"] [data-who="S5"] {
   opacity: 1;
-  background-color: rgba(232, 235, 223, .055);
+  background-color: rgba(232, 235, 223, .07);
+  /* 선택 행에 조명이 집중 — 미세한 상하 글로우로 행이 "들린다" */
+  box-shadow: inset 0 1px 0 rgba(232, 235, 223, .06), inset 0 -1px 0 rgba(232, 235, 223, .04);
 }
 
 /* ── 분필 획 공통 ── */
@@ -680,9 +682,74 @@
   .cb-btn:active .cb-tip { opacity: 1; transform: translate(-50%, 0); }
 }
 
-/* 사건실 세트의 금속 모서리와 더 두꺼운 목재 프레임 */
-.case-room .cb-frame { position:relative; padding:20px 20px 0; border-radius:2px; background:repeating-linear-gradient(93deg,rgba(0,0,0,.28) 0 3px,rgba(255,255,255,.018) 3px 7px),linear-gradient(178deg,#5a402c,#2b1b12 25%,#160e09); }
-.case-room .cb-frame::before,.case-room .cb-frame::after { content:''; position:absolute; z-index:5; width:42px; height:42px; border:5px solid #181817; box-shadow:inset 0 0 0 2px #5b5142,0 2px 4px #000; pointer-events:none; }
-.case-room .cb-frame::before { left:4px; top:4px; border-right:0; border-bottom:0; }
-.case-room .cb-frame::after { right:4px; bottom:4px; border-left:0; border-top:0; }
-.case-room .cb-surface { padding:20px 24px 16px; }
+/*
+ * ── 사건실 세트 — 「판이 아니라 무거운 보드」 ──
+ * (3.2.16 1단계: 프레임의 물성 차이 · 그림자와 조명에 의한 깊이)
+ *
+ * 나무 틀을 두껍게, 모서리에 깊은 그림자, 표면에 분필 가루·지운 흔적,
+ * 배경과 보드 사이에 그림자로 공기층.
+ */
+.case-room .cb-frame {
+  position: relative;
+  padding: 22px 22px 0;
+  border-radius: 3px;
+  background:
+    /* 나무 결 — 폭이 좁고 불규칙한 리듬으로 목재를 표현 */
+    repeating-linear-gradient(93deg, rgba(0,0,0,.32) 0 2px, rgba(255,255,255,.014) 2px 5px, rgba(0,0,0,.18) 5px 6px, transparent 6px 9px),
+    /* 긴 방향 결 — 상하로 흐르는 나뭇결 */
+    repeating-linear-gradient(178deg, rgba(0,0,0,.06) 0 12px, rgba(255,255,255,.02) 12px 14px),
+    /* 기본 그래디언트 — 위쪽이 조명을 받아 밝다 */
+    linear-gradient(178deg, #5a402c, #2b1b12 25%, #160e09);
+  /* 보드와 벽 사이의 공기층 — 깊은 그림자로 보드가 벽에서 떠 있다 */
+  box-shadow:
+    0 32px 60px rgba(0, 0, 0, .7),
+    0 14px 28px rgba(0, 0, 0, .5),
+    0 4px 0 rgba(0, 0, 0, .6),
+    inset 0 1px 0 rgba(255, 235, 200, .08),
+    inset 0 -2px 0 rgba(0, 0, 0, .6);
+}
+
+/* 금속 모서리 장식 — L자 꺾쇠. 무거운 보드를 고정하는 물건 */
+.case-room .cb-frame::before,
+.case-room .cb-frame::after {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  width: 46px;
+  height: 46px;
+  border: 5px solid #181817;
+  box-shadow:
+    inset 0 0 0 2px #5b5142,
+    0 3px 6px rgba(0, 0, 0, .7),
+    inset 0 1px 0 rgba(255, 230, 180, .12);
+  pointer-events: none;
+}
+.case-room .cb-frame::before { left: 4px; top: 4px; border-right: 0; border-bottom: 0; border-radius: 2px 0 0 0; }
+.case-room .cb-frame::after { right: 4px; bottom: 4px; border-left: 0; border-top: 0; border-radius: 0 0 2px 0; }
+
+.case-room .cb-surface {
+  padding: 22px 26px 18px;
+  /* 더 두꺼운 안쪽 그림자 — 프레임이 판면을 안고 있는 느낌 */
+  box-shadow:
+    inset 0 4px 12px rgba(0, 0, 0, .72),
+    inset 0 0 0 1px rgba(0, 0, 0, .5),
+    inset 3px 0 8px rgba(0, 0, 0, .3),
+    inset -3px 0 8px rgba(0, 0, 0, .3);
+}
+
+/*
+ * 분필 가루·지운 흔적 — cb-surface::before(결)에 더해 case-room 전용 추가 층.
+ * 지운 자국이 몇 군데 더 보이고, 하단에 가루가 더 두텁게 쌓인다.
+ */
+.case-room .cb-surface::after {
+  background:
+    /* 지우개 흔적 — 넓게 훑은 자국 */
+    radial-gradient(72% 18% at 30% 22%, rgba(255,255,255,.06), transparent 70%),
+    radial-gradient(55% 14% at 66% 55%, rgba(255,255,255,.05), transparent 68%),
+    radial-gradient(40% 12% at 82% 30%, rgba(255,255,255,.04), transparent 66%),
+    /* 하단 분필 가루 더 두텁게 */
+    linear-gradient(to top, rgba(232,235,223,.08), transparent 22%),
+    /* 갓등 하나 — 위 왼쪽에서 떨어지는 원뿔 */
+    radial-gradient(78% 46% at 38% -4%, var(--fa-lamp-warm, rgba(255,216,158,.18)), transparent 68%),
+    radial-gradient(120% 70% at 34% 14%, var(--fa-lamp, rgba(255,232,190,.12)), transparent 62%);
+}

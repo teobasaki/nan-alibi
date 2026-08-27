@@ -233,3 +233,101 @@ describe('파일철 — 시안 대조', () => {
     expect(stamp.getAttribute('aria-hidden')).toBe('true')
   })
 })
+
+/* ────────────────────────────── 수치 배지: 관련 단서 수 · 진술 변화 수 (3.2.16 2단계) ── */
+
+describe('수치 배지 — 관련 단서 수 (relatedClueCount)', () => {
+  it('relatedClueCount 가 0 이면 .fa-sb-stat-clue 는 비어 있고 aria-label 이 없다', () => {
+    const root = draw([person('S1', { relatedClueCount: 0 })])
+    const clue = root.querySelector('.fa-sb-stat-clue') as HTMLElement
+    expect(clue.textContent).toBe('')
+    expect(clue.classList.contains('on')).toBe(false)
+    expect(clue.getAttribute('aria-label')).toBeNull()
+  })
+
+  it('relatedClueCount 를 생략해도(기본값 0) 그리지 않는다', () => {
+    const root = draw([person('S1')])
+    const clue = root.querySelector('.fa-sb-stat-clue') as HTMLElement
+    expect(clue.textContent).toBe('')
+    expect(clue.classList.contains('on')).toBe(false)
+  })
+
+  it('relatedClueCount=3 이면 「단서 3」이 보이고 aria-label 에 수치가 있다', () => {
+    const root = draw([person('S1', { relatedClueCount: 3 })])
+    const clue = root.querySelector('.fa-sb-stat-clue') as HTMLElement
+    expect(clue.textContent).toBe('단서 3')
+    expect(clue.classList.contains('on')).toBe(true)
+    expect(clue.getAttribute('aria-label')).toBe('관련 단서 3건')
+  })
+
+  it('relatedClueCount=1 최소값에서도 표시된다', () => {
+    const root = draw([person('S1', { relatedClueCount: 1 })])
+    const clue = root.querySelector('.fa-sb-stat-clue') as HTMLElement
+    expect(clue.textContent).toBe('단서 1')
+    expect(clue.getAttribute('aria-label')).toBe('관련 단서 1건')
+  })
+})
+
+describe('수치 배지 — 진술 변화 수 (statementChangeCount)', () => {
+  it('statementChangeCount 가 0 이면 .fa-sb-stat-change 는 비어 있다', () => {
+    const root = draw([person('S1', { statementChangeCount: 0 })])
+    const change = root.querySelector('.fa-sb-stat-change') as HTMLElement
+    expect(change.textContent).toBe('')
+    expect(change.classList.contains('on')).toBe(false)
+    expect(change.getAttribute('aria-label')).toBeNull()
+  })
+
+  it('statementChangeCount 를 생략해도(기본값 0) 그리지 않는다', () => {
+    const root = draw([person('S1')])
+    const change = root.querySelector('.fa-sb-stat-change') as HTMLElement
+    expect(change.textContent).toBe('')
+    expect(change.classList.contains('on')).toBe(false)
+  })
+
+  it('statementChangeCount=1 이면 「말 바뀜 1」이 보이고 aria-label 에 수치가 있다', () => {
+    const root = draw([person('S1', { statementChangeCount: 1 })])
+    const change = root.querySelector('.fa-sb-stat-change') as HTMLElement
+    expect(change.textContent).toBe('말 바뀜 1')
+    expect(change.classList.contains('on')).toBe(true)
+    expect(change.getAttribute('aria-label')).toBe('진술 변화 1건')
+  })
+
+  it('statementChangeCount=5 큰 값에서도 수치가 올바르다', () => {
+    const root = draw([person('S1', { statementChangeCount: 5 })])
+    const change = root.querySelector('.fa-sb-stat-change') as HTMLElement
+    expect(change.textContent).toBe('말 바뀜 5')
+    expect(change.getAttribute('aria-label')).toBe('진술 변화 5건')
+  })
+})
+
+describe('수치 배지 — updateSidebar 에서도 갱신된다', () => {
+  it('relatedClueCount 가 0→2 로 바뀌면 DOM 에 반영된다', () => {
+    const root = draw([person('S1', { relatedClueCount: 0 })])
+    updateSidebar(root, [person('S1', { relatedClueCount: 2 })])
+    const clue = root.querySelector('.fa-sb-stat-clue') as HTMLElement
+    expect(clue.textContent).toBe('단서 2')
+    expect(clue.classList.contains('on')).toBe(true)
+    expect(clue.getAttribute('aria-label')).toBe('관련 단서 2건')
+  })
+
+  it('statementChangeCount 가 3→0 으로 내려가면 DOM 에서 사라진다', () => {
+    const root = draw([person('S1', { statementChangeCount: 3 })])
+    updateSidebar(root, [person('S1', { statementChangeCount: 0 })])
+    const change = root.querySelector('.fa-sb-stat-change') as HTMLElement
+    expect(change.textContent).toBe('')
+    expect(change.classList.contains('on')).toBe(false)
+    expect(change.getAttribute('aria-label')).toBeNull()
+  })
+})
+
+describe('수치 배지에 진상이 새지 않는다 (불변식 1·4)', () => {
+  it('수치 배지에 "범인" "거짓" "무죄" "유죄" 가 없다', () => {
+    const root = draw([
+      person('S1', { relatedClueCount: 5, statementChangeCount: 3, badge: 'conflict' }),
+    ])
+    const text = root.textContent ?? ''
+    for (const banned of ['범인', '거짓', '무죄', '유죄', 'culprit', 'truth', 'liar']) {
+      expect(text.toLowerCase()).not.toContain(banned)
+    }
+  })
+})

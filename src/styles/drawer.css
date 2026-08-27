@@ -78,7 +78,9 @@
   height: var(--nbk-h);
   pointer-events: auto;
   border-radius: 6px 4px 4px 6px;
-  filter: drop-shadow(-12px 14px 30px rgba(0, 0, 0, .6));
+  /* 수첩이 공간에 무겁게 떠 있다 — 다중 그림자로 두께와 깊이 */
+  filter: drop-shadow(-14px 16px 34px rgba(0, 0, 0, .65))
+          drop-shadow(-4px 6px 12px rgba(0, 0, 0, .4));
   transition: transform var(--nbk-dur) var(--nbk-ease), filter var(--nbk-dur) ease;
   transform: translate3d(calc(100% - var(--nbk-peek)), -50%, 0);
 }
@@ -88,13 +90,16 @@
 .nbk:not(.is-open) .nbk-book:has(:focus-visible),
 .nbk.is-peek:not(.is-open) .nbk-book {
   transform: translate3d(calc(100% - var(--nbk-peek) - var(--nbk-out)), -50%, 0);
-  filter: drop-shadow(-18px 18px 38px rgba(0, 0, 0, .65)) brightness(1.06);
+  filter: drop-shadow(-20px 20px 42px rgba(0, 0, 0, .68))
+          drop-shadow(-6px 8px 14px rgba(0, 0, 0, .4))
+          brightness(1.06);
 }
 
 /* 열림 — 인덱스 탭(--nbk-idx-w)+종이 가장자리(--nbk-edge-extra) 만큼 안쪽으로 밀어 잘림 방지 */
 .nbk.is-open .nbk-book {
   transform: translate3d(calc(-1 * var(--nbk-safe-inset)), -50%, 0);
-  filter: drop-shadow(-20px 20px 44px rgba(0, 0, 0, .7));
+  filter: drop-shadow(-24px 24px 50px rgba(0, 0, 0, .72))
+          drop-shadow(-8px 10px 18px rgba(0, 0, 0, .45));
 }
 
 /* ── 책등 ─────────────────────────────────────────────────────────── */
@@ -112,7 +117,9 @@
     var(--nbk-leather-hi) 62%, #1a1410 100%);
   box-shadow:
     inset 1px 0 0 rgba(214, 190, 150, .14),
-    inset -2px 0 6px rgba(0, 0, 0, .4);
+    inset -2px 0 6px rgba(0, 0, 0, .4),
+    /* 두꺼운 가죽 두께감 — 책등이 벽에서 튀어나와 보인다 */
+    4px 0 12px rgba(0, 0, 0, .5);
 }
 /* 가죽 결 */
 .nbk-spine::before,
@@ -127,17 +134,25 @@
   opacity: .45;
   pointer-events: none;
 }
-/* 책등 놋쇠 띠 */
+/* 책등 놋쇠 띠 + 바느질 라인 */
 .nbk-spine::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(180deg,
-    transparent 0 6%, rgba(138, 118, 73, .55) 6% 6.5%, transparent 6.5% 8.5%,
-    rgba(138, 118, 73, .35) 8.5% 8.9%, transparent 8.9% 91.1%,
-    rgba(138, 118, 73, .35) 91.1% 91.5%, transparent 91.5% 93.5%,
-    rgba(138, 118, 73, .55) 93.5% 94%, transparent 94% 100%);
+  background:
+    /* 놋쇠 띠 */
+    linear-gradient(180deg,
+      transparent 0 6%, rgba(138, 118, 73, .55) 6% 6.5%, transparent 6.5% 8.5%,
+      rgba(138, 118, 73, .35) 8.5% 8.9%, transparent 8.9% 91.1%,
+      rgba(138, 118, 73, .35) 91.1% 91.5%, transparent 91.5% 93.5%,
+      rgba(138, 118, 73, .55) 93.5% 94%, transparent 94% 100%),
+    /* 바느질 라인 — 세로로 두 줄, 점선으로 표현 */
+    repeating-linear-gradient(180deg,
+      rgba(180, 150, 100, .3) 0 2px, transparent 2px 7px);
+  background-size: 100% 100%, 1px 100%;
+  background-position: 0 0, 8px 0;
+  background-repeat: no-repeat, repeat-y;
 }
 .nbk-title {
   position: absolute;
@@ -455,18 +470,24 @@
   background: linear-gradient(120deg,
     #1c1613 0%, var(--nbk-leather) 25%, var(--nbk-leather-mid) 50%,
     var(--nbk-leather-hi) 70%, #201a16 100%);
+  /* 표지의 두께감 — 가죽이 두툼하다 */
+  box-shadow:
+    inset 0 2px 0 rgba(255, 235, 200, .06),
+    inset 0 -2px 0 rgba(0, 0, 0, .3),
+    0 2px 6px rgba(0, 0, 0, .4);
   transition: transform 340ms var(--nbk-ease), opacity 180ms ease;
 }
-/* 가죽 테두리 프레임 */
+/* 가죽 테두리 프레임 + 바느질 표현 (dashed border) */
 .nbk-cover::after {
   content: '';
   position: absolute;
-  inset: 16px 18px;
+  inset: 14px 16px;
   pointer-events: none;
-  border: 1px solid rgba(138, 118, 73, .28);
+  /* 바느질 — dashed 로 스티칭 표현 */
+  border: 2px dashed rgba(138, 118, 73, .22);
   box-shadow:
-    inset 0 0 0 3px rgba(0, 0, 0, .2),
-    inset 0 0 0 4px rgba(138, 118, 73, .12),
+    inset 0 0 0 5px rgba(0, 0, 0, .18),
+    inset 0 0 0 6px rgba(138, 118, 73, .1),
     0 1px 0 rgba(255, 235, 200, .04);
   border-radius: 2px;
 }

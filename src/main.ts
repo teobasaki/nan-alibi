@@ -1062,6 +1062,12 @@ function sidebarEl(): HTMLElement {
     // inquiry 계층의 claim 상태에서 이 사람의 흔들림·갱신을 읽는다
     let hasShakyClaim = false
     let hasRevisedClaim = false
+    /**
+     * 정본 3.2.16 2단계 — 「관련 단서 수, 진술 변화 수」. 세는 것은 화면이지만
+     * **세는 대상은 엔진이 가진 것**이다: 이 사람의 진술 카드와 그 상태.
+     */
+    let clueCount = 0
+    let changeCount = 0
     for (const [id, track] of Object.entries(ui.inq.claims)) {
       const def = IS_GC001 ? gc001Claim(id) : undefined
       if (def && def.speaker !== s) continue
@@ -1069,6 +1075,10 @@ function sidebarEl(): HTMLElement {
       if (!def) continue
       if (track.state === 'QUESTIONABLE' || track.state === 'CHALLENGED') hasShakyClaim = true
       if (track.state === 'REVISED') hasRevisedClaim = true
+      clueCount += 1
+      if (track.state === 'REVISED' || track.state === 'QUESTIONABLE' || track.state === 'CHALLENGED') {
+        changeCount += 1
+      }
     }
     return {
       id: s,
@@ -1080,6 +1090,8 @@ function sidebarEl(): HTMLElement {
       talked,
       talkCap: TALK_CAP,
       badge: computeBadge(talked, TALK_CAP, hasAnyClaim, hasShakyClaim, hasRevisedClaim),
+      relatedClueCount: clueCount,
+      statementChangeCount: changeCount,
     }
   })
   return renderSidebar(people, {
