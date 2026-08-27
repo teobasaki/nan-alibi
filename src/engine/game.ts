@@ -118,9 +118,12 @@ function assertCanTalk(g: GameState, s: SuspectId): void {
 }
 
 /** 지금 조회 가능한 물증 (선행 조건 충족 + 미보유) */
+const evidenceGateActive = (g: GameState): boolean => g.case.evidenceAccess !== 'open'
+
 export function availableEvidence(g: GameState): Evidence[] {
   return g.case.evidence.filter(
-    (e) => !g.cards.includes(e.id) && e.requires.every((r) => g.cards.includes(r)),
+    (e) => !g.cards.includes(e.id)
+      && (!evidenceGateActive(g) || e.requires.every((r) => g.cards.includes(r))),
   )
 }
 
@@ -141,6 +144,7 @@ export interface LockedRecord {
  * (자동 리뷰가 3판 연속 지적). 자물쇠는 보여주고 열쇠의 주인만 감춘다.
  */
 export function lockedRecords(g: GameState): LockedRecord[] {
+  if (!evidenceGateActive(g)) return []
   return g.case.evidence
     .filter((e) => !g.cards.includes(e.id) && !e.requires.every((r) => g.cards.includes(r)))
     .map((e) => {
@@ -161,7 +165,7 @@ export function lookupEvidence(g: GameState, evId: string): GameState {
   const e = g.case.evidence.find((x) => x.id === evId)
   if (!e) throw new Error(`없는 물증: ${evId}`)
   if (g.cards.includes(evId)) throw new Error(`이미 보유한 물증: ${evId}`)
-  if (!e.requires.every((r) => g.cards.includes(r))) {
+  if (evidenceGateActive(g) && !e.requires.every((r) => g.cards.includes(r))) {
     throw new Error(`선행 조건 미충족: ${evId} (필요: ${e.requires.join(', ')})`)
   }
   if (g.investigationsLeft > 0) return spendField(g, [evId])
@@ -174,7 +178,7 @@ export function lookupEvidence(g: GameState, evId: string): GameState {
    * 자물쇠를 여는 데 든 대화가 비용이고, 조회는 그 보상을 집는 동작일 뿐이다.
    * 선행 조건 없는 기록은 그대로 막는다 — 그건 현장 예산이 사야 하는 물건이다.
    */
-  if (e.requires.length === 0) {
+  if (!evidenceGateActive(g) || e.requires.length === 0) {
     throw new Error('현장 조사 예산을 모두 소모했다 — 이제 심문으로 열리는 기록만 조회할 수 있다')
   }
   return { ...g, cards: [...new Set([...g.cards, evId])] }

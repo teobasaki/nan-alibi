@@ -2199,7 +2199,8 @@ function board(): HTMLElement {
   // 아예 구역을 갈라 이름을 붙인다 — 사람을 지우는 기록과 그렇지 않은 기록은 다른 물건이다.
   const groups: [string, typeof avail][] = [
     [`${SLOT_L(CRIME_SLOT)} — 후보를 지우는 기록`, avail.filter((e) => e.slot === CRIME_SLOT)],
-    ['그 밖의 시각 — 해금·교차검증용', avail.filter((e) => e.slot !== CRIME_SLOT)],
+    [IS_GC001 ? '그 밖의 시각 — 정황·교차검증용' : '그 밖의 시각 — 해금·교차검증용',
+      avail.filter((e) => e.slot !== CRIME_SLOT)],
   ]
   for (const [title, list] of groups) {
     if (list.length === 0) continue
@@ -2219,7 +2220,7 @@ function board(): HTMLElement {
     // 인물을 담지 않은 기록(gc001 의 위치 비고정 통화 등)도 마찬가지다: 정황일 뿐 소거가 아니다.
     const use = e.kind === 'autopsy' ? `${WEAPON_AXIS} 판독`
       : e.slot === CRIME_SLOT ? (e.subjects.length ? '후보 소거' : '정황 확인')
-      : '해금·교차검증'
+      : IS_GC001 ? '정황·교차검증' : '해금·교차검증'
     // 같은 시각·장소 기록이 두 장이면 조회 전에는 **완전히 똑같아 보여** 선택이 동전 던지기가 된다.
     // 기록번호를 붙여 구분한다 — 내용을 흘리지 않으면서 "다른 문서" 임을 알린다 (자동 리뷰 minor/fairness).
     /**
@@ -2227,7 +2228,7 @@ function board(): HTMLElement {
      * 엔진은 그 조회를 무료로 허용하는데(ADR 023 §2) 버튼이 일괄 비활성이면
      * 통찰 보너스가 화면에서만 죽는다 — gc001 실플레이에서 실제로 밟은 버그다.
      */
-    const free = ui.game.investigationsLeft <= 0 && e.requires.length > 0
+    const free = ui.game.investigationsLeft <= 0 && CASE.evidenceAccess !== 'open' && e.requires.length > 0
     const b = h('button', undefined,
       `[${e.id}] ${label} — ${use} (${free ? '무료 — 자물쇠 값은 치렀다' : '조사 1회'})`) as HTMLButtonElement
     b.disabled = ui.busy || (ui.game.investigationsLeft <= 0 && e.requires.length === 0)

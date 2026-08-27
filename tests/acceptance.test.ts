@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { TALK_CAP } from '../src/data/config'
-import { createGame, interview, talksLeft } from '../src/engine/game'
+import { availableEvidence, createGame, interview, lookupEvidence, talksLeft } from '../src/engine/game'
 import { gc001Case } from '../src/data/gc001'
 import { chargesQuestion } from '../src/engine/askPolicy'
 import { classify } from '../src/engine/intent'
@@ -82,6 +82,12 @@ describe('AC-03 — 시스템 오류는 차감하지 않는다', () => {
 })
 
 describe('AC-04 — 김하늘에게 E03 을 제시하지 않아도 카메라 조사로 갈 수 있다', () => {
+  it('실제 GameState 시작 경로에서 E8 카메라 기록을 바로 조사할 수 있다', () => {
+    const g = createGame(CASE)
+    expect(availableEvidence(g).map((e) => e.id)).toContain('E8')
+    expect(lookupEvidence(g, 'E8').cards).toContain('E8')
+  })
+
   it('네 가지 근거 중 아무거나로 카메라 진술이 열린다', () => {
     for (const id of ['E3', 'E8', 'F-GC001-LABEL-CHANGED-2118', 'F-GC001-CRATE-MOVED-2109']) {
       expect(ask('S5', 'ASK_CAMERA_STATUS', { held: [id] }).mode, id).toBe('REVISE')
@@ -90,6 +96,13 @@ describe('AC-04 — 김하늘에게 E03 을 제시하지 않아도 카메라 조
 })
 
 describe('AC-05 — 류나린에게 E05 를 제시하지 않아도 Revision 정보를 얻는다', () => {
+  it('실제 GameState 시작 경로에서 E9를 E8·E6 없이 조사할 수 있다', () => {
+    const g = lookupEvidence(createGame(CASE), 'E9')
+    expect(g.cards).toContain('E9')
+    expect(g.cards).not.toContain('E8')
+    expect(g.cards).not.toContain('E6')
+  })
+
   it('류나린과 문소라 모두 자격자 사실을 그냥 알려준다', () => {
     expect(ask('S1', 'ASK_REVISION_PERMISSION').factIds).toContain('F-GC001-REVISION-OPERATOR-SCOPE')
     expect(ask('S3', 'ASK_REVISION_PERMISSION').factIds).toContain('F-GC001-REVISION-OPERATOR-SCOPE')

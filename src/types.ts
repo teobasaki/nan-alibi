@@ -124,6 +124,8 @@ export interface CaseFile {
   venue: { name: string; room: string }
   /** 없으면 호텔 월드 — 생성 사건 전부가 이 경로다 */
   world?: WorldSkin
+  /** GC-001 V0.2: legacy `requires` 는 호환 메타데이터로 남기되 실제 조회 문으로 쓰지 않는다 */
+  evidenceAccess?: 'open'
   culprit: SuspectId
   /** 사건의 동기 = 범인의 motive. 지목 시트의 정답 축 */
   motive: string

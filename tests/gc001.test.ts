@@ -3,7 +3,7 @@ import { gc001Case } from '../src/data/gc001'
 import { validateCase } from '../src/engine/validate'
 import { candidatesFrom } from '../src/engine/solver'
 import {
-  availableEvidence, createGame, lookupEvidence, presentEvidence, submit,
+  availableEvidence, createGame, lockedRecords, lookupEvidence, presentEvidence, submit,
 } from '../src/engine/game'
 import { CRIME_SLOT, SUSPECTS } from '../src/types'
 
@@ -50,41 +50,42 @@ describe('GC001 ② 후보 전이 — 정본 §15 의 소거 사슬', () => {
   })
 })
 
-describe('GC001 ③ 결정적 기록의 해금 사슬 — 두 반쪽 연결 (정본 C-03)', () => {
-  it('E6(반입대 작업)과 E8(카메라 조각)을 다 쥐기 전에는 잠겨 있고, 갖추면 열린다', () => {
-    let g = createGame(C)
-    const ids = () => availableEvidence(g).map((e) => e.id)
-
-    // 시작: E8 은 김하늘의 인정(T-GIM-FRAME) 뒤에, E9 는 E8+E6 뒤에 있다
-    expect(ids()).not.toContain('E8')
-    expect(ids()).not.toContain('E9')
-
-    g = lookupEvidence(g, 'E6')                       // 반쪽 하나 — 아직 잠김
-    expect(ids()).not.toContain('E9')
-
-    g = presentEvidence(g, 'E6', 'S5')                // 김하늘이 놓친 시야를 인정한다
-    expect(g.cards).toContain('T-GIM-FRAME')
-    expect(ids()).toContain('E8')                     // 카메라 조각이 열렸다
-    expect(ids()).not.toContain('E9')                 // 그러나 대조는 아직이다
-
-    g = lookupEvidence(g, 'E8')                       // 반쪽 둘
-    expect(ids()).toContain('E9')                     // 이제 라벨 대조가 열린다
-    g = lookupEvidence(g, 'E9')
-    expect(g.cards).toContain('E9')
-    expect(candidatesFrom(C, new Set(g.cards))).toEqual(['S1'])
+describe('GC001 ③ V0.2 — 기록은 독립 조사 대상이고, 제시는 선택적 진술 경로다', () => {
+  it('시작부터 E8·E9 를 포함한 기록 9건이 모두 조회 후보에 있다', () => {
+    const g = createGame(C)
+    const ids = availableEvidence(g).map((e) => e.id)
+    expect(ids).toHaveLength(9)
+    expect(ids).toEqual(expect.arrayContaining(['E8', 'E9']))
+    expect(lockedRecords(g)).toEqual([])
   })
 
-  it('현장 예산 소진 후에도 해금된 E8·E9 는 무료로 조회된다 — 통찰 보너스의 생존 조건', () => {
-    let g = createGame(C)
-    // 현장 챕터: 즉시 조회 기록으로 예산을 다 쓴다 (E6 포함)
-    for (const id of ['E4', 'E2', 'E7', 'E3', 'E6']) g = lookupEvidence(g, id)
-    expect(g.investigationsLeft).toBe(0)
+  it('김하늘 인정이나 E6·E8 선행 없이 E8·E9 를 직접 조사할 수 있다', () => {
+    const g0 = createGame(C)
+    expect(g0.cards).not.toContain('T-GIM-FRAME')
+    const withCamera = lookupEvidence(g0, 'E8')
+    expect(withCamera.cards).toContain('E8')
+    expect(withCamera.investigationsLeft).toBe(g0.investigationsLeft - 1)
 
-    g = presentEvidence(g, 'E6', 'S5')                // 심문 챕터의 대화
-    g = lookupEvidence(g, 'E8')                       // 무료
-    g = lookupEvidence(g, 'E9')                       // 무료
+    const withRevision = lookupEvidence(g0, 'E9')
+    expect(withRevision.cards).toContain('E9')
+    expect(withRevision.cards).not.toContain('E6')
+    expect(withRevision.cards).not.toContain('E8')
+  })
+
+  it('제시 반응은 진술을 주지만 이미 보이던 Evidence의 필수 열쇠는 아니다', () => {
+    let g = createGame(C)
+    expect(availableEvidence(g).map((e) => e.id)).toContain('E8')
+    g = lookupEvidence(g, 'E6')
+    g = presentEvidence(g, 'E6', 'S5')
+    expect(g.cards).toContain('T-GIM-FRAME')
+    expect(availableEvidence(g).map((e) => e.id)).toEqual(expect.arrayContaining(['E8', 'E9']))
+  })
+
+  it('open 기록도 예산을 다 쓰고 나면 무료가 아니다 — 획득 순서만 자유롭다', () => {
+    let g = createGame(C)
+    for (const id of ['E1', 'E2', 'E3', 'E4', 'E5']) g = lookupEvidence(g, id)
     expect(g.investigationsLeft).toBe(0)
-    expect(g.cards).toContain('E9')
+    expect(() => lookupEvidence(g, 'E8')).toThrow(/예산/)
   })
 })
 
