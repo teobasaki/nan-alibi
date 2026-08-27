@@ -193,6 +193,8 @@
   color: var(--fa-red-seal, #a8382c);
   transform: rotate(-6deg);
   opacity: .82;
+  /* 캡션 판 위로 — 아래 깔리면 인장이 종이 밑에 찍힌 것처럼 사라진다 */
+  z-index: 3;
   pointer-events: none;
 }
 
@@ -543,7 +545,12 @@
   box-shadow:0 4px 7px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.3); transform:rotate(var(--dossier-turn,0deg));
 }
 .case-room .fa-sb-row:nth-child(2n){--dossier-turn:.5deg}.case-room .fa-sb-row:nth-child(3n){--dossier-turn:-.45deg}
-.case-room .fa-sb-row::after { content:attr(data-id); position:absolute; left:-1px; top:8px; padding:2px 5px; color:#efe4d1; background:#725443; font:9px var(--fa-mono,monospace); box-shadow:1px 2px 3px rgba(0,0,0,.35); }
+/**
+ * 옛 슬롯 표식(`S1`)은 지운다 — 시안의 번호는 `01`~`05` 이고 그것은 `.fa-sb-num` 이
+ * 그린다. 둘을 같은 자리에 두면 뒤엣것이 앞엣것을 덮어 시안과 다른 글자가 남는다.
+ */
+.case-room .fa-sb-row::after { content:none; }
+.case-room .fa-sb-num { box-shadow:1px 2px 3px rgba(0,0,0,.35); }
 .case-room .fa-sb-row:hover { background-color:#ddcfb5; filter:brightness(1.08); }
 .case-room .fa-sb-row.on { box-shadow:0 5px 9px rgba(0,0,0,.52),inset 0 0 0 2px #96793c; }
 .case-room .fa-sb-row::before { left:auto; right:8px; top:8px; bottom:auto; width:9px; height:9px; border-radius:50%; transform:none; background:#a8382c; box-shadow:0 2px 3px rgba(0,0,0,.5); }
