@@ -107,11 +107,13 @@ docs/decisions/ ADR 30편 — "무엇을 왜 정했고 무엇을 버렸나"
 
 ## 5. 지금 알려진 결함 (손대기 전에 읽어라)
 
-- **제1막 3D 현장이 뜨지 않을 수 있다** — `mountCrimeScene` 이 커튼의 `maxHold`(8s)보다 늦게 끝나면
-  커튼이 먼저 열리고, 이후 `csOpening` 가드가 세션 내내 현장을 스킵한다.
-- **`src/main.ts` 3,088줄 · `src/ui/crimescene3d.ts` 2,005줄** — 분해 대상. 다만 **테스트가 0건인 구간**이라
+- **칠판이 후보를 자동으로 지운다** — `chalkboard.ts` 가 `candidatesFrom()` 결과로 이름에 분필 줄을
+  긋는다. GC-001 에서도 동작하는데, 팀 `Core Loop Migration` 은 "시스템의 자동 후보 제외 제거" 를
+  지시한다. **사용자 결정 대기** (`docs/팀원문서-대조-2026-08-27.md` C-1).
+- **`src/main.ts` 3,861줄 · `src/ui/crimescene3d.ts` 1,969줄** — 분해 대상. 다만 **테스트가 얇은 구간**이라
   분해 전에 특성 테스트부터 세워야 한다.
-- **UI·3D·Functions에 테스트가 없다.** 314건은 대부분 순수 엔진에 몰려 있다.
+- **UI·3D 테스트는 아직 얇다.** 573건 중 대부분이 순수 엔진에 몰려 있다. 다만 드로어·사이드바·
+  심문 패널·칠판·씬 규칙·압박 줌은 이제 게이트가 본다.
 - **`bakeWalls` 가 `explore3d` 와 `crimescene3d` 두 곳에 중복** 구현돼 있다. DRACOLoader 부트스트랩도 4곳 반복.
 - **`/api/interrogate` 에 인증·레이트리밋·Origin 검사가 없다.** 공개 URL이라 제3자가 키를 태울 수 있다.
 - 죽은 개발 전용 파일: `casting.html` · `probe-*.html`(4) · `soundlab.html` · `src/casting.ts` · `src/soundlab.ts`

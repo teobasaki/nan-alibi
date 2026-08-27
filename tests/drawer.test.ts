@@ -9,6 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { createNotebookDrawer } from '../src/ui/drawer'
 
 const esc = (): void => {
@@ -163,7 +164,6 @@ describe('수첩 드로어 — 표지 제목 대비', () => {
   }
 
   it('.nbk-title 색이 책등 가장 밝은 배경 지점 대비 4.5:1 이상이다', () => {
-    const { readFileSync } = require('node:fs')
     const css: string = readFileSync('src/styles/drawer.css', 'utf8')
 
     // .nbk-title 블록의 color 추출
