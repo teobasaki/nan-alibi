@@ -69,9 +69,9 @@ describe('computeBadge — 엔진 신호에서 배지를 파생한다', () => {
   })
 })
 
-/* ────────────────────────────── DOM 렌더 ────────────────────────────── */
+/* ────────────────────────────── DOM 렌더 — 상태 칩 ────────────────────────────── */
 
-describe('renderSidebar — 배지가 DOM 에 바르게 찍힌다', () => {
+describe('renderSidebar — 상태 칩이 DOM 에 바르게 찍힌다', () => {
   it('badge=null 이면 .fa-sb-badge 는 .on 이 없고 data-badge 도 없다', () => {
     const root = draw([person('S1', { badge: null })])
     const badge = root.querySelector('.fa-sb-badge') as HTMLElement
@@ -85,25 +85,29 @@ describe('renderSidebar — 배지가 DOM 에 바르게 찍힌다', () => {
     const badge = root.querySelector('.fa-sb-badge') as HTMLElement
     expect(badge.classList.contains('on')).toBe(true)
     expect(badge.dataset.badge).toBe('conflict')
-    expect(badge.textContent).toBe('어긋남')
+    expect(badge.textContent).toContain('진술 충돌')
+    expect(badge.textContent).toContain('⚠')
   })
 
-  it('badge="new" 면 라벨이 "새 진술"', () => {
+  it('badge="new" 면 라벨이 "정보 갱신" 아이콘 "●"', () => {
     const root = draw([person('S1', { badge: 'new' })])
     const badge = root.querySelector('.fa-sb-badge') as HTMLElement
-    expect(badge.textContent).toBe('새 진술')
+    expect(badge.textContent).toContain('정보 갱신')
+    expect(badge.textContent).toContain('●')
   })
 
-  it('badge="updated" 면 라벨이 "말 바꿈"', () => {
+  it('badge="updated" 면 라벨이 "정보 갱신" 아이콘 "●"', () => {
     const root = draw([person('S1', { badge: 'updated' })])
     const badge = root.querySelector('.fa-sb-badge') as HTMLElement
-    expect(badge.textContent).toBe('말 바꿈')
+    expect(badge.textContent).toContain('정보 갱신')
+    expect(badge.textContent).toContain('●')
   })
 
-  it('badge="exhausted" 면 라벨이 "대화 끝"', () => {
+  it('badge="exhausted" 면 라벨이 "심문 완료" 아이콘 "✓"', () => {
     const root = draw([person('S1', { badge: 'exhausted' })])
     const badge = root.querySelector('.fa-sb-badge') as HTMLElement
-    expect(badge.textContent).toBe('대화 끝')
+    expect(badge.textContent).toContain('심문 완료')
+    expect(badge.textContent).toContain('✓')
   })
 
   it('다섯 명 각각 다른 배지가 나란히 찍힌다', () => {
@@ -111,6 +115,44 @@ describe('renderSidebar — 배지가 DOM 에 바르게 찍힌다', () => {
     const people = badges.map((b, i) => person(`S${i + 1}`, { badge: b }))
     const root = draw(people)
     expect(badgesFrom(root)).toEqual(['new', 'updated', 'conflict', 'exhausted', undefined])
+  })
+})
+
+/* ────────────────────────────── DOM 렌더 — 번호 배지 01~05 ────────────────────────────── */
+
+describe('renderSidebar — 번호 배지가 순서대로 01~05 로 붙는다', () => {
+  it('5명이면 01, 02, 03, 04, 05 순서', () => {
+    const people = Array.from({ length: 5 }, (_, i) => person(`S${i + 1}`))
+    const root = draw(people)
+    const nums = Array.from(root.querySelectorAll('.fa-sb-num')).map(
+      (el) => (el as HTMLElement).textContent,
+    )
+    expect(nums).toEqual(['01', '02', '03', '04', '05'])
+  })
+
+  it('번호 배지에 data-num 속성이 올바르게 붙는다', () => {
+    const people = Array.from({ length: 5 }, (_, i) => person(`S${i + 1}`))
+    const root = draw(people)
+    const dataAttrs = Array.from(root.querySelectorAll('.fa-sb-num')).map(
+      (el) => (el as HTMLElement).dataset.num,
+    )
+    expect(dataAttrs).toEqual(['01', '02', '03', '04', '05'])
+  })
+
+  it('3명이면 01, 02, 03 (인원 수에 구애되지 않는다)', () => {
+    const people = Array.from({ length: 3 }, (_, i) => person(`S${i + 1}`))
+    const root = draw(people)
+    const nums = Array.from(root.querySelectorAll('.fa-sb-num')).map(
+      (el) => (el as HTMLElement).textContent,
+    )
+    expect(nums).toEqual(['01', '02', '03'])
+  })
+
+  it('번호 배지는 aria-hidden 이다 (정보 누출 방지)', () => {
+    const people = [person('S1')]
+    const root = draw(people)
+    const numEl = root.querySelector('.fa-sb-num') as HTMLElement
+    expect(numEl.getAttribute('aria-hidden')).toBe('true')
   })
 })
 
@@ -134,6 +176,16 @@ describe('updateSidebar — 배지가 갱신 시에도 올바르게 반영된다
     const badge = root.querySelector('.fa-sb-badge') as HTMLElement
     expect(badge.classList.contains('on')).toBe(false)
     expect(badge.dataset.badge).toBeUndefined()
+  })
+
+  it('updateSidebar 후에도 번호 배지가 유지된다', () => {
+    const people = [person('S1'), person('S2')]
+    const root = draw(people)
+    updateSidebar(root, [person('S1', { talked: 3 }), person('S2', { badge: 'new' })])
+    const nums = Array.from(root.querySelectorAll('.fa-sb-num')).map(
+      (el) => (el as HTMLElement).textContent,
+    )
+    expect(nums).toEqual(['01', '02'])
   })
 })
 
@@ -161,5 +213,23 @@ describe('배지에 진상(truth)이 새지 않는다 (불변식 1·4)', () => {
   it('computeBadge 는 truth 를 인자로 받지 않는다 — 시그니처에 없다', () => {
     // computeBadge 의 인자는 5개: talked, talkCap, hasAnyClaim, hasShakyClaim, hasRevisedClaim
     expect(computeBadge.length).toBe(5)
+  })
+})
+
+/* ────────────────────────────── 파일철 머리글 ────────────────────────────── */
+
+describe('파일철 — 시안 대조', () => {
+  it('파일철 캡션에 "용의자 목록" 이 있다', () => {
+    const root = draw([person('S1')])
+    const title = root.querySelector('.fa-sb-fold-t') as HTMLElement
+    expect(title.textContent).toBe('용의자 목록')
+  })
+
+  it('CONFIDENTIAL 도장 요소가 있다', () => {
+    const root = draw([person('S1')])
+    const stamp = root.querySelector('.fa-sb-fold-stamp') as HTMLElement
+    expect(stamp).not.toBeNull()
+    expect(stamp.textContent).toBe('CONFIDENTIAL')
+    expect(stamp.getAttribute('aria-hidden')).toBe('true')
   })
 })

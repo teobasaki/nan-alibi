@@ -11,9 +11,9 @@
  * 이 파일은 `renderChalkboard` 를 진짜 DOM 에 그린다 — happy-dom 이라 3D 없이 돈다.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { chalkData, renderChalkboard, type ChalkBoardData } from '../src/ui/chalkboard'
+import { chalkData, renderChalkboard, type ChalkBoardData, type CellStatus } from '../src/ui/chalkboard'
 import { gc001Case } from '../src/data/gc001'
-import { createGame, interview, availableEvidence, lookupEvidence } from '../src/engine/game'
+import { createGame, interview, availableEvidence, lookupEvidence, connect, claimCardId } from '../src/engine/game'
 import { CRIME_SLOT, slotLabel, SLOTS, SUSPECTS } from '../src/types'
 
 const SLOT_LABELS = ['21:00', '21:10', '21:16', '21:18', '21:21']
@@ -196,5 +196,107 @@ describe('칠판 — MIG-003 소거 정책 (showClearing)', () => {
     }
     const d = chalkData(c, g, { selected: [], showClearing: true })
     expect(d.suspects.some((s) => s.cleared)).toBe(true)
+  })
+})
+
+describe('칠판 — 상태 표시 3종 (모름·어긋남·확인)', () => {
+  it('발허됐지만 연결하지 않은 칸은 status=unknown 이고 DOM 에 .cb-status--unknown 이 있다', () => {
+    const c = gc001Case()
+    let g = createGame(c)
+    g = interview(g, 'S1')  // S1 의 전 시각이 열린다
+    const d = chalkData(c, g, { selected: [] })
+    const root = renderChalkboard(d, { pickCell: () => {} })
+    // S1 의 slot 0 은 열렸지만 연결 안 됨 → unknown
+    const unknowns = root.querySelectorAll('.cb-status--unknown')
+    expect(unknowns.length).toBeGreaterThan(0)
+  })
+
+  it('기록과 어긋난 칸은 status=contradicted 이고 DOM 에 ✕(.cb-x) 가 있다', () => {
+    const c = gc001Case()
+    let g = createGame(c)
+    g = interview(g, 'S1')
+    // 강제로 모순 주입
+    const ev = c.evidence[0]!
+    g = { ...g, cards: [...g.cards, ev.id], foundContradictions: [`${ev.id}|S1|0`] }
+    const d = chalkData(c, g, { selected: [], stampedSeen: new Set() })
+    const root = renderChalkboard(d, { pickCell: () => {} })
+    expect(root.querySelectorAll('.cb-x').length).toBeGreaterThan(0)
+    expect(root.querySelectorAll('.cb-tag-bad').length).toBeGreaterThan(0)
+  })
+
+  it('기록과 일치 확인된 칸은 status=confirmed 이고 DOM 에 .cb-status--confirmed 가 있다', () => {
+    const c = gc001Case()
+    let g = createGame(c)
+    g = interview(g, 'S4') // S4(도율)는 거짓말을 안 한다
+    // E2 는 slot2, place1, subjects ['S4'] — S4 의 slot2 진술과 비교한다
+    const evId = 'E2'
+    g = { ...g, cards: [...g.cards, evId] }
+    // connect 로 맞춰보면 일치한다 (S4 는 slot2 에 실제로 place1 에 있었으므로)
+    const result = connect(g, evId, claimCardId('S4', 2))
+    g = result.state
+    expect(result.contradiction).toBe(false)
+    const d = chalkData(c, g, { selected: [] })
+    const root = renderChalkboard(d, { pickCell: () => {} })
+    expect(root.querySelectorAll('.cb-status--confirmed').length).toBeGreaterThan(0)
+  })
+})
+
+describe('칠판 — 미발허 칸에 장소·부제가 새지 않는다', () => {
+  it('place=null 인 칸에는 장소 텍스트가 DOM 에 없다', () => {
+    const c = gc001Case()
+    const g = createGame(c)  // 심문 전 — 범행 시각만 열려 있다
+    const d = chalkData(c, g, { selected: [] })
+    const root = renderChalkboard(d, { pickCell: () => {} })
+    // S1 의 slot 0 은 아직 안 열림
+    const cells = root.querySelectorAll('[role=cell]')
+    // 범행 시각(slot 2)만 열려 있다. 나머지 20칸은 빈 칸이다.
+    const blankCells = Array.from(cells).filter((c) => !c.querySelector('.cb-place'))
+    expect(blankCells.length).toBe(20)
+    // 빈 칸에 .cb-subtitle 이 없다
+    for (const bc of blankCells) {
+      expect(bc.querySelector('.cb-subtitle')).toBeNull()
+      expect(bc.querySelector('.cb-place')).toBeNull()
+    }
+  })
+
+  it('cellSubtitle 콜백이 있어도 미발허 칸에는 부제가 렌더되지 않는다', () => {
+    const c = gc001Case()
+    const g = createGame(c)
+    const d = chalkData(c, g, {
+      selected: [],
+      cellSubtitle: () => '이건 안 보여야 한다',
+    })
+    const root = renderChalkboard(d, { pickCell: () => {} })
+    // 범행 시각 칸은 열려 있으니 거기만 부제가 보인다
+    const subs = root.querySelectorAll('.cb-subtitle')
+    expect(subs.length).toBe(5) // 5명의 범행 시각 칸만
+    // 미발허 칸(20개)에는 부제가 없다
+    const cells = root.querySelectorAll('[role=cell]')
+    const blankCells = Array.from(cells).filter((c) => !c.querySelector('.cb-place'))
+    for (const bc of blankCells) {
+      expect(bc.querySelector('.cb-subtitle')).toBeNull()
+    }
+  })
+})
+
+describe('칠판 — 범행 열 붉은 사각 틀이 열 전체에 걸린다', () => {
+  it('범행 열 머리에 .cb-slot.crime 이 있고, 모든 사람의 범행 칸에 .cb-cell.crime 이 있다', () => {
+    const c = gc001Case()
+    const root = renderChalkboard(
+      chalkData(c, createGame(c), { selected: [] }),
+      { pickCell: () => {} },
+    )
+    expect(root.querySelectorAll('.cb-slot.crime')).toHaveLength(1)
+    expect(root.querySelectorAll('.cb-cell.crime')).toHaveLength(SUSPECTS.length)
+  })
+
+  it('마지막 행의 범행 칸에 .crime-last 가 붙는다 (열 하단 테두리)', () => {
+    const c = gc001Case()
+    const root = renderChalkboard(
+      chalkData(c, createGame(c), { selected: [] }),
+      { pickCell: () => {} },
+    )
+    const lastCrime = root.querySelectorAll('.cb-cell.crime-last')
+    expect(lastCrime).toHaveLength(1)
   })
 })

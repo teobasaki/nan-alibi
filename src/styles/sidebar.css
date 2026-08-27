@@ -178,6 +178,24 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, .6);
 }
 
+/* CONFIDENTIAL 도장 — 시안의 붉은 인장 */
+.fa-sb-fold-stamp {
+  position: absolute;
+  left: 12%;
+  top: 28%;
+  padding: 2px 6px;
+  border: 2px solid var(--fa-red-seal, #a8382c);
+  border-radius: 2px;
+  font-family: var(--fa-mono, ui-monospace, Menlo, monospace);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--fa-red-seal, #a8382c);
+  transform: rotate(-6deg);
+  opacity: .82;
+  pointer-events: none;
+}
+
 .fa-sb-fold-cap {
   position: absolute;
   z-index: 2;                     /* 그늘(::after) 위 — 아니면 글자가 묻힌다 */
@@ -204,8 +222,8 @@
 
 .fa-sb-fold-t {
   font-family: var(--fa-serif, AppleMyungjo, Batang, serif);
-  font-size: 14.5px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: .3px;
   color: #f2eadb;
   text-shadow: 0 1px 4px rgba(0, 0, 0, .95), 0 0 12px rgba(0, 0, 0, .8);
@@ -246,7 +264,7 @@
   min-height: 0;
   min-width: 0;
   margin: 0;
-  padding: 8px 10px 8px 13px;
+  padding: 8px 10px 8px 28px;
   border: 0;
   border-top: 1px solid rgba(58, 48, 41, .62);
   border-radius: 0;
@@ -280,10 +298,33 @@
 .fa-sb-row.on .fa-sb-name { color: var(--fa-sb-brass, #96793c); }
 .fa-sb-row.on .fa-sb-face { border-color: rgba(150, 121, 60, .8); }
 
+/* ── 번호 배지 01~05 — 시안의 컬러 사각형 ── */
+.fa-sb-num {
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  border-radius: 2px;
+  font-family: var(--fa-mono, ui-monospace, Menlo, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+/* 사람마다 다른 색 — tokens.css 범위 내 재질에서 추출 */
+.fa-sb-num[data-num="01"] { background: var(--fa-red-seal, #a8382c); }
+.fa-sb-num[data-num="02"] { background: var(--fa-brass, #96793c); }
+.fa-sb-num[data-num="03"] { background: var(--fa-red-chalk, #e8654c); }
+.fa-sb-num[data-num="04"] { background: var(--fa-wood-500, #54402c); }
+.fa-sb-num[data-num="05"] { background: var(--fa-slate-hi, #2c3b31); }
+
 /*
- * 초상은 **칸 높이를 따라 자란다.** 44px 고정으로 두면 1080p 에서 한 칸이 150px 인데
- * 얼굴만 44px 이라 칸의 2/3 가 빈 갈색으로 남는다 — 다섯 명이 나란히 서 있는 느낌이
- * 거기서 죽는다. 낮은 화면에서는 34px 까지 줄어든다.
+ * 초상은 **칸 높이를 따라 자란다.** 시안은 틀(목재·모서리 장식)이 없고 더 밝다.
+ * border 를 줄이고 filter 로 살짝 밝힌다.
  */
 .fa-sb-face {
   flex: 0 0 auto;
@@ -291,11 +332,12 @@
   width: auto;
   aspect-ratio: 1;
   border-radius: 3px;
-  border: 1px solid var(--fa-sb-line, #3a3029);
+  border: 1px solid rgba(58, 48, 41, .3);
   background-color: var(--fa-sb-panel-2, #262019);
   background-size: cover;
   background-position: center 16%;   /* 초상은 머리가 위 — 가운데로 자르면 턱만 남는다 */
   background-repeat: no-repeat;
+  filter: brightness(1.12);
   transition: border-color 150ms ease-out;
 }
 
@@ -305,11 +347,11 @@
   place-items: center;
   font-family: var(--fa-serif, AppleMyungjo, Batang, serif);
   font-size: clamp(17px, 3.2vh, 34px);
-  /* 어두운 복도에 걸린 놋쇠 명패다 — 밝은 금색 덩어리가 되면 다섯 칸이 조명처럼 튄다 */
   color: #efe3c9;
   text-shadow: 0 1px 1px rgba(0, 0, 0, .55);
   background-image: linear-gradient(158deg, #8f7136 0%, #6b5326 48%, #40311a 100%);
   box-shadow: inset 0 0 0 1px rgba(255, 236, 190, .16);
+  filter: none;
 }
 
 .fa-sb-meta {
@@ -320,9 +362,11 @@
   flex: 1 1 auto;
 }
 
+/* 이름 — 시안에서 더 분명한 서체 위계 */
 .fa-sb-name {
   font-family: var(--fa-serif, AppleMyungjo, Batang, serif);
   font-size: 15.5px;
+  font-weight: 700;
   letter-spacing: .2px;
   color: var(--fa-sb-ink, #ece5d5);
   white-space: nowrap;
@@ -331,6 +375,7 @@
   transition: color 150ms ease-out;
 }
 
+/* 나이·직분 — 시안에서 이름과 확연히 분리되는 작은 서체 */
 .fa-sb-job {
   font-size: 11px;
   color: var(--fa-sb-muted, #9d9184);
@@ -339,11 +384,13 @@
   text-overflow: ellipsis;
 }
 
+/* 대화 수 — 시안에서 아주 연하거나 숨겨짐 */
 .fa-sb-talk {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 4px;
+  opacity: .35;
 }
 
 .fa-sb-bar {
@@ -374,37 +421,58 @@
 
 /* ─────────────────────────── 포커스 · 좁은 화면 · 모션 ─────────────────────────── */
 
-/* ── 상태 배지 (3.2.16 2단계) — 진행상태를 한 눈에 읽게 한다 ── */
+/* ── 상태 칩 (시안: 테두리·아이콘·색이 있는 작은 둥근 칩) ── */
 .fa-sb-badge {
   display: none;
   align-self: flex-start;
-  margin-left: auto;
-  padding: 1px 5px;
-  border-radius: 2px;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 9px;
   font-family: var(--fa-mono, ui-monospace, Menlo, monospace);
   font-size: 9.5px;
   letter-spacing: -.1px;
   line-height: 1.5;
   white-space: nowrap;
-  /* 기본 — 담담한 색 (new·exhausted) */
-  color: var(--fa-chalk-soft, rgba(232, 235, 223, .54));
-  background: var(--fa-ink-600, #262019);
-  border: 1px solid var(--fa-ink-line, #3a3029);
+  /* 기본 — 심문 완료 (녹) */
+  color: var(--fa-chalk, #e8ebdf);
+  background: rgba(44, 59, 49, .44);
+  border: 1px solid var(--fa-slate-hi, #2c3b31);
 }
 .fa-sb-badge.on { display: inline-block; }
 
-/* 어긋남 — 붉은 계열 강조 하나 (DESIGN-GUIDE §2) */
+/* 심문 완료 ✓ — 녹색 계열 */
+.fa-sb-badge[data-badge="exhausted"] {
+  color: var(--fa-chalk, #e8ebdf);
+  background: rgba(44, 59, 49, .44);
+  border-color: var(--fa-slate-hi, #2c3b31);
+}
+
+/* 정보 갱신 ● (new) — 노랑(앰버) 계열 */
+.fa-sb-badge[data-badge="new"] {
+  color: var(--fa-brass, #96793c);
+  background: rgba(150, 121, 60, .14);
+  border-color: rgba(150, 121, 60, .42);
+}
+
+/* 정보 갱신 ● (updated / 말 바꿈) — 노랑(앰버) 계열 */
+.fa-sb-badge[data-badge="updated"] {
+  color: var(--fa-brass, #96793c);
+  background: rgba(150, 121, 60, .14);
+  border-color: rgba(150, 121, 60, .42);
+}
+
+/* 진술 충돌 ⚠ — 붉은 계열 강조 (DESIGN-GUIDE §2) */
 .fa-sb-badge[data-badge="conflict"] {
   color: var(--fa-red-chalk, #e8654c);
   background: rgba(168, 56, 44, .16);
-  border-color: rgba(168, 56, 44, .38);
+  border-color: rgba(168, 56, 44, .42);
 }
 
-/* 말 바꿈 — 약한 앰버 */
-.fa-sb-badge[data-badge="updated"] {
-  color: var(--fa-brass, #96793c);
-  background: rgba(150, 121, 60, .12);
-  border-color: rgba(150, 121, 60, .32);
+/* 단서 없음 ⚠ — 충돌보다 조용한 경고. 「갔는데 못 받았다」는 재방문 신호다 */
+.fa-sb-badge[data-badge="noclue"] {
+  color: var(--fa-paper-ink-soft, #8a7c67);
+  background: rgba(120, 100, 70, .14);
+  border-color: rgba(128, 96, 59, .38);
 }
 
 /* ── 카드 호버 들림 (3.2.16 3단계) — 연필색 카드가 살짝 들리는 느낌 ── */

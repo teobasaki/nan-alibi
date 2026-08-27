@@ -2831,7 +2831,12 @@ body::after {
 
 /* ═══════════ 비주얼 레퍼런스 — 물리적 사건실 세트 ═══════════ */
 .case-topbar {
-  position: relative; z-index: 8; min-height: 82px; padding: 13px 22px 12px 34px; gap: 9px;
+  /**
+   * 오른쪽 22px 이 아니라 **책등 폭(52px)만큼 더** 비운다 — 수사일지가 화면 오른쪽
+   * 가장자리에 책등만 걸치고 서 있어서(`--nbk-peek`), 그 아래 [최종 추론] 이 덮였다.
+   * 실측: 단추 오른쪽 끝 1422px, 책등이 1388px 부터 — 34px 이 가려졌다.
+   */
+  position: relative; z-index: 8; min-height: 82px; padding: 13px 74px 12px 34px; gap: 9px;
   background:
     linear-gradient(90deg, rgba(9,7,6,.96), rgba(13,10,8,.9) 58%, rgba(18,13,10,.96)),
     repeating-linear-gradient(90deg, transparent 0 110px, rgba(255,255,255,.018) 110px 111px);

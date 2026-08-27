@@ -55,6 +55,8 @@ export type SuspectBadge =
   | 'conflict'
   /** 대화 상한을 모두 소모했다 */
   | 'exhausted'
+  /** 말은 걸었는데 진술 카드를 하나도 얻지 못했다 (시안의 「단서 없음」) */
+  | 'noclue'
   /** 아직 아무 상호작용이 없다 */
   | null
 
@@ -83,12 +85,22 @@ export interface SidebarHandlers {
   openProfile(): void
 }
 
-/** 배지 한국어 라벨 — 짧고 명확하게 (DESIGN-GUIDE §2: 색만으로 상태를 말하지 않는다) */
+/** 배지 한국어 라벨 — 시안 기준 (DESIGN-GUIDE §2: 색만으로 상태를 말하지 않는다) */
 const BADGE_LABEL: Record<Exclude<SuspectBadge, null>, string> = {
-  new: '새 진술',
-  updated: '말 바꿈',
-  conflict: '어긋남',
-  exhausted: '대화 끝',
+  new: '정보 갱신',
+  updated: '정보 갱신',
+  conflict: '진술 충돌',
+  exhausted: '심문 완료',
+  noclue: '단서 없음',
+}
+
+/** 배지 아이콘 — 시안 칩의 선행 아이콘 */
+const BADGE_ICON: Record<Exclude<SuspectBadge, null>, string> = {
+  new: '●',
+  updated: '●',
+  conflict: '⚠',
+  exhausted: '✓',
+  noclue: '⚠',
 }
 
 const el = (tag: string, cls?: string, text?: string): HTMLElement => {
@@ -125,8 +137,14 @@ function folderCell(on: SidebarHandlers): HTMLElement {
   fold.appendChild(el('i', 'fa-sb-fold-clip'))
   cell.appendChild(fold)
 
+  /* CONFIDENTIAL 도장 — 인라인 SVG, 새 에셋 금지 */
+  const stamp = el('span', 'fa-sb-fold-stamp')
+  stamp.setAttribute('aria-hidden', 'true')
+  stamp.textContent = 'CONFIDENTIAL'
+  fold.appendChild(stamp)
+
   const cap = el('span', 'fa-sb-fold-cap')
-  cap.appendChild(el('b', 'fa-sb-fold-t', '용의자 파일철'))
+  cap.appendChild(el('b', 'fa-sb-fold-t', '용의자 목록'))
   cap.appendChild(el('span', 'fa-sb-fold-s', '프로파일링 문서'))
   cell.appendChild(cap)
 
@@ -139,6 +157,11 @@ function suspectRow(): HTMLButtonElement {
   const row = el('button', 'fa-sb-row') as HTMLButtonElement
   row.type = 'button'
 
+  /* 번호 배지 — 01~05 사각 (사람마다 다른 색) */
+  const numBadge = el('span', 'fa-sb-num')
+  numBadge.setAttribute('aria-hidden', 'true')
+  row.appendChild(numBadge)
+
   const face = el('span', 'fa-sb-face')
   face.setAttribute('aria-hidden', 'true')
   row.appendChild(face)
@@ -150,7 +173,7 @@ function suspectRow(): HTMLButtonElement {
   talk.appendChild(el('i', 'fa-sb-bar')).appendChild(el('u'))
   talk.appendChild(el('em', 'fa-sb-n'))
   meta.appendChild(talk)
-  /* 상태 배지 — 칸의 오른쪽 상단에 붙는다. paintRow 가 값을 바른다 */
+  /* 상태 배지 — 칸의 하단에 칩으로 붙는다. paintRow 가 값을 바른다 */
   meta.appendChild(el('span', 'fa-sb-badge'))
   row.appendChild(meta)
 
@@ -161,8 +184,14 @@ function suspectRow(): HTMLButtonElement {
  * 칸에 값을 바른다. **렌더와 갱신이 같은 함수를 지난다** — 두 벌로 두면 언젠가
  * 한쪽만 고쳐져서 "새로 그리면 맞는데 갱신하면 틀린" 상태가 생긴다.
  */
-function paintRow(row: HTMLButtonElement, p: SidebarSuspect): void {
+function paintRow(row: HTMLButtonElement, p: SidebarSuspect, index: number): void {
   row.dataset.id = p.id
+
+  /* ── 번호 배지 01~05 ── */
+  const numBadge = row.querySelector<HTMLElement>('.fa-sb-num')!
+  const num = String(index + 1).padStart(2, '0')
+  numBadge.textContent = num
+  numBadge.dataset.num = num
 
   const face = row.querySelector<HTMLElement>('.fa-sb-face')!
   if (p.portrait) {
@@ -191,10 +220,10 @@ function paintRow(row: HTMLButtonElement, p: SidebarSuspect): void {
   if (p.active) row.setAttribute('aria-current', 'true')
   else row.removeAttribute('aria-current')
 
-  /* ── 상태 배지 ── */
+  /* ── 상태 배지 (칩) ── */
   const badge = row.querySelector<HTMLElement>('.fa-sb-badge')!
   if (p.badge) {
-    badge.textContent = BADGE_LABEL[p.badge]
+    badge.textContent = `${BADGE_ICON[p.badge]} ${BADGE_LABEL[p.badge]}`
     badge.dataset.badge = p.badge
     badge.classList.add('on')
     badge.setAttribute('aria-label', `상태: ${BADGE_LABEL[p.badge]}`)
@@ -223,9 +252,9 @@ export function renderSidebar(people: SidebarSuspect[], on: SidebarHandlers): HT
   nav.appendChild(folderCell(on))
 
   const list = el('div', 'fa-sb-list')
-  people.forEach((p) => {
+  people.forEach((p, i) => {
     const row = suspectRow()
-    paintRow(row, p)
+    paintRow(row, p, i)
     row.onclick = () => on.pick(p.id)
     list.appendChild(row)
   })
@@ -257,7 +286,7 @@ export function updateSidebar(root: HTMLElement, people: SidebarSuspect[]): bool
   const rows = Array.from(root.querySelectorAll<HTMLButtonElement>('.fa-sb-row'))
   if (rows.length !== people.length) return false
   if (rows.some((r, i) => r.dataset.id !== people[i]!.id)) return false
-  rows.forEach((r, i) => paintRow(r, people[i]!))
+  rows.forEach((r, i) => paintRow(r, people[i]!, i))
   return true
 }
 
@@ -284,6 +313,8 @@ export function computeBadge(
   if (hasShakyClaim) return 'conflict'
   if (hasRevisedClaim) return 'updated'
   if (hasAnyClaim) return 'new'
+  // 말은 걸었는데 진술을 못 받아낸 자리 — 시안의 「단서 없음」. 대화가 남았으면 다시 갈 수 있다
+  if (talked > 0 && talked < talkCap) return 'noclue'
   if (talked >= talkCap) return 'exhausted'
   return null
 }

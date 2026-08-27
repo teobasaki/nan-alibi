@@ -26,14 +26,22 @@
  */
 
 import { candidatesFrom } from '../engine/solver'
-import { claimCardId, type GameState } from '../engine/game'
+import { claimCardId, parseClaimCard, type GameState } from '../engine/game'
 import {
-  CRIME_SLOT, placeLabel, slotLabel, SLOTS, SUSPECTS,
-  type CaseFile, type Slot, type SuspectId,
+  CRIME_SLOT, kindLabel, placeLabel, slotLabel, SLOTS, SUSPECTS,
+  type CaseFile, type Evidence, type Slot, type SuspectId,
 } from '../types'
 import '../styles/chalkboard.css'
 
 /* ────────────────────────────── 데이터 모양 ────────────────────────────── */
+
+/**
+ * 칸의 확인 상태. 세 종류만 있다 — **이 부품은 판정하지 않고 결과만 받는다.**
+ * - `'unknown'` 모르는 칸 (발허됐지만 기록과 맞춰보지 않음) — 밝은 물음표
+ * - `'contradicted'` 기록과 어긋남 — 붉은 경고 삼각
+ * - `'confirmed'` 기록과 일치 확인 — 녹색 체크
+ */
+export type CellStatus = 'unknown' | 'contradicted' | 'confirmed'
 
 export interface ChalkCell {
   /** 이 칸에 적힌 장소. **이미 `placeLabel` 을 지난 문자열**이다. 아직 모르면 `null` — 빈 칸 */
@@ -44,6 +52,22 @@ export interface ChalkCell {
   selected: boolean
   /** 이번 렌더에서 처음 그어지는 ✕ 인가 — 연출은 한 번만 돈다 */
   fresh?: boolean
+  /**
+   * 칸의 확인 상태. 발허된 칸(`place !== null`)에만 의미 있다.
+   * 밖에서 이미 판정된 값을 넘기며, 이 부품은 그리기만 한다.
+   * 없으면 `'unknown'` 으로 취급한다.
+   */
+  status?: CellStatus
+  /**
+   * 부제 — 장소 아래 한 줄. 증거 종류·출처 등 **사건이 소유하는 라벨.**
+   * 이 부품은 지어내지 않는다 — 밖에서 주지 않으면 그리지 않는다.
+   */
+  subtitle?: string
+  /**
+   * 아이콘 종류 — 증거 종류별 인라인 SVG 를 그린다.
+   * `'footprint'|'phone'|'cctv'|'document'|'box'` 등. 없으면 아이콘 없음.
+   */
+  icon?: string
 }
 
 /** 열 하나 = 시각 하나 (전치 후) */
@@ -112,6 +136,33 @@ export interface ChalkOpts {
    *          · 재편성안 3.1.1 「증거 자동 해석·용의자 자동 제외 문제」
    */
   showClearing?: boolean
+  /**
+   * 칸별 부제 콜백. 사건이 소유하는 라벨(증거 종류·출처 등)을 밖에서 넘긴다.
+   * 이 부품은 스스로 부제를 지어내지 않는다 (불변식 6).
+   * 없거나 `undefined` 를 돌려주면 부제를 그리지 않는다.
+   */
+  cellSubtitle?: (suspect: SuspectId, slot: Slot) => string | undefined
+}
+
+/**
+ * 종류 이름의 **폴백**. 사건이 `kindLabels` 로 덮어쓰면 그것이 이긴다 (불변식 6) —
+ * GC-001 은 receipt 를 「작업 기록」으로 부른다. cards.ts 와 같은 규약.
+ */
+const KIND_FALLBACK: Record<string, string> = {
+  keycard: '출입 기록',
+  cctv: 'CCTV 기록',
+  call: '통화 기록',
+  receipt: '영수증',
+  autopsy: '검시 소견',
+}
+
+/* ── 증거 종류 → 아이콘 id 매핑 ── */
+const EVIDENCE_KIND_ICON: Record<string, string> = {
+  keycard: 'keycard',
+  cctv: 'cctv',
+  call: 'phone',
+  receipt: 'document',
+  autopsy: 'document',
 }
 
 /**
@@ -129,6 +180,28 @@ export function chalkData(c: CaseFile, g: GameState, o: ChalkOpts): ChalkBoardDa
   const seen = o.stampedSeen
   // MIG-003: showClearing 이 false 면 소거를 화면에 드러내지 않는다 (기본값 true — 기존 동작)
   const showClearing = o.showClearing ?? true
+
+  // 확인 상태 — 연결된(모순 아닌) 칸을 추린다.
+  // connections 에서 증거↔진술 조합 중 모순이 아닌 것 = confirmed
+  const confirmed = new Set<string>()
+  for (const [a, b] of g.connections) {
+    const claim = parseClaimCard(a) ?? parseClaimCard(b)
+    const ev = c.evidence.find((e) => e.id === a) ?? c.evidence.find((e) => e.id === b)
+    if (!claim || !ev) continue
+    if (ev.slot !== claim.slot) continue
+    const key = `${claim.suspect}:${claim.slot}`
+    if (!bad.has(key)) confirmed.add(key)
+  }
+
+  // 증거 종류 → 아이콘 매핑 (사람×시각 별로 해당 증거의 kind 를 읽는다)
+  const evidenceKindMap = new Map<string, string>()
+  for (const ev of c.evidence) {
+    if (!g.cards.includes(ev.id)) continue
+    for (const s of ev.subjects) {
+      const key = `${s}:${ev.slot}`
+      if (!evidenceKindMap.has(key)) evidenceKindMap.set(key, ev.kind)
+    }
+  }
 
   const slots: ChalkSlot[] = SLOTS.map((t) => {
     const n = c.evidence.filter((e) => e.slot === t && g.cards.includes(e.id)).length
@@ -160,11 +233,33 @@ export function chalkData(c: CaseFile, g: GameState, o: ChalkOpts): ChalkBoardDa
       const key = `${s}:${t}`
       let fresh = false
       if (contradicted && seen && !seen.has(key)) { seen.add(key); fresh = true }
+
+      // 상태: 모순 > 확인 > 모름
+      let status: CellStatus = 'unknown'
+      if (contradicted) status = 'contradicted'
+      else if (confirmed.has(key)) status = 'confirmed'
+
+      // 아이콘: 증거 종류 → 아이콘 id
+      const evKind = evidenceKindMap.get(key)
+      const icon = evKind ? EVIDENCE_KIND_ICON[evKind] : undefined
+
+      /**
+       * 부제 — 시안의 칸 둘째 줄. **지어내지 않는다.** 그 칸을 뒷받침하는 기록의
+       * 종류를 사건이 소유한 라벨(`kindLabel`, 불변식 6)로 적는다. 기록이 없는 칸은
+       * 부제도 없다 — 들은 말만 있는 칸에 근거가 있는 척하면 안 된다.
+       * 호출부가 `cellSubtitle` 을 넘기면 그것이 이긴다.
+       */
+      const subtitle = o.cellSubtitle?.(s, t)
+        ?? (evKind ? kindLabel(c, evKind as Evidence['kind'], KIND_FALLBACK[evKind] ?? evKind) : undefined)
+
       return {
         place: known ? placeLabel(c, c.suspects[s].claim[t]!) : null,
         contradicted,
         selected: o.selected.includes(claimCardId(s, t)),
         fresh,
+        status,
+        icon,
+        subtitle,
       }
     },
   }
@@ -208,6 +303,57 @@ const D_X1 = 'M8 12 C 30 34, 58 58, 92 88'
 const D_X2 = 'M90 10 C 66 36, 40 58, 10 90'
 /** 한 번에 두른 동그라미 — 시작점으로 정확히 안 돌아온다 */
 const D_RING = 'M62 6 C 24 5, 5 17, 6 31 C 7 45, 30 56, 63 55 C 96 54, 115 43, 114 29 C 113 16, 92 6, 48 8'
+
+/* ── 증거 종류 아이콘 SVG path ── */
+const ICON_PATHS: Record<string, { vb: string; d: string }> = {
+  /** 카드키 — 열쇠 카드 */
+  keycard: { vb: '0 0 24 24', d: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6Zm5 3h6M9 12h3' },
+  /** CCTV — 카메라 */
+  cctv: { vb: '0 0 24 24', d: 'M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Zm14 1 4-2v10l-4-2' },
+  /** 통화 — 전화기 */
+  phone: { vb: '0 0 24 24', d: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2' },
+  /** 서류 — 문서 */
+  document: { vb: '0 0 24 24', d: 'M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1v5h5M8 13h8M8 17h5' },
+}
+
+/** 상태 아이콘 SVG — 물음표(모름), 경고 삼각(어긋남), 체크(확인) */
+const STATUS_PATHS: Record<CellStatus, { vb: string; d: string; label: string }> = {
+  unknown: { vb: '0 0 20 20', d: 'M10 3a5 5 0 0 0-5 5h2.5a2.5 2.5 0 0 1 5 0c0 1.2-.7 1.8-1.6 2.5C9.8 11.5 9 12.4 9 14h2c0-.8.5-1.4 1.4-2.1C13.4 11 14.5 9.9 14.5 8A4.5 4.5 0 0 0 10 3ZM9 16h2v2H9Z', label: '확인 필요' },
+  contradicted: { vb: '0 0 20 20', d: 'M10 1 L18.5 17 H1.5 Z M9 7v5h2V7ZM9 13.5h2v2H9Z', label: '기록과 어긋남' },
+  confirmed: { vb: '0 0 20 20', d: 'M4 10.5 L8 14.5 L16 5.5', label: '기록과 일치' },
+}
+
+/** 증거 종류 인라인 SVG 아이콘 (작은 크기, 칸 안에 그린다) */
+function cellIcon(kind: string): SVGSVGElement | null {
+  const p = ICON_PATHS[kind]
+  if (!p) return null
+  const s = document.createElementNS(NS, 'svg')
+  s.setAttribute('class', 'cb-icon')
+  s.setAttribute('viewBox', p.vb)
+  s.setAttribute('aria-hidden', 'true')
+  s.setAttribute('focusable', 'false')
+  const path = document.createElementNS(NS, 'path')
+  path.setAttribute('d', p.d)
+  s.appendChild(path)
+  return s
+}
+
+/** 상태 표시 인라인 SVG (물음표·경고·체크) */
+function statusBadge(status: CellStatus): HTMLElement {
+  const p = STATUS_PATHS[status]
+  const wrap = el('span', `cb-status cb-status--${status}`)
+  wrap.setAttribute('aria-label', p.label)
+  const s = document.createElementNS(NS, 'svg')
+  s.setAttribute('class', 'cb-status-svg')
+  s.setAttribute('viewBox', p.vb)
+  s.setAttribute('aria-hidden', 'true')
+  s.setAttribute('focusable', 'false')
+  const path = document.createElementNS(NS, 'path')
+  path.setAttribute('d', p.d)
+  s.appendChild(path)
+  wrap.appendChild(s)
+  return wrap
+}
 
 /** 칸마다 조금씩 다른 필체. 좌표가 정하는 고정 표 — 같은 표는 언제나 같은 손글씨다 */
 const TILT = [-0.9, 0.6, -0.35, 1.0, -0.7, 0.45, -1.05, 0.85, -0.25, 0.9,
@@ -400,22 +546,33 @@ export function renderChalkboard(d: ChalkBoardData, on: ChalkHandlers): HTMLElem
 
     d.slots.forEach((slot, ti) => {
       const c = grid[si]![ti]!
+      const isLastRow = si === d.suspects.length - 1
       const td = el('div',
-        `cb-cell${slot.isCrime ? ' crime' : ''}${c.contradicted ? ' bad' : ''}`)
+        `cb-cell${slot.isCrime ? ' crime' : ''}${slot.isCrime && isLastRow ? ' crime-last' : ''}${c.contradicted ? ' bad' : ''}`)
       td.setAttribute('role', 'cell')
       td.dataset.who = s.id
 
       const body = el('span', 'cb-cell-in')
       if (c.place === null) {
-        body.appendChild(el('span', 'cb-blank'))
+        // 미발허 칸 — 물음표 상태 표시만 보인다 (장소·부제 노출 금지)
+        body.appendChild(statusBadge('unknown'))
       } else {
+        // 아이콘 (증거 종류)
+        if (c.icon) {
+          const ico = cellIcon(c.icon)
+          if (ico) body.appendChild(ico)
+        }
+        // 장소
         const p = el('span', 'cb-place')
         p.appendChild(ink('', c.place, si * d.slots.length + ti))
         body.appendChild(p)
+        // 부제
+        if (c.subtitle) body.appendChild(el('span', 'cb-subtitle', c.subtitle))
       }
 
       if (c.place !== null) {
         // 어긋남은 색만으로 말하지 않는다 — 획(✕)과 표('어긋남')가 함께 간다
+        const status = c.status ?? 'unknown'
         const state = c.contradicted ? ', 기록과 어긋남' : ''
         const pick = c.selected ? ' (집힘 — 다시 누르면 놓는다)' : ''
         const b = button(
@@ -438,6 +595,11 @@ export function renderChalkboard(d: ChalkBoardData, on: ChalkHandlers): HTMLElem
         if (c.contradicted) {
           b.appendChild(stroke(`cb-x${c.fresh ? ' fresh' : ''}`, '0 0 100 100', D_X1, D_X2))
           b.appendChild(el('span', 'cb-tag-bad', '어긋남'))
+        }
+        // 상태 표시 배지 (모름·확인·어긋남)
+        if (status !== 'contradicted') {
+          // 어긋남은 위에서 ✕ 로 이미 그려졌다. 나머지만 배지로.
+          td.appendChild(statusBadge(status))
         }
         td.appendChild(b)
       } else {
