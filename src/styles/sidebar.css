@@ -374,6 +374,51 @@
 
 /* ─────────────────────────── 포커스 · 좁은 화면 · 모션 ─────────────────────────── */
 
+/* ── 상태 배지 (3.2.16 2단계) — 진행상태를 한 눈에 읽게 한다 ── */
+.fa-sb-badge {
+  display: none;
+  align-self: flex-start;
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-family: var(--fa-mono, ui-monospace, Menlo, monospace);
+  font-size: 9.5px;
+  letter-spacing: -.1px;
+  line-height: 1.5;
+  white-space: nowrap;
+  /* 기본 — 담담한 색 (new·exhausted) */
+  color: var(--fa-chalk-soft, rgba(232, 235, 223, .54));
+  background: var(--fa-ink-600, #262019);
+  border: 1px solid var(--fa-ink-line, #3a3029);
+}
+.fa-sb-badge.on { display: inline-block; }
+
+/* 어긋남 — 붉은 계열 강조 하나 (DESIGN-GUIDE §2) */
+.fa-sb-badge[data-badge="conflict"] {
+  color: var(--fa-red-chalk, #e8654c);
+  background: rgba(168, 56, 44, .16);
+  border-color: rgba(168, 56, 44, .38);
+}
+
+/* 말 바꿈 — 약한 앰버 */
+.fa-sb-badge[data-badge="updated"] {
+  color: var(--fa-brass, #96793c);
+  background: rgba(150, 121, 60, .12);
+  border-color: rgba(150, 121, 60, .32);
+}
+
+/* ── 카드 호버 들림 (3.2.16 3단계) — 연필색 카드가 살짝 들리는 느낌 ── */
+.fa-sb-row {
+  transform: translateY(0);
+  transition: background-color 150ms ease-out, transform 150ms ease-out;
+}
+.fa-sb-row:hover {
+  transform: translateY(-2px);
+}
+.fa-sb-row:active {
+  transform: translateY(0);
+}
+
 .fa-sb-folder:focus-visible,
 .fa-sb-row:focus-visible {
   outline: 2px solid var(--fa-sb-brass, #96793c);
@@ -407,6 +452,10 @@
   .fa-sb-folder:hover,
   .fa-sb-folder:focus-visible,
   .fa-sb-folder:active { --fa-fold-slide: 0px; }
+
+  /* 카드 호버 들림도 끈다 — 움직임을 줄여달라고 한 사람에게는 밝기만 바꾼다 */
+  .fa-sb-row:hover,
+  .fa-sb-row:active { transform: none; }
 
   .fa-sb-folder:hover .fa-sb-fold,
   .fa-sb-folder:focus-visible .fa-sb-fold { filter: brightness(1.22); }

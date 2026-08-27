@@ -553,3 +553,76 @@
   .iq-link-arrow { text-align: center; }
   .iq-photo-card { float: none; margin: 0 auto 10px; }
 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 심문 인라인 위젯 — stage 안에 뜨는 소형 부품
+ * (3-3-(5) 3단계 · §22 상시 표시 · §36 메모 노출)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* ── 공통 바 ── */
+.stage-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+.iq-stage-shaky,
+.iq-stage-suspect,
+.iq-stage-memo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 2px;
+  color: var(--fa-light, #e8e0d3);
+}
+.iq-stage-shaky { background: rgba(111, 84, 23, .18); border-left: 2px solid var(--fa-amber, #6f5417); }
+.iq-stage-suspect { background: rgba(168, 56, 44, .1); border-left: 2px solid var(--fa-red-chalk, #a8382c); }
+.iq-stage-memo { background: rgba(60, 99, 73, .1); border-left: 2px solid var(--fa-green, #3c6349); }
+
+/* ── 라벨 (왼쪽 키워드) ── */
+.iq-stage-shaky-k,
+.iq-stage-suspect-k,
+.iq-stage-memo-k {
+  flex-shrink: 0;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  letter-spacing: .03em;
+  opacity: .7;
+  white-space: nowrap;
+}
+.iq-stage-shaky-k { color: var(--fa-amber, #6f5417); }
+.iq-stage-suspect-k { color: var(--fa-red-chalk, #a8382c); }
+.iq-stage-memo-k { color: var(--fa-green, #3c6349); }
+
+/* ── 값 ── */
+.iq-stage-suspect-v { font-weight: 600; }
+.iq-stage-suspect-v.empty { opacity: .55; font-style: italic; font-weight: 400; }
+.iq-stage-memo-v {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+/* ── shaky 리스트 ── */
+.iq-stage-shaky-list {
+  margin: 0;
+  padding: 0 0 0 14px;
+  font-size: 10.5px;
+  line-height: 17px;
+}
+.iq-stage-shaky-list li { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 호버·포커스 ── */
+.iq-stage-suspect[role="button"]:hover,
+.iq-stage-memo[role="button"]:hover {
+  background: rgba(255, 255, 255, .08);
+}
+.iq-stage-suspect:focus-visible,
+.iq-stage-memo:focus-visible {
+  outline: 2px solid var(--fa-amber, #6f5417);
+  outline-offset: 1px;
+}

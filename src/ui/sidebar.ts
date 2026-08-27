@@ -39,6 +39,25 @@
 
 import '../styles/sidebar.css'
 
+/**
+ * 용의자 카드 상태 배지 — 진행상태를 한 눈에 보여 다음 행동을 유도한다.
+ * (정본 3.2.16 2단계: 상태를 배지·핀·표시선·인장·아이콘형 요소로 보여준다)
+ *
+ * 배지는 **판정이 아니라 표시다**. 사람을 지우거나 범인을 가리키지 않는다.
+ * 엔진이 소유한 신호만 그린다 — sidebar 에서 truth 를 보거나 추리하지 않는다.
+ */
+export type SuspectBadge =
+  /** 심문으로 새 진술을 들었으나 아직 대조하지 않은 상태 */
+  | 'new'
+  /** 인물이 말을 고쳤다 (inquiry: REVISED 진술이 있다) */
+  | 'updated'
+  /** 이 인물의 진술에 어긋남이 있다 (inquiry: QUESTIONABLE | CHALLENGED 진술이 있다) */
+  | 'conflict'
+  /** 대화 상한을 모두 소모했다 */
+  | 'exhausted'
+  /** 아직 아무 상호작용이 없다 */
+  | null
+
 export interface SidebarSuspect {
   /** 슬롯 id ('S1'~'S5'). 그대로 `pick(id)` 로 되돌아온다 */
   id: string
@@ -53,6 +72,8 @@ export interface SidebarSuspect {
   talked: number
   /** 대화 상한 (TALK_CAP) */
   talkCap: number
+  /** 상태 배지 — 엔진이 계산한 값을 그대로 받는다 (이 파일은 판정하지 않는다) */
+  badge: SuspectBadge
 }
 
 export interface SidebarHandlers {
@@ -60,6 +81,14 @@ export interface SidebarHandlers {
   pick(id: string): void
   /** 파일철을 눌렀다 — 프로파일링 문서를 연다 (문서 자체는 이 파일 밖) */
   openProfile(): void
+}
+
+/** 배지 한국어 라벨 — 짧고 명확하게 (DESIGN-GUIDE §2: 색만으로 상태를 말하지 않는다) */
+const BADGE_LABEL: Record<Exclude<SuspectBadge, null>, string> = {
+  new: '새 진술',
+  updated: '말 바꿈',
+  conflict: '어긋남',
+  exhausted: '대화 끝',
 }
 
 const el = (tag: string, cls?: string, text?: string): HTMLElement => {
@@ -121,6 +150,8 @@ function suspectRow(): HTMLButtonElement {
   talk.appendChild(el('i', 'fa-sb-bar')).appendChild(el('u'))
   talk.appendChild(el('em', 'fa-sb-n'))
   meta.appendChild(talk)
+  /* 상태 배지 — 칸의 오른쪽 상단에 붙는다. paintRow 가 값을 바른다 */
+  meta.appendChild(el('span', 'fa-sb-badge'))
   row.appendChild(meta)
 
   return row
@@ -159,6 +190,21 @@ function paintRow(row: HTMLButtonElement, p: SidebarSuspect): void {
   // aria-current 는 "지금 여기"를 읽어준다. active 를 색으로만 두면 스크린리더에서 사라진다.
   if (p.active) row.setAttribute('aria-current', 'true')
   else row.removeAttribute('aria-current')
+
+  /* ── 상태 배지 ── */
+  const badge = row.querySelector<HTMLElement>('.fa-sb-badge')!
+  if (p.badge) {
+    badge.textContent = BADGE_LABEL[p.badge]
+    badge.dataset.badge = p.badge
+    badge.classList.add('on')
+    badge.setAttribute('aria-label', `상태: ${BADGE_LABEL[p.badge]}`)
+  } else {
+    badge.textContent = ''
+    delete badge.dataset.badge
+    badge.classList.remove('on')
+    badge.removeAttribute('aria-label')
+  }
+
   row.setAttribute(
     'aria-label',
     `${p.name} ${jobLine(p)}, ${spent ? '대화 소진' : `대화 ${used} / ${cap}`}.`
@@ -213,4 +259,31 @@ export function updateSidebar(root: HTMLElement, people: SidebarSuspect[]): bool
   if (rows.some((r, i) => r.dataset.id !== people[i]!.id)) return false
   rows.forEach((r, i) => paintRow(r, people[i]!))
   return true
+}
+
+/**
+ * 배지를 결정하는 헬퍼 — **여기서 truth 를 보지 않는다.**
+ * 엔진이 이미 소유한 신호(talks·cards·claimStates)만으로 파생한다.
+ *
+ * 우선순위: conflict > updated > new > exhausted > null
+ * (가장 긴급한 것이 이긴다. 동시에 여러 상태가 걸릴 수 있지만 배지는 하나만 붙는다.)
+ *
+ * @param talked - 이 인물에게 소모한 대화 수
+ * @param talkCap - 대화 상한
+ * @param hasAnyClaim - 이 인물의 진술 카드를 한 장이라도 갖고 있는가 (범행 시각 제외)
+ * @param hasShakyClaim - 이 인물의 진술 중 QUESTIONABLE/CHALLENGED 가 있는가
+ * @param hasRevisedClaim - 이 인물의 진술 중 REVISED 가 있는가
+ */
+export function computeBadge(
+  talked: number,
+  talkCap: number,
+  hasAnyClaim: boolean,
+  hasShakyClaim: boolean,
+  hasRevisedClaim: boolean,
+): SuspectBadge {
+  if (hasShakyClaim) return 'conflict'
+  if (hasRevisedClaim) return 'updated'
+  if (hasAnyClaim) return 'new'
+  if (talked >= talkCap) return 'exhausted'
+  return null
 }

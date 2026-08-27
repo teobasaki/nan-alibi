@@ -58,7 +58,10 @@ import {
   removeHypothesis, setMemo, setSuspect, shakyClaims, unlink as unlinkInquiry, upsertHypothesis,
   type InquiryState,
 } from './engine/inquiry'
-import { CLAIM_STATE_LABEL, inquiryView, renderInquiry, type InquiryTab } from './ui/inquiryPanel'
+import {
+  CLAIM_STATE_LABEL, inquiryView, renderInquiry, renderMemoPreview, renderShakyHint,
+  renderSuspectIndicator, type InquiryTab, type ShakyHintRow,
+} from './ui/inquiryPanel'
 import { renderProofSheet, type ProofClue } from './ui/proofSheet'
 import { validateProof, VERDICT_LINE, type ProofContext } from './engine/proof'
 import {
@@ -67,7 +70,7 @@ import {
 import {
   applyGc001Tension, discoverGc001Evidence, gc001Claim, gc001Fact, gc001KnownFacts, GC001_CLAIMS,
 } from './data/gc001-inquiry'
-import { renderSidebar, type SidebarSuspect } from './ui/sidebar'
+import { computeBadge, renderSidebar, type SidebarSuspect } from './ui/sidebar'
 import { createNotebookDrawer, type DrawerHandle } from './ui/drawer'
 import { heldRecordsFrom, renderCaseReview } from './ui/caseReview'
 
@@ -1020,6 +1023,23 @@ function notebookDrawer(): DrawerHandle {
 function sidebarEl(): HTMLElement {
   const people: SidebarSuspect[] = SUSPECTS.map((s) => {
     const sus = CASE.suspects[s]
+    const talked = TALK_CAP - talksLeft(ui.game, s)
+    /* ── 배지 신호 파생 (엔진이 소유한 값만 읽는다) ── */
+    // hasAnyClaim: 범행 시각 외 진술 카드가 하나라도 있는가 (= 심문을 했는가)
+    const hasAnyClaim = ([0, 1, 3, 4] as const).some(
+      (t) => ui.game.cards.includes(claimCardId(s, t)),
+    )
+    // inquiry 계층의 claim 상태에서 이 사람의 흔들림·갱신을 읽는다
+    let hasShakyClaim = false
+    let hasRevisedClaim = false
+    for (const [id, track] of Object.entries(ui.inq.claims)) {
+      const def = IS_GC001 ? gc001Claim(id) : undefined
+      if (def && def.speaker !== s) continue
+      // 생성 사건은 inquiry 가 비어 있어 이 루프를 안 탄다 — 의도대로다
+      if (!def) continue
+      if (track.state === 'QUESTIONABLE' || track.state === 'CHALLENGED') hasShakyClaim = true
+      if (track.state === 'REVISED') hasRevisedClaim = true
+    }
     return {
       id: s,
       name: sus.name,
@@ -1027,9 +1047,9 @@ function sidebarEl(): HTMLElement {
       job: sus.job,
       portrait: portraitFor(castTagFor(s, CASE_TAG)),
       active: ui.active === s,
-      talked: TALK_CAP - talksLeft(ui.game, s),
+      talked,
       talkCap: TALK_CAP,
-      // **소거를 넘기지 않는다** — 시스템이 용의자를 확정적으로 지우지 않기로 했다 (팀 3-1-(1))
+      badge: computeBadge(talked, TALK_CAP, hasAnyClaim, hasShakyClaim, hasRevisedClaim),
     }
   })
   return renderSidebar(people, {
@@ -1766,6 +1786,43 @@ function stage(): HTMLElement {
   // 쓰이므로, '진술 검증' 칸이 곧 아키텍처를 화면에 드러낸 것이다.
   if (ui.busy) log.appendChild(stageChip())
   box.appendChild(log)
+
+  /* ── 심문 인라인 위젯 (3-3-(5) 3단계 · §22 · §36) ── */
+  if (IS_GC001) {
+    const inlineBar = h('div', 'stage-inline')
+
+    // (1) 흔들리는 진술 인라인 힌트 — 이 인물의 것만 필터
+    const shakyIds = shakyClaims(ui.inq)
+    const shakyRows: ShakyHintRow[] = []
+    for (const id of shakyIds) {
+      const c = gc001Claim(id)
+      if (!c || c.speaker !== s) continue
+      const row: ShakyHintRow = { id, speakerName: CASE.suspects[c.speaker].name, text: c.text }
+      if (c.at) row.at = c.at
+      shakyRows.push(row)
+    }
+    const shakyEl = renderShakyHint(shakyRows)
+    if (shakyEl) inlineBar.appendChild(shakyEl)
+
+    // (2) §22 현재 의심 인물 — 상시 표시
+    const suspName = ui.inq.suspect ? CASE.suspects[ui.inq.suspect].name : null
+    inlineBar.appendChild(renderSuspectIndicator(suspName, () => {
+      notebookDrawer().open()
+      ui.inqTab = 'overview'
+      render()
+    }))
+
+    // (3) §36 플레이어 메모 미리보기
+    const memoEl = renderMemoPreview(ui.inq.memo, () => {
+      notebookDrawer().open()
+      ui.inqTab = 'overview'
+      render()
+    })
+    if (memoEl) inlineBar.appendChild(memoEl)
+
+    box.appendChild(inlineBar)
+  }
+
   box.appendChild(askBox(s))
   /**
    * **용의자 레일은 좌측 사이드바가 가져갔다** (팀 3-2-(2)).

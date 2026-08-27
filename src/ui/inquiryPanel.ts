@@ -306,3 +306,92 @@ export function renderInquiry(v: InquiryView, on: InquiryHandlers): HTMLElement 
   root.appendChild(page)
   return root
 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 심문 인라인 위젯 — stage() 안에서 쓰는 소형 부품 (3-3-(5) 3단계 · §22 · §36)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/**
+ * 흔들리는 진술 인라인 힌트 (3-3-(5) 3단계).
+ *
+ * > "용의자가 답변을 지나치게 회피했을 경우, 플레이어가 다른 질문 방향을 찾을 수 있도록
+ * > 작은 힌트를 제공하는 것도 고려한다."
+ *
+ * 답을 주지 않고 「어떤 진술이 흔들렸는지」만 말한다 — 무엇을 물을지는 플레이어가 정한다.
+ * 엔진의 `shakyClaims()` 가 반환하는 id 에서 해당 인물 것만 필터해 보여준다.
+ * 흔들리는 진술이 없으면 null 을 돌려 DOM 에 아무것도 넣지 않는다.
+ */
+export interface ShakyHintRow { id: string; speakerName: string; text: string; at?: string }
+
+export function renderShakyHint(rows: ShakyHintRow[]): HTMLElement | null {
+  if (!rows.length) return null
+  const wrap = el('div', 'iq-stage-shaky')
+  wrap.setAttribute('aria-live', 'polite')
+  wrap.appendChild(el('span', 'iq-stage-shaky-k', '확인이 필요한 진술'))
+  const list = el('ul', 'iq-stage-shaky-list')
+  for (const r of rows) {
+    list.appendChild(el('li', undefined,
+      `${r.speakerName}${r.at ? ` · ${r.at}` : ''} — "${r.text}"`))
+  }
+  wrap.appendChild(list)
+  return wrap
+}
+
+/**
+ * 현재 의심 인물 인라인 표시 (명세 §22).
+ *
+ * > "플레이어는 수사 도중 언제든 현재 의심 인물을 직접 표시할 수 있다."
+ * > "이 선택은 정답 제출이 아니다."
+ *
+ * 시스템이 범인을 가리키지 않는다 — 플레이어가 직접 지목한 대상을 되돌려 보여줄 뿐이다.
+ * 이름이 없으면 "아직 없다"로 표시. 누르면 drower 를 열거나 changeTab 을 호출할 수 있도록
+ * 클릭 핸들러를 받는다.
+ */
+export function renderSuspectIndicator(
+  suspectName: string | null,
+  onClick?: () => void,
+): HTMLElement {
+  const wrap = el('div', 'iq-stage-suspect')
+  wrap.setAttribute('aria-label', '현재 의심 인물')
+  const label = el('span', 'iq-stage-suspect-k', '의심 인물')
+  const value = el('span', 'iq-stage-suspect-v', suspectName ?? '아직 없다')
+  if (!suspectName) value.classList.add('empty')
+  wrap.append(label, value)
+  if (onClick) {
+    wrap.style.cursor = 'pointer'
+    wrap.setAttribute('role', 'button')
+    wrap.tabIndex = 0
+    wrap.onclick = onClick
+    wrap.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }
+  }
+  return wrap
+}
+
+/**
+ * 플레이어 메모 인라인 노출 (명세 §36).
+ *
+ * > "수사일지는 다음을 지원해야 한다 — (...) 플레이어 메모"
+ *
+ * 심문 중 메모가 있으면 한 줄 미리보기를 보여주고, 누르면 드로어를 열어 수정할 수 있게 한다.
+ * 메모가 비어 있으면 null 을 돌려 DOM 에 넣지 않는다.
+ */
+export function renderMemoPreview(
+  memo: string,
+  onClick?: () => void,
+): HTMLElement | null {
+  if (!memo.trim()) return null
+  const wrap = el('div', 'iq-stage-memo')
+  wrap.setAttribute('aria-label', '내 메모')
+  wrap.appendChild(el('span', 'iq-stage-memo-k', '메모'))
+  // 미리보기는 첫 줄만 (길면 말줄임표)
+  const preview = memo.split('\n')[0]!.slice(0, 60) + (memo.length > 60 ? '…' : '')
+  wrap.appendChild(el('span', 'iq-stage-memo-v', preview))
+  if (onClick) {
+    wrap.style.cursor = 'pointer'
+    wrap.setAttribute('role', 'button')
+    wrap.tabIndex = 0
+    wrap.onclick = onClick
+    wrap.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }
+  }
+  return wrap
+}

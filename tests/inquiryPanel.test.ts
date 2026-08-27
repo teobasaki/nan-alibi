@@ -149,3 +149,104 @@ describe('정렬 — 한 사람의 말이 모여 있어야 변화가 읽힌다',
     ])
   })
 })
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 심문 인라인 위젯 DOM 테스트 (3-3-(5) 3단계 · §22 · §36)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+import { renderShakyHint, renderSuspectIndicator, renderMemoPreview } from '../src/ui/inquiryPanel'
+
+describe('심문 인라인 힌트 — 흔들리는 진술 (3-3-(5) 3단계)', () => {
+  it('흔들리는 행이 있으면 DOM 을 돌려준다', () => {
+    const el = renderShakyHint([
+      { id: 'CLM-1', speakerName: '류나린', text: '21:04에 나갔다', at: '21:04' },
+    ])
+    expect(el).not.toBeNull()
+    expect(el!.className).toContain('iq-stage-shaky')
+    expect(el!.textContent).toContain('류나린')
+    expect(el!.textContent).toContain('21:04에 나갔다')
+    expect(el!.textContent).toContain('확인이 필요한 진술')
+  })
+
+  it('비어 있으면 null — DOM 에 아무것도 넣지 않는다', () => {
+    expect(renderShakyHint([])).toBeNull()
+  })
+
+  it('aria-live 가 polite 이다 — 스크린리더에 자동 통보', () => {
+    const el = renderShakyHint([{ id: 'X', speakerName: 'A', text: 'B' }])
+    expect(el!.getAttribute('aria-live')).toBe('polite')
+  })
+
+  it('시각이 없는 진술은 시각 없이 표시', () => {
+    const el = renderShakyHint([{ id: 'X', speakerName: '배지호', text: '나는 몰랐다' }])
+    expect(el!.textContent).toContain('배지호')
+    expect(el!.textContent).toContain('나는 몰랐다')
+    expect(el!.textContent).not.toContain('·')
+  })
+})
+
+describe('의심 인물 인라인 표시 (§22)', () => {
+  it('이름이 있으면 표시한다', () => {
+    const el = renderSuspectIndicator('류나린')
+    expect(el.className).toContain('iq-stage-suspect')
+    expect(el.textContent).toContain('류나린')
+    expect(el.textContent).toContain('의심 인물')
+  })
+
+  it('이름이 null 이면 "아직 없다"', () => {
+    const el = renderSuspectIndicator(null)
+    expect(el.textContent).toContain('아직 없다')
+    expect(el.querySelector('.empty')).not.toBeNull()
+  })
+
+  it('클릭 핸들러가 있으면 role=button 이 붙는다', () => {
+    const fn = vi.fn()
+    const el = renderSuspectIndicator('문소라', fn)
+    expect(el.getAttribute('role')).toBe('button')
+    el.click()
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it('클릭 핸들러가 없으면 role=button 이 없다', () => {
+    const el = renderSuspectIndicator('배지호')
+    expect(el.getAttribute('role')).toBeNull()
+  })
+
+  it('aria-label 이 있다', () => {
+    const el = renderSuspectIndicator('도율')
+    expect(el.getAttribute('aria-label')).toBe('현재 의심 인물')
+  })
+})
+
+describe('메모 미리보기 (§36)', () => {
+  it('메모가 있으면 첫 줄 미리보기를 보여준다', () => {
+    const el = renderMemoPreview('류나린 21:04 확인 필요\n두 번째 줄')
+    expect(el).not.toBeNull()
+    expect(el!.className).toContain('iq-stage-memo')
+    expect(el!.textContent).toContain('류나린 21:04 확인 필요')
+    expect(el!.textContent).not.toContain('두 번째 줄')
+  })
+
+  it('메모가 비어 있으면 null', () => {
+    expect(renderMemoPreview('')).toBeNull()
+    expect(renderMemoPreview('   ')).toBeNull()
+  })
+
+  it('60자 넘으면 말줄임표', () => {
+    const long = 'A'.repeat(80)
+    const el = renderMemoPreview(long)!
+    expect(el.textContent).toContain('…')
+  })
+
+  it('클릭 핸들러가 있으면 role=button', () => {
+    const fn = vi.fn()
+    const el = renderMemoPreview('test', fn)!
+    expect(el.getAttribute('role')).toBe('button')
+    el.click()
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it('aria-label 이 있다', () => {
+    const el = renderMemoPreview('뭔가 적음')!
+    expect(el.getAttribute('aria-label')).toBe('내 메모')
+  })
+})
