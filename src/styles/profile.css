@@ -10,11 +10,23 @@
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  * 루트 레이아웃
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/**
+ * **책상 위에 서류가 올라온다** — 레이아웃에 끼어들지 않는다.
+ * 흐름에 넣었더니 뒤의 사건실(칠판·사이드바)을 밀어내고 오른쪽 절반이 검게 남았다
+ * (배포판 캡처로 잡음). 시안처럼 어두운 방 위에 서류 한 장이 얹혀야 한다.
+ */
 .pf {
-  position: relative;
+  position: fixed;
+  z-index: 60;
+  top: 96px;
+  right: 84px;
+  width: min(780px, 62vw);
+  max-height: calc(100vh - 132px);
+  overflow: auto;
+  border: 1px solid rgba(90, 74, 52, .5);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, .62), 0 2px 0 rgba(255, 246, 226, .16) inset;
   display: flex;
   flex-direction: column;
-  min-height: 100%;
   font-family: var(--fa-sans, 'Apple SD Gothic Neo', system-ui, sans-serif);
   color: var(--fa-paper-ink, #221b14);
   word-break: keep-all;
@@ -103,7 +115,11 @@
 }
 .pf-bookmark {
   writing-mode: vertical-rl;
-  padding: 10px 5px 10px 4px;
+  white-space: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 66px;
+  padding: 12px 6px 12px 5px;
   font-family: var(--fa-sans, system-ui, sans-serif);
   font-size: 10px;
   font-weight: 600;
