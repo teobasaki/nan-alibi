@@ -5,7 +5,7 @@
  * 상태 이름은 관찰이어야 한다 — 어긋남은 관찰이고 거짓말은 판단이다.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { CLAIM_STATE_LABEL, inquiryView, renderInquiry, type InquirySource } from '../src/ui/inquiryPanel'
+import { CLAIM_STATE_LABEL, inquiryView, renderInquiry, type InquirySource, type InquiryTab } from '../src/ui/inquiryPanel'
 import {
   challenge, createInquiry, discover, hear, learnFact, question, revise, setMemo, setSuspect,
   shakyClaims, understand,
@@ -31,12 +31,12 @@ const src: InquirySource = {
   people: SUSPECTS.map((s) => ({ id: s, name: NAMES[s] })),
 }
 
-const view = (s = createInquiry()) => inquiryView(s, src, shakyClaims(s))
+const view = (s = createInquiry(), tab: InquiryTab = 'overview') => inquiryView(s, src, shakyClaims(s), tab)
 const handlers = (pickSuspect: (id: SuspectId | null) => void = () => {}) => ({
   changeTab: () => {}, pickSuspect, setMemo: () => {}, saveHypothesis: () => {},
   removeHypothesis: () => {}, addLink: () => {}, removeLink: () => {}, openProof: () => {},
 })
-const draw = (s = createInquiry()) => renderInquiry(view(s), handlers())
+const draw = (s = createInquiry(), tab: InquiryTab = 'overview') => renderInquiry(view(s, tab), handlers())
 
 describe('상태 이름 — 관찰만 적는다 (AC-12)', () => {
   it('어떤 상태 이름에도 "거짓" 이라는 낱말이 없다', () => {
@@ -54,7 +54,7 @@ describe('상태 이름 — 관찰만 적는다 (AC-12)', () => {
     let s = hear(createInquiry(), 'CLM-GC001-MUN-NO-MOVE')
     s = revise(challenge(s, 'CLM-GC001-MUN-NO-MOVE'), 'CLM-GC001-MUN-NO-MOVE', 'CLM-GC001-MUN-MOVED').state
     s = setSuspect(s, 'S1')
-    const text = draw(s).textContent ?? ''
+    const text = draw(s, 'testimony').textContent ?? ''
     for (const banned of ['거짓말', '범인은', '무죄', '유죄']) expect(text).not.toContain(banned)
   })
 })
@@ -63,7 +63,7 @@ describe('바뀐 말은 원본과 나란히 (명세 §15)', () => {
   it('원본 아래에 고친 말이 붙고, 둘 다 화면에 있다', () => {
     let s = hear(createInquiry(), 'CLM-GC001-GIM-BLOCKED')
     s = revise(s, 'CLM-GC001-GIM-BLOCKED', 'CLM-GC001-GIM-MISSED-FRAME').state
-    const root = draw(s)
+    const root = draw(s, 'testimony')
     const rows = Array.from(root.querySelectorAll('.iq-claim'))
     expect(rows).toHaveLength(2)
     expect(rows[0]!.className).toContain('s-disproved')
@@ -74,8 +74,8 @@ describe('바뀐 말은 원본과 나란히 (명세 §15)', () => {
 
   it('아직 못 들은 수정 진술은 화면에 없다 — 앞질러 보여주지 않는다', () => {
     const s = hear(createInquiry(), 'CLM-GC001-GIM-BLOCKED')
-    expect(view(s).claims[0]!.revisedById).toBeUndefined()
-    expect(draw(s).textContent).not.toContain(gc001Claim('CLM-GC001-GIM-MISSED-FRAME')!.text)
+    expect(view(s, 'testimony').claims[0]!.revisedById).toBeUndefined()
+    expect(draw(s, 'testimony').textContent).not.toContain(gc001Claim('CLM-GC001-GIM-MISSED-FRAME')!.text)
   })
 })
 
@@ -147,6 +147,54 @@ describe('정렬 — 한 사람의 말이 모여 있어야 변화가 읽힌다',
     expect(view(s).claims.map((c) => c.id)).toEqual([
       'CLM-GC001-RYU-LEFT', 'CLM-GC001-RYU-REENTERED', 'CLM-GC001-MUN-LOADING', 'CLM-GC001-GIM-PANEL',
     ])
+  })
+})
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 사건 개요 탭 — 시안 카드 구성 (핵심 사실 · 의심 인물 · 메모 · 관련 증거/증언 · 타임라인 바)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+describe('사건 개요 탭 — 카드 구성', () => {
+  it('핵심 사실이 있으면 체크리스트 항목이 뜬다', () => {
+    const s = learnFact(createInquiry(), 'F-GC001-CRIME-WINDOW')
+    const root = draw(s)
+    expect(root.querySelector('.iq-checklist')).not.toBeNull()
+    expect(root.querySelector('.iq-checklist')!.textContent).toContain('21:15')
+  })
+
+  it('핵심 사실이 4건을 넘으면 [더 보기] 단추가 나타난다', () => {
+    let s = createInquiry()
+    s = learnFact(s, 'F-GC001-CRIME-WINDOW')
+    s = learnFact(s, 'F-GC001-MAIN-LOADING-TRAVEL-TIME')
+    s = learnFact(s, 'F-GC001-DOOR-OPEN-NOT-PASSAGE')
+    s = learnFact(s, 'F-GC001-PLINTH-OK-2040')
+    s = learnFact(s, 'F-GC001-LABEL-CHANGED-2118')
+    const root = draw(s)
+    expect(root.querySelector('.iq-more')).not.toBeNull()
+    expect(root.querySelectorAll('.iq-checklist li')).toHaveLength(4)
+  })
+
+  it('폴라로이드 자리(placeholder)가 항상 있다', () => {
+    const root = draw()
+    expect(root.querySelector('.iq-photo-card')).not.toBeNull()
+    expect(root.querySelector('.iq-photo-placeholder')).not.toBeNull()
+  })
+
+  it('관련 증거/증언 섹션은 데이터가 있을 때만 나타난다', () => {
+    // 빈 상태에서는 없다
+    const empty = draw()
+    expect(empty.querySelector('.iq-related')).toBeNull()
+
+    // 증거가 있으면 나온다
+    const s = discover(createInquiry(), 'E3')
+    const root = draw(s)
+    expect(root.querySelector('.iq-related')).not.toBeNull()
+  })
+
+  it('타임라인 바는 시각이 있는 진술이 있을 때만 나타난다', () => {
+    expect(draw().querySelector('.iq-timeline-bar')).toBeNull()
+    let s = hear(createInquiry(), 'CLM-GC001-RYU-LEFT')
+    s = hear(s, 'CLM-GC001-RYU-REENTERED')
+    expect(draw(s).querySelector('.iq-timeline-bar')).not.toBeNull()
   })
 })
 

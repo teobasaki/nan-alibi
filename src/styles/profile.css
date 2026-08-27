@@ -1,0 +1,365 @@
+@import './tokens.css';
+
+/*
+ * 프로파일링 문서 — 용의자 한 명의 인물 분석 화면 (팀 3.2.5).
+ *
+ * 시각 목표: 바랜 종이 위의 수사 기록 — 클립 고정 사진, 정의목록, 타임라인, 증언.
+ * 색은 tokens.css 변수만 사용. 재질은 --fa-grain 으로 종이 결을 낸다.
+ */
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 루트 레이아웃
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.pf {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  font-family: var(--fa-sans, 'Apple SD Gothic Neo', system-ui, sans-serif);
+  color: var(--fa-paper-ink, #221b14);
+  word-break: keep-all;
+  background:
+    var(--fa-grain, none) center / 180px 180px repeat,
+    linear-gradient(180deg,
+      var(--fa-paper-hi, #efe9da) 0%,
+      var(--fa-paper, #e6dfcd) 40%,
+      var(--fa-paper-lo, #d6cdb8) 100%);
+  background-blend-mode: soft-light, normal;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 상단 가로 탭 4개 + 닫기
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.pf-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px 0;
+}
+
+.pf-title {
+  flex: none;
+  font-family: var(--fa-serif, serif);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  margin-right: auto;
+}
+
+.pf-close {
+  flex: none;
+  margin-left: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-radius: 2px;
+  background: transparent;
+  font-family: var(--fa-sans, system-ui, sans-serif);
+  font-size: 12px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+  cursor: pointer;
+}
+.pf-close:hover { background: var(--fa-paper-edge, rgba(90, 74, 52, .26)); }
+
+.pf-tabs {
+  display: flex;
+  gap: 0;
+  margin: 8px 16px 0;
+  border-bottom: 2px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+}
+
+.pf-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 8px 7px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .6px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.pf-tab.on {
+  color: var(--fa-paper-ink, #221b14);
+  border-bottom-color: var(--fa-red-seal, #a8382c);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 오른쪽 세로 북마크
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.pf-bookmarks {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 3;
+}
+.pf-bookmark {
+  writing-mode: vertical-rl;
+  padding: 10px 5px 10px 4px;
+  font-family: var(--fa-sans, system-ui, sans-serif);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  border: 0;
+  border-radius: 0 0 0 0;
+  cursor: pointer;
+  background: var(--fa-paper-lo, #d6cdb8);
+  color: var(--fa-paper-ink-soft, #5e5343);
+  border-left: 2px solid transparent;
+}
+.pf-bookmark.on {
+  background: var(--fa-red-seal, #a8382c);
+  color: #fff;
+  border-left-color: var(--fa-red-seal, #a8382c);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 탭 페이지
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.pf-page {
+  flex: 1;
+  padding: 14px 16px 20px;
+  overflow-y: auto;
+  margin-right: 28px; /* 북마크 공간 확보 */
+}
+
+/* ── PROFILE 탭 ── */
+.pf-profile-top {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.pf-portrait {
+  flex: none;
+  width: 110px;
+  height: 140px;
+  background: var(--fa-paper-lo, #d6cdb8);
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  box-shadow: 2px 3px 8px var(--fa-shadow, rgba(0,0,0,.52));
+  object-fit: cover;
+}
+.pf-portrait-clip {
+  position: relative;
+}
+.pf-portrait-clip::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 8px;
+  background: var(--fa-brass, #96793c);
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+
+.pf-info {
+  flex: 1;
+}
+.pf-info dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 12.5px;
+  line-height: 20px;
+}
+.pf-info dt {
+  font-family: var(--fa-sans, system-ui, sans-serif);
+  font-weight: 600;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-info dd {
+  margin: 0;
+  font-family: var(--fa-serif, serif);
+}
+
+/* 관계 표 */
+.pf-relations {
+  margin: 14px 0;
+  padding: 10px 12px;
+  background: var(--fa-paper-hi, #efe9da);
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+}
+.pf-relations-title {
+  font-family: var(--fa-serif, serif);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--fa-paper-ink, #221b14);
+}
+.pf-relation-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11.5px;
+  line-height: 20px;
+  border-bottom: 1px dashed var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  padding: 2px 0;
+}
+.pf-relation-row:last-child { border-bottom: 0; }
+.pf-relation-name { font-weight: 600; }
+.pf-relation-desc {
+  color: var(--fa-paper-ink-soft, #5e5343);
+  font-size: 10.5px;
+  text-align: right;
+  max-width: 60%;
+}
+
+.pf-evidence-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-radius: 2px;
+  background: transparent;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+  cursor: pointer;
+}
+.pf-evidence-btn:hover { background: var(--fa-paper-edge, rgba(90, 74, 52, .26)); }
+
+/* ── 하단 3단 ── */
+.pf-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+.pf-bottom-section {
+  padding: 8px 10px;
+  background: var(--fa-paper-hi, #efe9da);
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  font-size: 11px;
+  line-height: 17px;
+}
+.pf-bottom-title {
+  font-family: var(--fa-serif, serif);
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--fa-paper-ink, #221b14);
+}
+
+/* 타임라인 점 목록 */
+.pf-timeline-item {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+.pf-tl-time {
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  flex: none;
+  color: var(--fa-paper-ink, #221b14);
+}
+.pf-tl-text {
+  font-size: 10.5px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-tl-warn {
+  color: var(--fa-red-seal, #a8382c);
+  font-weight: 700;
+}
+.pf-tl-warn .pf-tl-time { color: var(--fa-red-seal, #a8382c); }
+
+/* 증언 인용 */
+.pf-testimony-quote {
+  font-style: italic;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+.pf-testimony-from {
+  font-size: 10px;
+  text-align: right;
+  color: var(--fa-paper-ink-soft, #5e5343);
+}
+
+/* 메모 리스트 */
+.pf-memo-item {
+  padding: 2px 0;
+  border-bottom: 1px dashed var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  font-size: 10.5px;
+}
+.pf-memo-item:last-child { border-bottom: 0; }
+
+/* ── 하단 심문하기 버튼 ── */
+.pf-interrogate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding: 10px 20px;
+  border: 1px solid var(--fa-red-seal, #a8382c);
+  border-radius: 3px;
+  background: transparent;
+  font-family: var(--fa-serif, serif);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fa-red-seal, #a8382c);
+  cursor: pointer;
+  letter-spacing: .3px;
+}
+.pf-interrogate:hover {
+  background: var(--fa-red-seal, #a8382c);
+  color: var(--fa-paper, #e6dfcd);
+}
+
+/* ── TIMELINE 탭 ── */
+.pf-full-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.pf-full-timeline li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--fa-paper-edge, rgba(90, 74, 52, .26));
+}
+.pf-full-timeline li:last-child { border-bottom: 0; }
+
+/* ── TESTIMONY 탭 ── */
+.pf-testimony-full {
+  margin: 0;
+  padding: 0;
+}
+.pf-testimony-full .pf-testimony-quote { margin-bottom: 10px; }
+
+/* ── NOTES 탭 ── */
+.pf-notes-area {
+  width: 100%;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid var(--fa-paper-edge, rgba(90, 74, 52, .26));
+  border-radius: 2px;
+  background: var(--fa-paper-hi, #efe9da);
+  font-family: var(--fa-sans, system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--fa-paper-ink, #221b14);
+  resize: vertical;
+}
+
+.pf-empty {
+  font-size: 11.5px;
+  color: var(--fa-paper-ink-soft, #5e5343);
+  font-style: italic;
+}

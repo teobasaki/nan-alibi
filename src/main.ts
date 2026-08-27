@@ -72,6 +72,9 @@ import {
   applyGc001Tension, discoverGc001Evidence, gc001Claim, gc001Fact, gc001KnownFacts, GC001_CLAIMS,
 } from './data/gc001-inquiry'
 import { computeBadge, renderSidebar, type SidebarSuspect } from './ui/sidebar'
+import {
+  profileView, renderProfile, type ProfileSource, type ProfileTab, type ProfileTimelineItem,
+} from './ui/profile'
 import { createNotebookDrawer, type DrawerHandle } from './ui/drawer'
 import { heldRecordsFrom, renderCaseReview } from './ui/caseReview'
 
@@ -150,6 +153,10 @@ interface UI {
   inq: InquiryState
   /** 수첩의 현재 탭 — 재렌더 뒤에도 펼쳐 본 면을 유지한다 */
   inqTab: InquiryTab
+  /** 프로파일링 문서를 펼친 인물 (팀 3.2.5). null 이면 닫힘 */
+  profile: string | null
+  /** 프로파일링 문서의 현재 면 */
+  profileTab: ProfileTab
   /**
    * 탭별 「마지막으로 봤을 때의 항목 수」 — 3.2.13 알림의 기준선.
    * 탭을 여는 순간 갱신된다. 수사일지를 닫았다 여는 것으로 리셋되지 않는다.
@@ -285,6 +292,8 @@ const ui: UI = {
     ? gc001KnownFacts().reduce<InquiryState>((s, f) => learnFact(s, f.id), createInquiry())
     : createInquiry(),
   inqTab: 'overview',
+  profile: null,
+  profileTab: 'profile',
   inqTabSeen: { overview: 0, testimony: 0, evidence: 0, timeline: 0, deduction: 0 },
   dash: false,
   opening: false,
@@ -1089,9 +1098,72 @@ function sidebarEl(): HTMLElement {
       render()
     },
     openProfile: () => {
-      // 프로파일링 문서는 아직 명세가 없다 — 지금은 수사일지를 연다
-      notebookDrawer().open()
+      // 팀 3.2.5 — 파일철은 프로파일링 문서를 연다 (예전엔 수사일지를 열었다)
+      ui.profile = ui.active ?? SUSPECTS[0]!
+      render()
     },
+  })
+}
+
+/**
+ * **프로파일링 문서** (팀 3.2.5). 인물 하나를 서류 한 장으로 본다.
+ *
+ * 그림은 `ui/profile.ts` 가, **판정과 라벨은 여전히 엔진과 사건이** 소유한다 —
+ * 여기서 하는 일은 이미 아는 것을 서류 서식으로 옮겨 놓는 것뿐이다.
+ * 진상(truth·isCulprit·motive)은 넘기지 않는다. 넘길 자리도 만들지 않았다.
+ */
+function profilePanel(who: string): HTMLElement {
+  const s = who as SuspectId
+  const sus = CASE.suspects[s]
+  /**
+   * 인물 타임라인 — **플레이어가 들은 진술만**. 시각이 있는 claim 을 시간순으로 세우고,
+   * 흔들린 것(QUESTIONABLE·CHALLENGED·DISPROVED)에만 경고를 붙인다. 진상은 보지 않는다.
+   */
+  const timeline: ProfileTimelineItem[] = []
+  if (IS_GC001) {
+    for (const [id, track] of Object.entries(ui.inq.claims)) {
+      const c = gc001Claim(id)
+      if (!c || c.speaker !== s || !c.at) continue
+      timeline.push({
+        time: c.at,
+        text: c.text,
+        warned: track.state === 'QUESTIONABLE' || track.state === 'CHALLENGED' || track.state === 'DISPROVED',
+      })
+    }
+    timeline.sort((a, b) => a.time.localeCompare(b.time))
+  }
+  // 관련 기록 — 이 사람이 걸린, 이미 손에 쥔 기록의 수
+  const evCount = CASE.evidence.filter(
+    (e) => ui.game.cards.includes(e.id) && e.subjects.includes(s),
+  ).length
+  const src: ProfileSource = {
+    suspect: { id: s, name: sus.name, age: sus.age, job: sus.job, relation: sus.relation },
+    portraitUrl: portraitFor(castTagFor(s, CASE_TAG)),
+    // 피해자와의 관계만 사건이 갖고 있다 — 용의자끼리의 관계는 데이터가 없어 비운다
+    relations: [{ name: `${CASE.victim.name}(${CASE.victim.title})`, description: sus.relation }],
+    evidenceCount: evCount > 0 ? { count: evCount } : null,
+    timeline,
+    // 증언 인용은 들은 말에서 온다 — 없으면 칸을 그리지 않는다
+    testimonies: timeline.slice(0, 2).map((t) => ({ text: t.text, from: sus.name })),
+    memo: ui.inq.memo ? ui.inq.memo.split('\n').filter((l) => l.trim()) : [],
+  }
+  return renderProfile(profileView(src, ui.profileTab), {
+    changeTab: (tab) => { ui.profileTab = tab; play('paper'); render() },
+    close: () => { ui.profile = null; play('paper'); render() },
+    interrogate: (id) => {
+      ui.profile = null
+      hush(); stopVoice()
+      ui.active = id
+      ui.wall = false
+      render()
+    },
+    openEvidence: () => {
+      ui.profile = null
+      ui.inqTab = 'evidence'
+      notebookDrawer().open()
+      render()
+    },
+    setMemo: (lines) => { ui.inq = setMemo(ui.inq, lines.join('\n')); render() },
   })
 }
 
@@ -3746,6 +3818,8 @@ function render(): void {
   // 챕터 게이트에 막힌 순간의 안내 — 코치와 별개다. 코치는 다음 행동을, 이건 방금 막힌 이유를 말한다.
   if (ui.gateMsg) app.appendChild(h('div', 'gatenote', ui.gateMsg))
   if (ui.dash) app.appendChild(dashboard(() => render()))
+  // 팀 3.2.5 — 프로파일링 문서. 파일철을 누르면 이 서류가 책상 위로 올라온다
+  if (ui.profile) app.appendChild(profilePanel(ui.profile))
 
   /**
    * **펼친 수첩 2단** (ADR 018). 3단 껍데기(25/45/30)를 교체한 것이지 추가한 게 아니다.

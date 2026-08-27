@@ -292,6 +292,123 @@ function timelineBar(v: InquiryView): HTMLElement {
   return bar
 }
 
+/* ── 사건 개요: 핵심 사실 체크리스트 + 폴라로이드 자리 (시안 (가)+(나)) ── */
+function overviewFactsCard(v: InquiryView): HTMLElement {
+  const sec = el('section', 'iq-sec iq-overview-facts')
+
+  // 폴라로이드 사진 자리 — 이미지 에셋은 만들지 않는다, placeholder 틀만 CSS 로 구성
+  // InquiryView.facts 에 사진 URL 이 없으므로 자리만 남긴다
+  const photo = el('figure', 'iq-photo-card')
+  const placeholder = el('div', 'iq-photo-placeholder')
+  placeholder.setAttribute('aria-hidden', 'true')
+  photo.appendChild(placeholder)
+  photo.appendChild(el('figcaption', undefined, '현장 사진'))
+  sec.appendChild(photo)
+
+  sec.appendChild(cap('핵심 사실', `${v.facts.length}건`))
+
+  if (!v.facts.length) {
+    sec.appendChild(el('div', 'iq-empty', '아직 확인된 사실이 없다.'))
+  } else {
+    const list = el('ul', 'iq-checklist')
+    const MAX_VISIBLE = 4
+    const visible = v.facts.slice(0, MAX_VISIBLE)
+    for (const f of visible) {
+      const li = document.createElement('li')
+      li.textContent = f.text
+      // 출처도 함께 표시 (시안: 체크문 아래에 작은 출처 한 줄)
+      const src = el('span', 'iq-fact-s', `출처 · ${f.source}`)
+      li.appendChild(src)
+      list.appendChild(li)
+    }
+    sec.appendChild(list)
+    if (v.facts.length > MAX_VISIBLE) {
+      const more = el('button', 'iq-more', '더 보기') as HTMLButtonElement
+      more.type = 'button'
+      more.setAttribute('aria-label', `핵심 사실 ${v.facts.length - MAX_VISIBLE}건 더 보기`)
+      more.onclick = () => {
+        // 나머지 사실을 펼친다
+        for (const f of v.facts.slice(MAX_VISIBLE)) {
+          const li = document.createElement('li')
+          li.textContent = f.text
+          const src = el('span', 'iq-fact-s', `출처 · ${f.source}`)
+          li.appendChild(src)
+          list.appendChild(li)
+        }
+        more.remove()
+      }
+      sec.appendChild(more)
+    }
+  }
+
+  // 확인이 필요한 진술 (shaky) — 시안에서 핵심 사실 아래에 배치
+  if (v.shaky.length) {
+    const shakyWrap = el('div', 'iq-sec iq-next')
+    shakyWrap.appendChild(cap('확인이 필요한 진술', `${v.shaky.length}건`))
+    const ul = el('ul', 'iq-shaky')
+    for (const id of v.shaky) {
+      const c = v.claims.find((x) => x.id === id)
+      if (c) ul.appendChild(el('li', undefined, `${c.speakerName}${c.at ? ` · ${c.at}` : ''} — "${c.text}"`))
+    }
+    shakyWrap.appendChild(ul)
+    sec.appendChild(shakyWrap)
+  }
+
+  return sec
+}
+
+/* ── 관련 증거/증언 목록 (시안 (마)) ── */
+function relatedEvidenceSection(v: InquiryView): HTMLElement {
+  const sec = el('section', 'iq-sec iq-related')
+  const total = v.evidence.length + v.claims.length
+  sec.appendChild(cap('관련 증거 / 증언', `${total}건`))
+
+  const list = el('div', 'iq-related-list')
+  const MAX_VISIBLE = 4
+
+  // Evidence items
+  const items: { icon: string; text: string; kind: string }[] = []
+  for (const e of v.evidence) {
+    items.push({ icon: '📋', text: e.label, kind: '기록' })
+  }
+  // Claim items (confirmed/disproved only — significant ones)
+  for (const c of v.claims.filter((x) => x.state === 'CONFIRMED' || x.state === 'DISPROVED' || x.state === 'REVISED')) {
+    items.push({ icon: '💬', text: `${c.speakerName} — ${c.at ?? ''} 진술`, kind: '증언' })
+  }
+
+  const visible = items.slice(0, MAX_VISIBLE)
+  for (const item of visible) {
+    const row = el('div', 'iq-ev')
+    const kindChip = el('span', 'iq-ev-kind', item.kind)
+    row.append(kindChip, el('span', 'iq-ev-t', item.text))
+    list.appendChild(row)
+  }
+
+  sec.appendChild(list)
+
+  if (items.length > MAX_VISIBLE) {
+    const more = el('button', 'iq-more', '모두 보기') as HTMLButtonElement
+    more.type = 'button'
+    more.setAttribute('aria-label', `관련 증거/증언 ${items.length - MAX_VISIBLE}건 더 보기`)
+    more.onclick = () => {
+      for (const item of items.slice(MAX_VISIBLE)) {
+        const row = el('div', 'iq-ev')
+        const kindChip = el('span', 'iq-ev-kind', item.kind)
+        row.append(kindChip, el('span', 'iq-ev-t', item.text))
+        list.appendChild(row)
+      }
+      more.remove()
+    }
+    sec.appendChild(more)
+  }
+
+  if (!items.length) {
+    sec.appendChild(el('div', 'iq-empty', '아직 확보한 증거나 증언이 없다.'))
+  }
+
+  return sec
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  * 메인 렌더
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -325,23 +442,24 @@ export function renderInquiry(v: InquiryView, on: InquiryHandlers): HTMLElement 
   const page = el('div', `iq-page tab-${v.activeTab}`); page.setAttribute('role', 'tabpanel')
 
   if (v.activeTab === 'overview') {
-    // 사건 개요 탭: 의심 인물 + 핵심 사실 + 관련 증거/증언
-    page.append(suspectSection(v, on))
-    if (v.shaky.length) {
-      const sec = el('section', 'iq-sec iq-next')
-      sec.appendChild(cap('확인이 필요한 진술', `${v.shaky.length}건`))
-      const ul = el('ul', 'iq-shaky')
-      for (const id of v.shaky) {
-        const c = v.claims.find((x) => x.id === id)
-        if (c) ul.appendChild(el('li', undefined, `${c.speakerName}${c.at ? ` · ${c.at}` : ''} — "${c.text}"`))
-      }
-      sec.appendChild(ul); page.appendChild(sec)
-    }
-    const cards = el('div', 'iq-overview-grid')
-    cards.append(factsSection(v), claimsSection(v))
-    page.appendChild(cards)
+    // ─── 사건 개요 탭 (시안 순서): 사진카드 + 핵심 사실 + 의심 인물 + 메모 + 관련 증거/증언 + 타임라인 ───
+
+    // (가) 핵심 사실 체크리스트 + 우상단 폴라로이드 자리
+    const factsCard = overviewFactsCard(v)
+    page.appendChild(factsCard)
+
+    // (나) 의심 인물 칩
+    page.appendChild(suspectSection(v, on))
+
+    // (다) 메모
     page.appendChild(memoSection(v, on))
-    // 사건 타임라인 바 (하단)
+
+    // (라) 관련 증거/증언 목록
+    if (v.evidence.length || v.claims.length) {
+      page.appendChild(relatedEvidenceSection(v))
+    }
+
+    // (마) 사건 타임라인 바 (하단)
     if (v.claims.some((c) => c.at)) page.appendChild(timelineBar(v))
   } else if (v.activeTab === 'evidence') {
     page.append(evidenceSection(v), factsSection(v))

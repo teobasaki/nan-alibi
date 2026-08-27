@@ -48,7 +48,7 @@
 .iq-empty { font-size: 11.5px; line-height: 20px; color: var(--muted, #5e5343); font-style: italic; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- * 상단 5탭 — 물리적 종이 탭 느낌
+ * 상단 5탭 — 물리적 종이 탭 느낌 (시안: 밑줄 강조 + 깔끔한 여백)
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-notebook { min-height: 100%; }
 .iq-tabs {
@@ -57,13 +57,12 @@
   z-index: 4;
   display: flex;
   gap: 0;
-  margin: -14px -18px 16px -16px;
+  margin: -14px -18px 18px -16px;
   padding: 0;
   background: linear-gradient(180deg,
     rgba(239, 233, 218, .97) 0%,
     rgba(232, 226, 208, .95) 100%);
-  border-bottom: 2px solid rgba(90, 74, 52, .2);
-  box-shadow: 0 2px 6px rgba(60, 50, 34, .08);
+  border-bottom: 1px solid rgba(90, 74, 52, .22);
 }
 .iq-tab {
   flex: 1;
@@ -72,14 +71,14 @@
   justify-content: center;
   gap: 5px;
   min-width: 0;
-  padding: 12px 6px 9px;
+  padding: 11px 6px 9px;
   border: 0;
-  border-bottom: 3px solid transparent;
+  border-bottom: 2px solid transparent;
   border-radius: 0;
   color: var(--muted, #5e5343);
   background: transparent;
   font: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   cursor: pointer;
   position: relative;
   transition: color .15s, border-color .15s;
@@ -89,20 +88,20 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 20%;
-  bottom: 20%;
+  top: 24%;
+  bottom: 24%;
   width: 1px;
-  background: rgba(90, 74, 52, .15);
+  background: rgba(90, 74, 52, .13);
 }
 .iq-tab:hover:not(:disabled) {
-  background: rgba(255, 255, 255, .3) !important;
+  background: rgba(255, 255, 255, .22) !important;
   color: var(--ink, #221b14);
 }
 .iq-tab.on {
   color: var(--ink, #221b14);
   border-bottom-color: var(--red, #a8382c);
   font-weight: 700;
-  background: rgba(255, 255, 255, .18) !important;
+  background: transparent !important;
 }
 .iq-tab.on::before { display: none; }
 .iq-tab.on + .iq-tab::before { display: none; }
@@ -137,22 +136,22 @@
 .iq-page { padding-bottom: 20px; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- * 모듈 카드 — 물리적 클립/접힘/그림자
+ * 모듈 카드 — 물리적 클립/접힘/그림자 (시안: 단일 칼럼)
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .iq-overview-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 .iq-overview-grid > .iq-sec {
   position: relative;
-  padding: 12px 12px 12px 14px;
-  border: 1px solid rgba(90, 74, 52, .18);
-  background: rgba(255, 255, 255, .28);
+  padding: 14px 14px 14px 16px;
+  border: 1px solid rgba(90, 74, 52, .16);
+  background: rgba(255, 255, 255, .22);
   border-radius: 2px;
   box-shadow:
-    0 2px 5px rgba(60, 50, 34, .1),
-    0 0 0 1px rgba(255, 255, 255, .2) inset;
+    0 1px 4px rgba(60, 50, 34, .08),
+    0 0 0 1px rgba(255, 255, 255, .15) inset;
 }
 /* 클립 장식 — 카드 왼쪽 상단 */
 .iq-overview-grid > .iq-sec::before {
@@ -169,19 +168,9 @@
     rgba(150, 121, 60, .3) 100%);
   box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
 }
-/* 접힌 모서리 — 카드 우하단 */
+/* 접힌 모서리 — 카드 우하단 (시안: 없음, 깔끔한 종이 면) */
 .iq-overview-grid > .iq-sec::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 12px;
-  height: 12px;
-  background: linear-gradient(135deg,
-    rgba(214, 205, 184, .9) 0%,
-    rgba(214, 205, 184, .9) 50%,
-    transparent 50%);
-  border-top-left-radius: 2px;
+  display: none;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -487,6 +476,10 @@
   color: var(--red, #a8382c);
   font-weight: 700;
 }
+.iq-checklist li .iq-fact-s {
+  display: block;
+  margin-top: 1px;
+}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  * "더 보기" 버튼
@@ -563,8 +556,50 @@
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  * 반응형
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* ── 폴라로이드 사진 placeholder (에셋 생성 없이 CSS 프레임) ── */
+.iq-photo-placeholder {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(145deg, rgba(90, 74, 52, .08), rgba(90, 74, 52, .04));
+  border: 1px dashed var(--line, rgba(90, 74, 52, .26));
+  border-radius: 1px;
+}
+
+/* ── 핵심 사실 개요 카드 ── */
+.iq-overview-facts { position: relative; }
+.iq-overview-facts > .iq-photo-card {
+  margin-bottom: 8px;
+}
+
+/* ── 확인 필요 진술 — iq-sec.iq-next 내부 ── */
+.iq-next {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line, rgba(90, 74, 52, .26));
+}
+
+/* ── 관련 증거/증언 ── */
+.iq-related-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.iq-ev-kind {
+  flex-shrink: 0;
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-family: var(--fa-mono, ui-monospace, monospace);
+  color: var(--muted, #5e5343);
+  background: rgba(90, 74, 52, .08);
+  border: 1px solid rgba(90, 74, 52, .14);
+  border-radius: 2px;
+  letter-spacing: .02em;
+}
+
 @media (max-width: 760px) {
-  .iq-overview-grid { grid-template-columns: 1fr; }
   .iq-tab { flex-direction: column; gap: 2px; padding-inline: 1px; }
   .iq-tab-label { font-size: 9px; }
   .iq-link-new { grid-template-columns: 1fr; }

@@ -179,6 +179,57 @@ describe('수첩 드로어 — 표지 제목 대비', () => {
 })
 
 /**
+ * ── 잔림 방지: 패널 전체 폭이 뷰포트 안에 들어오는가 ──
+ * CSS 변수에서 치수를 읽고 1440px 뷰포트에서 계산한다.
+ */
+describe('수첩 드로어 — 잔림 방지 (1440×830)', () => {
+  const VIEWPORT_W = 1440
+  const css: string = readFileSync('src/styles/drawer.css', 'utf8')
+
+  /** CSS 에서 --nbk-w 의 수치 부분을 추출한다 (min(680px, 48vw)) */
+  function parseNbkW(): number {
+    const m = css.match(/--nbk-w:\s*min\((\d+)px,\s*(\d+)vw\)/)
+    if (!m) throw new Error('--nbk-w 를 읽을 수 없다')
+    const fixed = Number(m[1])
+    const vw = (Number(m[2]) / 100) * VIEWPORT_W
+    return Math.min(fixed, vw)
+  }
+
+  /** --nbk-idx-w 추출 */
+  function parseIdxW(): number {
+    const m = css.match(/--nbk-idx-w:\s*(\d+)px/)
+    return m ? Number(m[1]) : 0
+  }
+
+  /** --nbk-edge-extra 추출 */
+  function parseEdgeExtra(): number {
+    const m = css.match(/--nbk-edge-extra:\s*(\d+)px/)
+    return m ? Number(m[1]) : 0
+  }
+
+  it('열린 상태에서 book + idx + edges 가 뷰포트 폭을 넘지 않는다', () => {
+    const bookW = parseNbkW()
+    const idxW = parseIdxW()
+    const edgeExtra = parseEdgeExtra()
+    const safeInset = idxW + edgeExtra
+
+    // 열린 상태: book right=0 에서 -safeInset 만큼 왼쪽으로 밀림
+    // book 의 왼쪽 가장자리 = VIEWPORT_W - bookW - safeInset
+    const leftEdge = VIEWPORT_W - bookW - safeInset
+    // 오른쪽 가장자리 = leftEdge + bookW + idxW + edgeExtra(edges)
+    const rightEdge = leftEdge + bookW + idxW + edgeExtra
+
+    expect(leftEdge).toBeGreaterThanOrEqual(0)
+    expect(rightEdge).toBeLessThanOrEqual(VIEWPORT_W)
+  })
+
+  it('--nbk-w 는 750px 이하다 — 칠판과 사이드바가 가려도 일부 보여야 한다', () => {
+    const bookW = parseNbkW()
+    expect(bookW).toBeLessThanOrEqual(750)
+  })
+})
+
+/**
  * **열린 동안 뒤 화면을 봉한다** (감사 확정건 — 막은 클릭만 막고 Tab 은 통과했다).
  * 실측(브라우저, Tab 12회): 봉인 전에는 칠판·사이드바·「최종 추론」까지 포커스가 나갔다.
  * 봉인 뒤에는 문서 경계(BODY) 한 번을 빼면 전부 수첩 안에 머문다.

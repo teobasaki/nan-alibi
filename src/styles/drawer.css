@@ -21,10 +21,13 @@
 
 .nbk {
   /* ── 치수 ── */
-  --nbk-w: min(780px, 50vw);
+  --nbk-w: min(680px, 48vw);
   --nbk-h: clamp(520px, calc(100vh - 64px), 920px);
   --nbk-peek: 52px;
   --nbk-out: 45%;
+  --nbk-idx-w: 36px;
+  --nbk-edge-extra: 8px;
+  --nbk-safe-inset: calc(var(--nbk-idx-w) + var(--nbk-edge-extra));
   --nbk-z: 65;
 
   /* ── 전환 ── */
@@ -88,9 +91,9 @@
   filter: drop-shadow(-18px 18px 38px rgba(0, 0, 0, .65)) brightness(1.06);
 }
 
-/* 열림 */
+/* 열림 — 인덱스 탭(--nbk-idx-w)+종이 가장자리(--nbk-edge-extra) 만큼 안쪽으로 밀어 잘림 방지 */
 .nbk.is-open .nbk-book {
-  transform: translate3d(0, -50%, 0);
+  transform: translate3d(calc(-1 * var(--nbk-safe-inset)), -50%, 0);
   filter: drop-shadow(-20px 20px 44px rgba(0, 0, 0, .7));
 }
 
@@ -375,13 +378,13 @@
 /* ── 우측 인덱스 탭 (01~05 번호 탭) ─────────────────────────────── */
 .nbk-idx {
   position: absolute;
-  right: 0;
+  right: -34px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 5;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 200ms ease;
@@ -393,12 +396,14 @@
 }
 .nbk-idx-tab {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   width: 34px;
-  height: 52px;
+  height: 56px;
   border: 0;
-  padding: 0;
+  padding: 4px 0;
   border-radius: 0 4px 4px 0;
   font-family: var(--nbk-serif);
   font-size: 11px;
@@ -417,21 +422,25 @@
   background: linear-gradient(90deg, #382a1e 0%, #4a3626 50%, #5a4230 100%);
 }
 .nbk-idx-tab.on {
-  color: #f4ece0;
-  background: linear-gradient(90deg, var(--nbk-paper-lo) 0%, var(--nbk-paper-hi) 60%, #f2ece2 100%);
   color: var(--nbk-ink);
   font-weight: 700;
+  background: linear-gradient(90deg, var(--nbk-paper-lo) 0%, var(--nbk-paper-hi) 60%, #f2ece2 100%);
   box-shadow:
     2px 2px 6px rgba(0, 0, 0, .3),
     inset 0 1px 0 rgba(255, 255, 255, .4);
 }
 .nbk-idx-tab:focus-visible { outline: 2px solid var(--nbk-brass); outline-offset: 1px; }
-.nbk-idx-no { font-size: 10px; }
+.nbk-idx-no {
+  font-family: var(--nbk-mono);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: .04em;
+}
 .nbk-idx-label {
   writing-mode: vertical-rl;
   font-size: 9px;
   letter-spacing: .5px;
-  margin-top: 2px;
+  line-height: 1;
 }
 
 /* ── 표지 ─────────────────────────────────────────────────────────── */
@@ -531,10 +540,10 @@ body:has(.bookov) .nbk { display: none; }
 
 /* ── 좁은 화면 ── */
 @media (max-width: 560px) {
-  .nbk { --nbk-w: 94vw; --nbk-peek: 34px; --nbk-out: 34%; }
+  .nbk { --nbk-w: 94vw; --nbk-peek: 34px; --nbk-out: 34%; --nbk-idx-w: 28px; --nbk-edge-extra: 4px; }
   .nbk-title { font-size: 12.5px; letter-spacing: 3px; }
   .nbk-cover::after { inset: 10px 12px; }
-  .nbk-idx { right: 0; }
+  .nbk-idx { right: -28px; }
   .nbk-idx-tab { width: 26px; height: 42px; font-size: 9px; }
 }
 @media (max-height: 560px) { .nbk { --nbk-h: 90vh; } }
