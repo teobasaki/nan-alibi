@@ -251,3 +251,130 @@ describe('§33 ② · Clue Connection 은 장식이 아니다', () => {
     expect(r.verdict).toBe('UNPROVEN')
   })
 })
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * §31 게이트 — 명세 "2~4개" 와 코드 max:6 사이의 실측 근거
+ *
+ * 2026-08-28 전수 탐색 결과:
+ *   방식만 PROVEN         : 최소 2장
+ *   범인만 PROVEN         : 최소 5장
+ *   둘 다 동시에 PROVEN   : 최소 6장
+ *
+ * **이 테스트가 깨지면 max 를 내린 사람에게 경고한다.**
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+describe('§31 게이트 — max:6 은 수학적 하한이다', () => {
+  /** 선택 가능한 전체 Clue (given 제외) */
+  const ALL_CLUES = [
+    'E1', 'E4', 'E6', 'E8', 'E9',
+    'F-GC001-PLINTH-OK-2040', 'F-GC001-DEATH-CLASSIFICATION',
+    'F-GC001-DOOR-OPEN-NOT-PASSAGE', 'F-GC001-LABEL-CHANGED-2118',
+    'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'F-GC001-MUN-AT-LOADING-2118',
+    'F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-REV17-ISSUED-2111',
+    'F-GC001-DISMISSAL-NOTICE',
+    'CLM-GC001-RYU-LEFT-PRESSED', 'CLM-GC001-MUN-LOADING', 'CLM-GC001-BAE-NOTICE',
+  ]
+
+  function* combos(arr: string[], k: number, start = 0): Generator<string[]> {
+    if (k === 0) { yield []; return }
+    for (let i = start; i <= arr.length - k; i++) {
+      for (const rest of combos(arr, k - 1, i + 1)) {
+        yield [arr[i]!, ...rest]
+      }
+    }
+  }
+
+  function canProveBoth(clues: string[]): boolean {
+    const clueSet = new Set([...clues, 'F-GC001-CRIME-WINDOW'])
+    const { proven } = closeProof(GC001_PROPOSITIONS, clueSet)
+    return GC001_CULPRIT_PROOF.requires.every(id => proven.has(id))
+      && GC001_METHOD_PROOF.requires.every(id => proven.has(id))
+  }
+
+  it('4장 이하로는 범인+방식 동시 PROVEN 조합이 0개다', () => {
+    for (let size = 2; size <= 4; size++) {
+      let found = 0
+      for (const combo of combos(ALL_CLUES, size)) {
+        if (canProveBoth(combo)) found++
+      }
+      expect(found, `size=${size} 에서 PROVEN 조합이 존재하면 max 를 줄일 수 있다`).toBe(0)
+    }
+  })
+
+  it('5장으로는 범인만 PROVEN 되고 방식은 아직이다', () => {
+    let culpritOnly = 0
+    for (const combo of combos(ALL_CLUES, 5)) {
+      const clueSet = new Set([...combo, 'F-GC001-CRIME-WINDOW'])
+      const { proven } = closeProof(GC001_PROPOSITIONS, clueSet)
+      const culprit = GC001_CULPRIT_PROOF.requires.every(id => proven.has(id))
+      const method = GC001_METHOD_PROOF.requires.every(id => proven.has(id))
+      if (culprit && !method) culpritOnly++
+    }
+    expect(culpritOnly).toBe(36)
+  })
+
+  it('6장에서 둘 다 PROVEN 조합은 정확히 36개다', () => {
+    let both = 0
+    for (const combo of combos(ALL_CLUES, 6)) {
+      if (canProveBoth(combo)) both++
+    }
+    expect(both).toBe(36)
+  })
+
+  it('GC001_CLUE_PICK.max 가 6 미만이면 이 테스트가 실패한다 — 다음 사람에게 경고', () => {
+    // max 를 내리면 위 전수 탐색이 보여준 36개 조합이 모두 제출 불가가 된다.
+    expect(GC001_CLUE_PICK.max).toBeGreaterThanOrEqual(6)
+  })
+})
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * C-3 / MIG-008 — presentUnlocks 존치가 금지 2 를 어기지 않음을 증명
+ *
+ * 금지 2: 「정확한 Evidence 를 정확한 NPC 에게 제시 → 다음 핵심 단계」
+ *
+ * presentUnlocks 가 반환하는 Testimony ID 가 어떤 ProofProposition 의 supportRule 에도
+ * 없다면, 그것은 "다음 핵심 단계" 가 아니다 — 선택적 서사일 뿐이다.
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+describe('MIG-008 · presentUnlocks 는 금지 2 를 어기지 않는다', () => {
+  // GC-001 의 presentUnlocks 가 내놓는 testimony ID 목록
+  const YIELDED_TESTIMONIES = ['T-GIM-FRAME', 'T-MUN-MOVED', 'T-RYU-REV']
+
+  // 모든 supportRule 에 등장하는 Clue ID 를 수집
+  const allRuleClueIds = new Set<string>()
+  for (const prop of GC001_PROPOSITIONS) {
+    for (const rule of prop.supportRules) {
+      for (const id of rule.allOf ?? []) allRuleClueIds.add(id)
+      for (const id of rule.anyOf ?? []) allRuleClueIds.add(id)
+      // derivedFrom 은 명제 ID 이므로 Clue 가 아니다
+    }
+  }
+
+  it('presentUnlocks 의 testimony 는 어떤 ProofProposition supportRule 에도 없다', () => {
+    for (const tid of YIELDED_TESTIMONIES) {
+      expect(allRuleClueIds.has(tid), `${tid} 가 supportRule 에 있으면 금지 2 위반이다`).toBe(false)
+    }
+  })
+
+  it('Proof Path A 는 presentUnlocks 없이 PROVEN 에 닿는다', () => {
+    const clues = ['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']
+    const r = validateProof(submit(clues), ctxOf(clues))
+    expect(r.verdict).toBe('PROVEN')
+  })
+
+  it('Proof Path B 는 presentUnlocks 없이 PROVEN 에 닿는다', () => {
+    const clues = [
+      'F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE',
+      'F-GC001-MUN-AT-LOADING-2118', 'F-GC001-MAIN-LOADING-TRAVEL-TIME',
+      'CLM-GC001-RYU-LEFT-PRESSED', 'E4',
+    ]
+    const r = validateProof(submit(clues), ctxOf(clues))
+    expect(r.verdict).toBe('PROVEN')
+  })
+
+  it('GC-001 evidenceAccess 는 open — requires 사슬이 런타임에서 발견을 막지 않는다', async () => {
+    const { gc001Case } = await import('../src/data/gc001')
+    const c = gc001Case()
+    expect(c.evidenceAccess).toBe('open')
+  })
+})

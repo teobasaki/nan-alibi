@@ -123,5 +123,20 @@ export const GC001_METHOD_PROOF = {
  *
  * 넘치게 담아 통과하는 것을 막는 것이 상한의 목적이고, 그 목적은 6에서도 지켜진다:
  * 이 사건의 Clue 는 30개가 넘는다.
+ *
+ * ────────── 실측 수치 (2026-08-28 전수 탐색) ──────────
+ * given = ['F-GC001-CRIME-WINDOW'] 전제 하에, 선택 가능 Clue 17종의 모든 조합을 평가:
+ *
+ *   방식만 PROVEN (PROP-01)       : 최소 2장
+ *   범인만 PROVEN (PROP-05+06)    : 최소 5장  (36개 조합)
+ *   둘 다 동시에 PROVEN           : 최소 6장  (36개 조합)
+ *
+ * 예시 (6장, PROVEN):
+ *   ['E4','E6','E8','E9','F-GC001-DOOR-OPEN-NOT-PASSAGE','F-GC001-MAIN-LOADING-TRAVEL-TIME']
+ *
+ * **결론: 명세 §31 의 "2~4개" 는 방식 단독까지만 커버한다.
+ * 범인 축을 세우려면 5장, 풀 클리어에는 6장이 수학적 하한이다.
+ * max 를 4 이하로 내리면 PROVEN 경로가 전멸한다 — tests/proof.test.ts 의
+ * 「§31 게이트」 테스트가 이것을 잡는다.**
  */
 export const GC001_CLUE_PICK = { min: 2, recommended: 4, max: 6 } as const

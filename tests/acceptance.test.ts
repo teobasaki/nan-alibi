@@ -20,7 +20,7 @@ import { classify } from '../src/engine/intent'
 import { allowedResponse, FORBIDDEN_FACT_IDS, renderAllowedBlock, ruleFallbackSpeech } from '../src/engine/knowledge'
 import { GC001_KNOWLEDGE } from '../src/data/gc001-knowledge'
 import {
-  applyGc001Tension, discoverGc001Evidence, GC001_CLAIMS, gc001Claim, gc001Fact, gc001KnownFacts,
+  applyGc001Tension, discoverGc001Evidence, GC001_CLAIMS, GC001_EVIDENCE_FACTS, gc001Claim, gc001Fact, gc001KnownFacts,
 } from '../src/data/gc001-inquiry'
 import {
   createInquiry, hear, heldClueIds, learnFact, question, type ClaimState,
@@ -354,6 +354,223 @@ describe('§39 금지 6 — 잘못된 질문에 무료 재시도를 주지 않�
     const r = classify('음 그거요', ctx)
     expect(ask('S1', r.intent, { confidence: r.confidence }).mode).toBe('CLARIFY')
     expect(chargesQuestion({ fallback: false })).toBe(true)
+  })
+})
+
+/* ─────────── MIG-008(C-3) — presentUnlocks 존치가 금지 2 를 어기지 않음을 증명한다 ─────────── */
+/**
+ * 정본 인용:
+ *   GC-001 V0.2 §39 금지 2: 「정확한 Evidence 를 정확한 NPC 에게 제시 → 다음 핵심 단계」 를
+ *   **핵심 사건 진행에 다시 도입하지 않는다**
+ *   Core Loop Migration 요약: 「특정 Evidence-NPC 조합을 **필수 진행 키에서** 제거」
+ *
+ * ADR 031 — 버린 대안 3: 「사슬은 데이터에 남아 선택적 지름길이 되고,
+ *   진행의 필수 경로에서는 빠진다 (AC-04·05·06).」
+ *
+ * 아래 세 describe 가 「선택적」이 진짜인지를 게이트로 박는다.
+ */
+
+describe('MIG-008 증명 1 — 제시는 Proof 의 판정을 바꾸지 않는다', () => {
+  /**
+   * 같은 제출(범인·방식·증거·연결)을 presentUnlocks 를 발동시킨 GameState 에서 만든
+   * InquiryState 와, 제시를 하지 않은 InquiryState 에서 각각 넣어 verdict 가 같다.
+   */
+  it('Path A — presentEvidence 전후 verdict 동일', () => {
+    // 제시 없이 Proof Path A 준비
+    let sNone = createInquiry()
+    for (const f of gc001KnownFacts()) sNone = learnFact(sNone, f.id)
+    for (const ev of ['E8', 'E9', 'E6', 'E4']) sNone = discoverGc001Evidence(sNone, ev)
+    sNone = hear(sNone, 'CLM-GC001-RYU-LEFT-PRESSED')
+
+    // 제시 발동 후 (GameState presentEvidence) — InquiryState 에는 그 진술이 추가
+    let sPresent = createInquiry()
+    for (const f of gc001KnownFacts()) sPresent = learnFact(sPresent, f.id)
+    for (const ev of ['E8', 'E9', 'E6', 'E4']) sPresent = discoverGc001Evidence(sPresent, ev)
+    sPresent = hear(sPresent, 'CLM-GC001-RYU-LEFT-PRESSED')
+    // presentUnlocks 으로 얻는 진술들을 흉내낸다
+    sPresent = hear(sPresent, 'CLM-GC001-MUN-LOADING') // T-MUN-MOVED 근거 진술이 있어도 무관
+
+    const submission = {
+      culpritId: 'S1',
+      methodId: '고의적 직접 물리력',
+      selectedClueIds: ['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4'],
+      connections: chain(['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
+    }
+
+    const rNone = validateProof(submission, proofCtx(sNone))
+    const rPresent = validateProof(submission, proofCtx(sPresent))
+    expect(rNone.verdict).toBe('PROVEN')
+    expect(rPresent.verdict).toBe(rNone.verdict)
+  })
+
+  it('Path B — presentEvidence 전후 verdict 동일', () => {
+    let sNone = createInquiry()
+    for (const f of gc001KnownFacts()) sNone = learnFact(sNone, f.id)
+    sNone = discoverGc001Evidence(sNone, 'E8')
+    sNone = discoverGc001Evidence(sNone, 'E4')
+    for (const f of ['F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-MAIN-LOADING-TRAVEL-TIME']) sNone = learnFact(sNone, f)
+    sNone = hear(sNone, 'CLM-GC001-MUN-LOADING')
+    sNone = hear(sNone, 'CLM-GC001-RYU-LEFT-PRESSED')
+
+    // 제시를 함 — T-RYU-REV, T-GIM-FRAME 진술이 추가로 있는 상태
+    let sPresent = createInquiry()
+    for (const f of gc001KnownFacts()) sPresent = learnFact(sPresent, f.id)
+    sPresent = discoverGc001Evidence(sPresent, 'E8')
+    sPresent = discoverGc001Evidence(sPresent, 'E4')
+    for (const f of ['F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-MAIN-LOADING-TRAVEL-TIME']) sPresent = learnFact(sPresent, f)
+    sPresent = hear(sPresent, 'CLM-GC001-MUN-LOADING')
+    sPresent = hear(sPresent, 'CLM-GC001-RYU-LEFT-PRESSED')
+    // presentUnlocks 진술 주입 (T-RYU-REV 가 내놓을 법한 것 — InquiryState 에서는 Claim)
+    sPresent = hear(sPresent, 'CLM-GC001-RYU-LEFT')  // 다른 진술도 넣어 본다
+
+    const submission = {
+      culpritId: 'S1',
+      methodId: '고의적 직접 물리력',
+      selectedClueIds: [
+        'F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE', 'CLM-GC001-MUN-LOADING',
+        'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4',
+      ],
+      connections: chain(['F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE', 'CLM-GC001-MUN-LOADING', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
+    }
+
+    const rNone = validateProof(submission, proofCtx(sNone))
+    const rPresent = validateProof(submission, proofCtx(sPresent))
+    expect(rNone.verdict).toBe('PROVEN')
+    expect(rPresent.verdict).toBe(rNone.verdict)
+  })
+
+  it('presentUnlocks 의 yieldsTestimonyId 가 Proof supportRule 에 없다', () => {
+    // presentUnlocks 가 내놓는 진술 id: T-GIM-FRAME, T-MUN-MOVED, T-RYU-REV
+    const unlockIds = ['T-GIM-FRAME', 'T-MUN-MOVED', 'T-RYU-REV']
+    // 모든 Proposition 의 모든 supportRule 에 이 id 가 없어야 한다
+    for (const prop of GC001_PROPOSITIONS) {
+      for (const rule of prop.supportRules) {
+        for (const uid of unlockIds) {
+          expect(rule.allOf?.includes(uid) ?? false, `${prop.id} allOf → ${uid}`).toBe(false)
+          expect(rule.anyOf?.includes(uid) ?? false, `${prop.id} anyOf → ${uid}`).toBe(false)
+        }
+      }
+    }
+    // CulpritProof.requires / MethodProof.requires 에서도 같다
+    for (const uid of unlockIds) {
+      expect((GC001_CULPRIT_PROOF.requires as readonly string[]).includes(uid), `culprit requires → ${uid}`).toBe(false)
+      expect((GC001_METHOD_PROOF.requires as readonly string[]).includes(uid), `method requires → ${uid}`).toBe(false)
+    }
+  })
+})
+
+describe('MIG-008 증명 2 — 모든 Proof Path 가 제시 없이 닿는다', () => {
+  /**
+   * presentEvidence 를 한 번도 부르지 않고 각 Path 의 재료를 모을 수 있다.
+   * `evidenceAccess: 'open'` 이므로 기록 조사에 requires 제한이 없고,
+   * 심문 규칙(GC001_KNOWLEDGE)에서 Fact·Claim 을 그냥 얻는다.
+   */
+  it('Path A 재료 — 기록 조회(E8·E9·E6·E4)와 심문만으로 PROVEN', () => {
+    // 이 경로에서 presentEvidence 는 한 번도 불리지 않는다
+    const g = createGame(CASE)
+    // evidenceAccess: open 이므로 모든 기록이 열려 있다
+    expect(availableEvidence(g).map((e) => e.id)).toEqual(expect.arrayContaining(['E8', 'E9', 'E6', 'E4']))
+
+    let s = createInquiry()
+    for (const f of gc001KnownFacts()) s = learnFact(s, f.id)
+    for (const ev of ['E8', 'E9', 'E6', 'E4']) s = discoverGc001Evidence(s, ev)
+    s = hear(s, 'CLM-GC001-RYU-LEFT-PRESSED')
+
+    const r = validateProof({
+      culpritId: 'S1', methodId: '고의적 직접 물리력',
+      selectedClueIds: ['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4'],
+      connections: chain(['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
+    }, proofCtx(s))
+    expect(r.verdict).toBe('PROVEN')
+  })
+
+  it('Path B 재료 — 기록 조회(E8·E4)와 심문만으로 PROVEN', () => {
+    const g = createGame(CASE)
+    expect(availableEvidence(g).map((e) => e.id)).toEqual(expect.arrayContaining(['E8', 'E4']))
+
+    let s = createInquiry()
+    for (const f of gc001KnownFacts()) s = learnFact(s, f.id)
+    s = discoverGc001Evidence(s, 'E8')
+    s = discoverGc001Evidence(s, 'E4')
+    for (const f of ['F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-MAIN-LOADING-TRAVEL-TIME']) s = learnFact(s, f)
+    s = hear(s, 'CLM-GC001-MUN-LOADING')
+    s = hear(s, 'CLM-GC001-RYU-LEFT-PRESSED')
+
+    const r = validateProof({
+      culpritId: 'S1', methodId: '고의적 직접 물리력',
+      selectedClueIds: [
+        'F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE', 'CLM-GC001-MUN-LOADING',
+        'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4',
+      ],
+      connections: chain(['F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE', 'CLM-GC001-MUN-LOADING', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
+    }, proofCtx(s))
+    expect(r.verdict).toBe('PROVEN')
+  })
+
+  it('Fact/Claim 들은 심문 규칙에서 presentEvidence 없이 얻을 수 있다', () => {
+    // Path B 가 요구하는 심문 얻는 것 — GC001_KNOWLEDGE 에서 나오는지 확인
+    const neededFacts = ['F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-MAIN-LOADING-TRAVEL-TIME']
+    const neededClaims = ['CLM-GC001-MUN-LOADING', 'CLM-GC001-RYU-LEFT-PRESSED']
+
+    const reachFacts = new Set<string>()
+    const reachClaims = new Set<string>()
+    for (const r of GC001_KNOWLEDGE) {
+      for (const id of r.availableFactIds ?? []) reachFacts.add(id)
+      for (const id of [...(r.baseClaimIds ?? []), ...(r.defensiveClaimIds ?? []), ...(r.revisedClaimIds ?? [])]) {
+        reachClaims.add(id)
+      }
+    }
+    // 기록에서 오는 것
+    for (const [, facts] of Object.entries(GC001_EVIDENCE_FACTS)) {
+      for (const f of facts) reachFacts.add(f)
+    }
+
+    for (const f of neededFacts) {
+      expect(reachFacts.has(f), `${f} 는 규칙/기록에서 얻을 수 있어야 한다`).toBe(true)
+    }
+    for (const c of neededClaims) {
+      expect(reachClaims.has(c), `${c} 는 규칙에서 들을 수 있어야 한다`).toBe(true)
+    }
+  })
+})
+
+describe('MIG-008 증명 3 — 제시로 잠긴 기록이 열리는 직접 진행 경로가 없다', () => {
+  /**
+   * GC-001 에서 evidenceAccess 가 open 이라 requires 사슬이 런타임에서 무시된다 (fb0c209).
+   * 따라서 T-GIM-FRAME → E8 해금이라는 V0.1 사슬이 실제 플레이에서는 작동하지 않는다.
+   */
+  it('evidenceAccess === "open" 이므로 requires 가 무시된다', () => {
+    expect(CASE.evidenceAccess).toBe('open')
+  })
+
+  it('E8(requires: T-GIM-FRAME)이 T-GIM-FRAME 없이 조회 가능하다', () => {
+    const g = createGame(CASE)
+    // T-GIM-FRAME 을 보유하지 않은 상태에서 E8 이 available
+    expect(g.cards).not.toContain('T-GIM-FRAME')
+    expect(availableEvidence(g).map((e) => e.id)).toContain('E8')
+  })
+
+  it('E9(requires: E8·E6)도 처음부터 조회 가능하다 — 사슬이 비활성', () => {
+    const g = createGame(CASE)
+    expect(g.cards).not.toContain('E8')
+    expect(g.cards).not.toContain('E6')
+    expect(availableEvidence(g).map((e) => e.id)).toContain('E9')
+  })
+
+  it('전체 기록 9건이 게임 시작 시 전부 열려 있다 (해금 불필요)', () => {
+    const g = createGame(CASE)
+    const avail = availableEvidence(g).map((e) => e.id)
+    for (const ev of CASE.evidence) {
+      expect(avail, `${ev.id} 가 시작 시 available`).toContain(ev.id)
+    }
+  })
+
+  it('presentUnlocks 가 내놓는 진술은 Evidence 가 아니라 Testimony 이다 — 기록을 생성하지 않는다', () => {
+    // presentUnlocks 의 yieldsTestimonyId 들이 'E' 로 시작하지 않는다
+    for (const u of CASE.presentUnlocks) {
+      expect(u.yieldsTestimonyId.startsWith('E'), `${u.yieldsTestimonyId} 은 Evidence 가 아니어야`).toBe(false)
+      expect(u.yieldsTestimonyId.startsWith('T-')).toBe(true)
+    }
   })
 })
 
