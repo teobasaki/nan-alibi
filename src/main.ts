@@ -1154,6 +1154,23 @@ function profilePanel(who: string): HTMLElement {
     // 피해자와의 관계만 사건이 갖고 있다 — 용의자끼리의 관계는 데이터가 없어 비운다
     relations: [{ name: `${CASE.victim.name}(${CASE.victim.title})`, description: sus.relation }],
     evidenceCount: evCount > 0 ? { count: evCount } : null,
+    // 배경 — 사건이 소유한다(정본 인물표에서 옮긴 것). 생성 사건은 없어서 칸이 안 그려진다
+    background: sus.background ?? [],
+    /**
+     * 성격 = 읽힌 성향. 팀 3-3-(2) 가 이걸 취조실에서 물리고 프로파일링 문서로 옮기라고
+     * 했으므로 여기가 그 자리다. persona 는 사건이 배정하며 클라이언트가 바꿀 수 없다.
+     */
+    personality: personaById(sus.personaId).hint,
+    /**
+     * 알려진 사실 — 지어내지 않는다. **플레이어가 이미 확보한 Fact** 중 이 사람의 이름이
+     * 들어간 것만 옮긴다. 확보 전에는 칸이 없다.
+     */
+    knownFacts: IS_GC001
+      ? ui.inq.facts
+        .map((id) => gc001Fact(id))
+        .filter((f): f is NonNullable<typeof f> => Boolean(f) && f!.text.includes(sus.name))
+        .map((f) => f.text)
+      : [],
     timeline,
     // 증언 인용은 들은 말에서 온다 — 없으면 칸을 그리지 않는다
     testimonies: timeline.slice(0, 2).map((t) => ({ text: t.text, from: sus.name })),

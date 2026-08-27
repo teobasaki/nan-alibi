@@ -140,3 +140,36 @@ describe('GC001 ⑥ 수단·신체·도구 묘사 금지 — 정본 §4 금칙�
     }
   })
 })
+
+describe('GC001 ⑦ 프로파일 배경 데이터 — 진상을 담지 않고 5명 전부 차 있다', () => {
+  const TRUTH_WORDS = ['범인', 'culprit', 'isCulprit', '거짓말', '거짓', 'lie', 'lieSlots', '동기', 'motive'] as const
+
+  it('다섯 사람 전부 background 가 비어 있지 않다', () => {
+    for (const id of SUSPECTS) {
+      const s = C.suspects[id]
+      expect(s.background, `${s.name} background 누락`).toBeDefined()
+      expect(s.background!.length, `${s.name} background 빈 배열`).toBeGreaterThan(0)
+    }
+  })
+
+  it('background 데이터에 진상 낙말(범인·거짓·동기)이 없다', () => {
+    for (const id of SUSPECTS) {
+      const s = C.suspects[id]
+      const corpus = (s.background ?? []).join('\n')
+      for (const w of TRUTH_WORDS) {
+        expect(corpus, `${s.name} background 에 '${w}' 포함`).not.toContain(w)
+      }
+    }
+  })
+
+  it('background 에 truth/claim/lieReason 값이 그대로 들어가지 않았다', () => {
+    for (const id of SUSPECTS) {
+      const s = C.suspects[id]
+      const corpus = (s.background ?? []).join('\n')
+      // lieReason 이 비어있지 않으면 그 문자열이 background에 없어야 한다
+      if (s.lieReason) {
+        expect(corpus).not.toContain(s.lieReason)
+      }
+    }
+  })
+})

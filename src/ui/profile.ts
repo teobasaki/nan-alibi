@@ -59,6 +59,13 @@ export interface ProfileView {
   /** portrait URL — 밖에서 받는다 (없으면 그리지 않는다) */
   portraitUrl: string | null
 
+  /** 배경 — 정본 인물표에서 추출한 직무·역할 서술 (사건이 소유, 없으면 칸이 안 그려진다) */
+  background: string[]
+  /** 성격 — persona 의 hint (읽힌 성향). 없으면 칸이 안 그려진다 */
+  personality: string | null
+  /** 알려진 사실 — 플레이어가 확보한 Fact 중 이 인물에 관한 것 (없으면 칸이 안 그려진다) */
+  knownFacts: string[]
+
   /** 관계 표 (피해자·다른 용의자와의 관계) */
   relations: ProfileRelationRow[]
   /** 관련 증거 수 */
@@ -95,6 +102,12 @@ export interface ProfileSource {
     relation: string
   }
   portraitUrl: string | null
+  /** 배경 — 정본 인물표에서 추출 (사건이 소유, 없으면 빈 배열) */
+  background: string[]
+  /** 성격 — persona 의 hint (읽힌 성향, 없으면 null) */
+  personality: string | null
+  /** 알려진 사실 — 플레이어가 확보한 Fact 중 이 인물에 관한 것 (없으면 빈 배열) */
+  knownFacts: string[]
   /** 관계 표에 넣을 행들 (피해자 + 다른 용의자) — 데이터가 없으면 빈 배열 */
   relations: ProfileRelationRow[]
   /** 관련 증거 수 (없으면 null) */
@@ -118,6 +131,9 @@ export function profileView(
     job: src.suspect.job,
     relation: src.suspect.relation,
     portraitUrl: src.portraitUrl,
+    background: src.background,
+    personality: src.personality,
+    knownFacts: src.knownFacts,
     relations: src.relations,
     evidenceCount: src.evidenceCount,
     timeline: src.timeline,
@@ -199,6 +215,34 @@ function renderProfileTab(v: ProfileView, on: ProfileHandlers): HTMLElement {
       relBox.appendChild(btn)
     }
     page.appendChild(relBox)
+  }
+
+  /* 배경 — 사건이 소유하는 인물 배경 (없으면 안 그린다) */
+  if (v.background.length > 0) {
+    const bgBox = el('div', 'pf-background')
+    bgBox.appendChild(el('div', 'pf-section-title', '배경'))
+    for (const line of v.background) {
+      bgBox.appendChild(el('div', 'pf-background-item', `• ${line}`))
+    }
+    page.appendChild(bgBox)
+  }
+
+  /* 성격 — persona hint (읽힌 성향, 없으면 안 그린다) */
+  if (v.personality) {
+    const perBox = el('div', 'pf-personality')
+    perBox.appendChild(el('div', 'pf-section-title', '성격'))
+    perBox.appendChild(el('div', 'pf-personality-text', v.personality))
+    page.appendChild(perBox)
+  }
+
+  /* 알려진 사실 — 플레이어가 확보한 Fact 중 이 인물에 관한 것 (없으면 안 그린다) */
+  if (v.knownFacts.length > 0) {
+    const factsBox = el('div', 'pf-known-facts')
+    factsBox.appendChild(el('div', 'pf-section-title', '알려진 사실'))
+    for (const fact of v.knownFacts) {
+      factsBox.appendChild(el('div', 'pf-fact-item', `• ${fact}`))
+    }
+    page.appendChild(factsBox)
   }
 
   /* 하단 3단: 타임라인 · 증언 · 메모 */

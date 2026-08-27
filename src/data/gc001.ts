@@ -88,6 +88,11 @@ export function gc001Case(): CaseFile {
       S1: {
         id: 'S1', name: '류나린', age: 41, job: '전시 운영 책임자',
         relation: '반입 기록과 폐관 운영을 관장에게 보고해 왔다',
+        background: [
+          '라음 사립 갤러리의 전시 운영 책임자',
+          '반입 기록과 폐관 운영을 피해자에게 보고하는 위치',
+          '피해자와 8년 이상 협력해 온 운영 담당자',
+        ],
         motive: '반입 기록 조작이 발각돼 해임·감사를 앞두고 있었다',
         // 통제형 — 증거 없는 추궁은 무시하고, 물증 앞에서만 태도가 바뀐다 (정본 DEFENSIVE)
         personaId: 'calculating',
@@ -99,6 +104,11 @@ export function gc001Case(): CaseFile {
       S2: {
         id: 'S2', name: '배지호', age: 33, job: '부큐레이터',
         relation: '관장의 일정과 도록을 맡아 왔다 — 피해자를 발견한 사람이다',
+        background: [
+          '관장 일정과 도록 수정을 담당하는 부큐레이터',
+          '피해자를 발견한 사람이다',
+          '전시 일정 변경과 도록 편집 전반을 담당',
+        ],
         motive: '기증자와 몰래 이직 통화를 하고 있었다',
         // 동요형 (정본 SHAKEN) — 압박하면 말이 꼬이고, 안심시키면 정확해진다
         personaId: 'timid',
@@ -110,6 +120,11 @@ export function gc001Case(): CaseFile {
       S3: {
         id: 'S3', name: '문소라', age: 38, job: '작품 운송 담당',
         relation: '반입·철거 물품의 이동을 맡는다',
+        background: [
+          '반입·철거 물품의 이동을 맡는 작품 운송 담당',
+          '목록대의 revision mode 사용 권한을 가진 eligible operator',
+          '운송 상자와 전시 물품의 배치 전반을 담당',
+        ],
         motive: '지시 없이 상자를 옮겨 라벨을 어긋나게 했다',
         // 불안형 (정본 ANXIOUS) — 특정 화제(상자)가 나오면 감정이 앞선다
         personaId: 'emotional',
@@ -121,6 +136,11 @@ export function gc001Case(): CaseFile {
       S4: {
         id: 'S4', name: '도율', age: 52, job: '작품 보존 담당',
         relation: '전시 받침대의 상태 점검을 맡아 왔다',
+        background: [
+          '전시 받침대의 상태 점검을 맡아 온 작품 보존 담당',
+          '받침대 구조 상태 점검과 보존 처리를 수행',
+          '이전 점검 이력과 현재 상태 확인을 전담',
+        ],
         motive: '지난 점검 누락을 덮어 달라 부탁한 적이 있다',
         // 방어적 (정본 DEFENSIVE) — 실수를 짚으면 자격부터 되묻는다
         personaId: 'authoritative',
@@ -132,6 +152,11 @@ export function gc001Case(): CaseFile {
       S5: {
         id: 'S5', name: '김하늘', age: 29, job: '야간 보안 담당',
         relation: '폐관 뒤 출입과 카메라 감시를 맡는다',
+        background: [
+          '폐관 뒤 출입과 카메라 감시를 맡는 야간 보안 담당',
+          '출입 패널 점검과 카메라 모니터링을 수행',
+          '갤러리 폐관 이후 접근 통제를 전담',
+        ],
         motive: '잠깐 열린 카메라 시야를 놓쳤다',
         // 회피형 — 자기가 못 본 것은 없었던 일로 취급한다
         personaId: 'egocentric',

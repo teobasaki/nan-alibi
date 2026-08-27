@@ -16,6 +16,13 @@ import {
 const baseSource: ProfileSource = {
   suspect: { id: 'S1', name: '류나린', age: 41, job: '전시 운영 책임자', relation: '반입 기록과 폐관 운영을 관장에게 보고해 왔다' },
   portraitUrl: '/img/s1.png',
+  background: [
+    '라음 사립 갤러리의 전시 운영 책임자',
+    '반입 기록과 폐관 운영을 피해자에게 보고하는 위치',
+    '피해자와 8년 이상 협력해 온 운영 담당자',
+  ],
+  personality: '묻는 말에만 정확히 답하고 한 마디도 더 붙이지 않는다. 종이를 내밀면 그제야 문장이 길어진다.',
+  knownFacts: ['피해자는 성인 관장 한라온이다.', '발견 시각은 21:21이다.'],
   relations: [
     { name: '한라온(피해자)', description: '피해자와 8년 이상 협력해 온 운영 책임자' },
     { name: '배지호', description: '업무 협력 / 상사' },
@@ -35,6 +42,9 @@ const baseSource: ProfileSource = {
 const emptySource: ProfileSource = {
   suspect: { id: 'S4', name: '도율', age: 52, job: '작품 보존 담당', relation: '전시 받침대의 상태 점검을 맡아 왔다' },
   portraitUrl: null,
+  background: [],
+  personality: null,
+  knownFacts: [],
   relations: [],
   evidenceCount: null,
   timeline: [],
@@ -187,6 +197,21 @@ describe('데이터 없는 칸은 그리지 않는다', () => {
     const root = draw(emptySource, 'testimony')
     expect(root.textContent).toContain('아직 확보된 증언이 없다')
   })
+
+  it('background 가 빈 배열이면 배경 섹션을 그리지 않는다', () => {
+    const root = draw(emptySource)
+    expect(root.querySelector('.pf-background')).toBeNull()
+  })
+
+  it('personality 가 null 이면 성격 섹션을 그리지 않는다', () => {
+    const root = draw(emptySource)
+    expect(root.querySelector('.pf-personality')).toBeNull()
+  })
+
+  it('knownFacts 가 빈 배열이면 알려진 사실 섹션을 그리지 않는다', () => {
+    const root = draw(emptySource)
+    expect(root.querySelector('.pf-known-facts')).toBeNull()
+  })
 })
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -253,6 +278,34 @@ describe('데이터가 있을 때 올바르게 렌더', () => {
     expect(rows[0]!.textContent).toContain('한라온')
   })
 
+  it('배경이 있으면 배경 섹션이 그려진다', () => {
+    const root = draw()
+    const bgBox = root.querySelector('.pf-background')
+    expect(bgBox).not.toBeNull()
+    expect(bgBox!.textContent).toContain('배경')
+    const items = bgBox!.querySelectorAll('.pf-background-item')
+    expect(items.length).toBe(3)
+    expect(items[0]!.textContent).toContain('라음 사립 갤러리의 전시 운영 책임자')
+  })
+
+  it('성격이 있으면 성격 섹션이 그려진다', () => {
+    const root = draw()
+    const perBox = root.querySelector('.pf-personality')
+    expect(perBox).not.toBeNull()
+    expect(perBox!.textContent).toContain('성격')
+    expect(perBox!.textContent).toContain('묻는 말에만 정확히 답하고')
+  })
+
+  it('알려진 사실이 있으면 섹션이 그려진다', () => {
+    const root = draw()
+    const factsBox = root.querySelector('.pf-known-facts')
+    expect(factsBox).not.toBeNull()
+    expect(factsBox!.textContent).toContain('알려진 사실')
+    const items = factsBox!.querySelectorAll('.pf-fact-item')
+    expect(items.length).toBe(2)
+    expect(items[0]!.textContent).toContain('피해자는 성인 관장 한라온이다.')
+  })
+
   it('타임라인에 시각·텍스트가 있다', () => {
     const root = draw()
     const items = root.querySelectorAll('.pf-timeline-item')
@@ -277,5 +330,30 @@ describe('데이터가 있을 때 올바르게 렌더', () => {
   it('프로파일링 문서 제목이 있다', () => {
     const root = draw()
     expect(root.querySelector('.pf-title')?.textContent).toBe('프로파일링 문서')
+  })
+})
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 배경·성격·알려진 사실 칸의 불변식
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+describe('배경·성격·알려진 사실 — 진상이 새지 않는다', () => {
+  const TRUTH_WORDS = ['범인', 'culprit', 'isCulprit', '거짓말', 'lie', 'lieSlots', '동기', 'motive'] as const
+
+  it('배경·성격 DOM 텍스트에 진상 낙말이 없다', () => {
+    const root = draw()
+    const bgText = root.querySelector('.pf-background')?.textContent ?? ''
+    const perText = root.querySelector('.pf-personality')?.textContent ?? ''
+    const factsText = root.querySelector('.pf-known-facts')?.textContent ?? ''
+    const all = bgText + perText + factsText
+    for (const w of TRUTH_WORDS) {
+      expect(all, `DOM 에 '${w}' 노출`).not.toContain(w)
+    }
+  })
+
+  it('ProfileView 에 배경·성격·알려진 사실 필드가 있다', () => {
+    const v = view()
+    expect(v).toHaveProperty('background')
+    expect(v).toHaveProperty('personality')
+    expect(v).toHaveProperty('knownFacts')
   })
 })
