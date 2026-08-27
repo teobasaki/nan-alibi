@@ -234,8 +234,31 @@
 }
 /* 고정 폭이면 좁은 화면에서 옆 칸까지 그어진다 — 칸 안에서 재운다 */
 .cb-slot-u { display: block; width: 100%; max-width: 84px; height: 7px; margin: 2px auto 0; overflow: visible; }
-/* 범행 시각 **열** 전체가 살짝 밝다 — 시선이 그 세로줄을 먼저 탄다 */
-.cb-slot.crime, .cb-cell.crime { background-color: rgba(255, 150, 120, .07); }
+/*
+ * 범행 시각 **열** 전체가 살짝 밝다 — 시선이 그 세로줄을 먼저 탄다.
+ * 3단계(정본 3.2.16): "범행 시각이나 충돌 정보에 시선이 모이도록 하는 약한 강조 애니메이션"
+ * 분필 가루가 조명 아래 숨쉬듯 미세하게 명멸한다. 사람 이름 행 조명(.84→1.0)과 싸우지
+ * 않도록 진폭은 opacity .05~.09 로 잡는다.
+ */
+.cb-slot.crime, .cb-cell.crime {
+  background-color: rgba(255, 150, 120, .07);
+  animation: cb-crime-breath 4s ease-in-out infinite;
+}
+@keyframes cb-crime-breath {
+  0%, 100% { background-color: rgba(255, 150, 120, .05); }
+  50%      { background-color: rgba(255, 150, 120, .09); }
+}
+
+/*
+ * prefers-reduced-motion: reduce — 움직이지 않고 정적 강조만 남긴다.
+ * (sidebar.css 의 같은 패턴: transition:none + 정적 밝기)
+ */
+@media (prefers-reduced-motion: reduce) {
+  .cb-slot.crime, .cb-cell.crime {
+    animation: none;
+    background-color: rgba(255, 150, 120, .09);
+  }
+}
 
 /* ── 행머리: 사람 ── */
 .cb-name { text-align: left; padding-left: 10px; }
