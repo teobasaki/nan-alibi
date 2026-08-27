@@ -16,6 +16,13 @@ export interface InquiryEvidenceRow { id: string; label: string; state: Evidence
 export interface InquiryClueRow {
   id: string; kind: 'CLAIM' | 'FACT' | 'EVIDENCE'; label: string; detail?: string
 }
+/**
+ * 탭별 알림 배지 — 3.2.13 「새로운 정보가 들어온 탭에는 NEW, 숫자, 알림 표시」.
+ * `newCount` 는 「마지막으로 그 탭을 본 뒤에 늘어난 항목 수」로 파생된다.
+ * 0 이면 알림이 없다.
+ */
+export type TabBadges = Partial<Record<InquiryTab, number>>
+
 export interface InquiryView {
   claims: InquiryClaimRow[]
   facts: InquiryFactRow[]
@@ -28,6 +35,8 @@ export interface InquiryView {
   hypotheses: Hypothesis[]
   links: [string, string][]
   activeTab: InquiryTab
+  /** 탭별 새 항목 수 (0 이면 생략 가능) */
+  tabBadges: TabBadges
 }
 export interface InquiryHandlers {
   changeTab(tab: InquiryTab): void
@@ -50,11 +59,50 @@ const EV_STATE_LABEL: Record<EvidenceState, string> = {
 const HYPOTHESIS_LABEL: Record<HypothesisStatus, string> = {
   DRAFT: '초안', SUPPORTED: '지지됨', CONTESTED: '반론 있음', DISPROVED: '기각', PROVEN: '입증',
 }
-const TABS: { id: InquiryTab; no: string; label: string }[] = [
-  { id: 'overview', no: '01', label: '사건 개요' }, { id: 'evidence', no: '02', label: '증거' },
-  { id: 'testimony', no: '03', label: '증언' }, { id: 'timeline', no: '04', label: '타임라인' },
+/**
+ * 탭 순서·라벨 — 정본 3.2.4·3.2.13 에 맞춘다.
+ * 「사건 개요 · 용의자 진술 · 증거 · 타임라인 · 추론」
+ * id 는 상태·테스트·외부 참조가 쓰므로 바꾸지 않는다. 바뀌는 것은 보이는 순서와 라벨.
+ */
+export const TABS: { id: InquiryTab; no: string; label: string }[] = [
+  { id: 'overview', no: '01', label: '사건 개요' },
+  { id: 'testimony', no: '02', label: '용의자 진술' },
+  { id: 'evidence', no: '03', label: '증거' },
+  { id: 'timeline', no: '04', label: '타임라인' },
   { id: 'deduction', no: '05', label: '추론' },
 ]
+
+/**
+ * 각 탭의 현재 항목 수를 InquiryState 에서 파생한다.
+ * 새 상태를 만들지 않는다 — 이미 있는 것만 센다.
+ */
+export function tabItemCounts(s: InquiryState): Record<InquiryTab, number> {
+  const discoveredEvidence = Object.values(s.evidence).filter((st) => st !== 'AVAILABLE').length
+  return {
+    overview: s.facts.length,
+    testimony: Object.keys(s.claims).length,
+    evidence: discoveredEvidence,
+    timeline: Object.keys(s.claims).length, // 타임라인은 진술에서 시각이 있는 것만이지만, 목록 길이로 갱신 판단
+    deduction: s.hypotheses.length,
+  }
+}
+
+/**
+ * 탭 배지를 계산한다 — 「마지막으로 그 탭을 본 뒤에 늘어났는가」.
+ * @param current - tabItemCounts() 결과
+ * @param seen - UI 가 기억하는 「마지막으로 그 탭을 봤을 때의 항목 수」
+ */
+export function computeTabBadges(
+  current: Record<InquiryTab, number>,
+  seen: Record<InquiryTab, number>,
+): TabBadges {
+  const badges: TabBadges = {}
+  for (const tab of TABS) {
+    const diff = (current[tab.id] ?? 0) - (seen[tab.id] ?? 0)
+    if (diff > 0) badges[tab.id] = diff
+  }
+  return badges
+}
 
 export interface InquirySource {
   claim(id: string): { speaker: SuspectId; text: string; at?: string; revisedTo?: string } | undefined
@@ -65,7 +113,8 @@ export interface InquirySource {
 }
 
 export function inquiryView(
-  s: InquiryState, src: InquirySource, shaky: string[], activeTab: InquiryTab = 'overview',
+  s: InquiryState, src: InquirySource, shaky: string[],
+  activeTab: InquiryTab = 'overview', tabBadges: TabBadges = {},
 ): InquiryView {
   const claims: InquiryClaimRow[] = []
   for (const [id, track] of Object.entries(s.claims)) {
@@ -88,7 +137,7 @@ export function inquiryView(
     ...evidence.map((e) => ({ id: e.id, kind: 'EVIDENCE' as const, label: e.label, detail: EV_STATE_LABEL[e.state] })),
   ]
   return { claims, facts, evidence, clues, shaky, suspect: s.suspect, people: src.people,
-    memo: s.memo, hypotheses: s.hypotheses, links: s.links, activeTab }
+    memo: s.memo, hypotheses: s.hypotheses, links: s.links, activeTab, tabBadges }
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -253,10 +302,20 @@ export function renderInquiry(v: InquiryView, on: InquiryHandlers): HTMLElement 
   const nav = el('div', 'iq-tabs'); nav.setAttribute('role', 'tablist')
   for (const t of TABS) {
     const active = v.activeTab === t.id
-    const b = el('button', `iq-tab${active ? ' on' : ''}`) as HTMLButtonElement
+    const badge = v.tabBadges[t.id] ?? 0
+    const b = el('button', `iq-tab${active ? ' on' : ''}${badge > 0 ? ' has-new' : ''}`) as HTMLButtonElement
     b.type = 'button'; b.dataset.tab = t.id
     b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(active))
+    if (badge > 0) {
+      b.dataset.badge = String(badge)
+      b.setAttribute('aria-label', `${t.label} — 새 항목 ${badge}건`)
+    }
     b.append(el('span', 'iq-tab-no', t.no), el('span', 'iq-tab-label', t.label))
+    if (badge > 0) {
+      const dot = el('span', 'iq-tab-badge', String(badge))
+      dot.setAttribute('aria-hidden', 'true')
+      b.appendChild(dot)
+    }
     b.onclick = () => on.changeTab(t.id)
     nav.appendChild(b)
   }

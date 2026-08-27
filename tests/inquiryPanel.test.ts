@@ -154,6 +154,7 @@ describe('정렬 — 한 사람의 말이 모여 있어야 변화가 읽힌다',
  * 심문 인라인 위젯 DOM 테스트 (3-3-(5) 3단계 · §22 · §36)
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 import { renderShakyHint, renderSuspectIndicator, renderMemoPreview } from '../src/ui/inquiryPanel'
+import { TABS, tabItemCounts, computeTabBadges, type TabBadges } from '../src/ui/inquiryPanel'
 
 describe('심문 인라인 힌트 — 흔들리는 진술 (3-3-(5) 3단계)', () => {
   it('흔들리는 행이 있으면 DOM 을 돌려준다', () => {
@@ -248,5 +249,119 @@ describe('메모 미리보기 (§36)', () => {
   it('aria-label 이 있다', () => {
     const el = renderMemoPreview('뭔가 적음')!
     expect(el.getAttribute('aria-label')).toBe('내 메모')
+  })
+})
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 탭 순서·라벨 정합 (정본 3.2.4·3.2.13)
+ * 「사건 개요 · 용의자 진술 · 증거 · 타임라인 · 추론」
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+describe('탭 순서·라벨 — 정본 3.2.4·3.2.13 에 맞춘다', () => {
+  it('TABS 배열의 순서는 사건 개요 → 용의자 진술 → 증거 → 타임라인 → 추론', () => {
+    expect(TABS.map((t) => t.id)).toEqual([
+      'overview', 'testimony', 'evidence', 'timeline', 'deduction',
+    ])
+  })
+
+  it('라벨은 문서 문자열과 일치한다', () => {
+    expect(TABS.map((t) => t.label)).toEqual([
+      '사건 개요', '용의자 진술', '증거', '타임라인', '추론',
+    ])
+  })
+
+  it('번호는 순서에 따라 01~05 다', () => {
+    expect(TABS.map((t) => t.no)).toEqual(['01', '02', '03', '04', '05'])
+  })
+
+  it('DOM 에 렌더된 탭 버튼도 같은 순서다', () => {
+    const root = draw()
+    const tabs = Array.from(root.querySelectorAll('[role="tab"]'))
+    expect(tabs.map((b) => b.getAttribute('data-tab'))).toEqual([
+      'overview', 'testimony', 'evidence', 'timeline', 'deduction',
+    ])
+  })
+})
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 탭 알림 배지 (3.2.13 「새로운 정보가 들어온 탭에는 NEW, 숫자, 알림 표시」)
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+describe('탭 알림 배지 (3.2.13)', () => {
+  it('새 항목이 들어오면 배지에 숫자가 뜬다', () => {
+    let s = createInquiry()
+    s = hear(s, 'CLM-GC001-RYU-LEFT')
+    s = hear(s, 'CLM-GC001-MUN-LOADING')
+
+    const counts = tabItemCounts(s)
+    const seen = { overview: 0, testimony: 0, evidence: 0, timeline: 0, deduction: 0 }
+    const badges = computeTabBadges(counts, seen)
+
+    expect(badges.testimony).toBe(2)
+    expect(badges.timeline).toBe(2)
+  })
+
+  it('그 탭을 보면 알림이 사라진다 (seen 갱신 후 badge 0)', () => {
+    let s = createInquiry()
+    s = hear(s, 'CLM-GC001-RYU-LEFT')
+
+    const counts = tabItemCounts(s)
+    // 탭을 본다 — seen 을 현재 수치로 갱신
+    const seen = { overview: 0, testimony: counts.testimony, evidence: 0, timeline: 0, deduction: 0 }
+    const badges = computeTabBadges(counts, seen)
+
+    expect(badges.testimony).toBeUndefined()
+  })
+
+  it('탭을 본 뒤 다시 항목이 들어오면 다시 알림이 뜬다', () => {
+    let s = createInquiry()
+    s = hear(s, 'CLM-GC001-RYU-LEFT')
+    const counts1 = tabItemCounts(s)
+    // 탭을 봤다
+    const seen = { overview: 0, testimony: counts1.testimony, evidence: 0, timeline: 0, deduction: 0 }
+
+    // 새 항목 추가
+    s = hear(s, 'CLM-GC001-MUN-LOADING')
+    const counts2 = tabItemCounts(s)
+    const badges = computeTabBadges(counts2, seen)
+
+    expect(badges.testimony).toBe(1)
+  })
+
+  it('항목이 0 이면 알림이 없다', () => {
+    const s = createInquiry()
+    const counts = tabItemCounts(s)
+    const seen = { overview: 0, testimony: 0, evidence: 0, timeline: 0, deduction: 0 }
+    const badges = computeTabBadges(counts, seen)
+
+    expect(Object.keys(badges)).toHaveLength(0)
+  })
+
+  it('DOM 에 data-badge 속성이 붙고 aria-label 에 새 항목 수가 있다', () => {
+    let s = createInquiry()
+    s = hear(s, 'CLM-GC001-RYU-LEFT')
+    s = hear(s, 'CLM-GC001-MUN-LOADING')
+
+    const counts = tabItemCounts(s)
+    const badges: TabBadges = { testimony: 2, timeline: 2 }
+    const v = inquiryView(s, src, shakyClaims(s), 'overview', badges)
+    const root = renderInquiry(v, handlers())
+
+    const testimonyTab = root.querySelector('[data-tab="testimony"]')!
+    expect(testimonyTab.getAttribute('data-badge')).toBe('2')
+    expect(testimonyTab.getAttribute('aria-label')).toContain('새 항목 2건')
+    expect(testimonyTab.classList.contains('has-new')).toBe(true)
+    expect(testimonyTab.querySelector('.iq-tab-badge')!.textContent).toBe('2')
+  })
+
+  it('배지가 0 이면 data-badge 도 .iq-tab-badge 도 없다', () => {
+    const s = createInquiry()
+    const v = inquiryView(s, src, shakyClaims(s), 'overview', {})
+    const root = renderInquiry(v, handlers())
+
+    const tabs = Array.from(root.querySelectorAll('[role="tab"]'))
+    for (const tab of tabs) {
+      expect(tab.getAttribute('data-badge')).toBeNull()
+      expect(tab.querySelector('.iq-tab-badge')).toBeNull()
+      expect(tab.classList.contains('has-new')).toBe(false)
+    }
   })
 })

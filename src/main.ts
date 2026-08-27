@@ -61,6 +61,7 @@ import {
 import {
   CLAIM_STATE_LABEL, inquiryView, renderInquiry, renderMemoPreview, renderShakyHint,
   renderSuspectIndicator, type InquiryTab, type ShakyHintRow,
+  tabItemCounts, computeTabBadges,
 } from './ui/inquiryPanel'
 import { renderProofSheet, type ProofClue } from './ui/proofSheet'
 import { validateProof, VERDICT_LINE, type ProofContext } from './engine/proof'
@@ -149,6 +150,11 @@ interface UI {
   inq: InquiryState
   /** 수첩의 현재 탭 — 재렌더 뒤에도 펼쳐 본 면을 유지한다 */
   inqTab: InquiryTab
+  /**
+   * 탭별 「마지막으로 봤을 때의 항목 수」 — 3.2.13 알림의 기준선.
+   * 탭을 여는 순간 갱신된다. 수사일지를 닫았다 여는 것으로 리셋되지 않는다.
+   */
+  inqTabSeen: Record<InquiryTab, number>
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
   /** AI 파이프라인 판을 펼쳤는가 */
   dash: boolean
@@ -279,6 +285,7 @@ const ui: UI = {
     ? gc001KnownFacts().reduce<InquiryState>((s, f) => learnFact(s, f.id), createInquiry())
     : createInquiry(),
   inqTab: 'overview',
+  inqTabSeen: { overview: 0, testimony: 0, evidence: 0, timeline: 0, deduction: 0 },
   dash: false,
   opening: false,
   journalSeen: 0,
@@ -1274,6 +1281,8 @@ function rightPage(forDrawer = false): HTMLElement {
  * 조사 면을 조립한다 — **부품은 사건을 모르므로** 라벨·이름을 여기서 넘긴다 (불변식 6).
  */
 function inquiryBlock(): HTMLElement {
+  const counts = tabItemCounts(ui.inq)
+  const badges = computeTabBadges(counts, ui.inqTabSeen)
   const view = inquiryView(ui.inq, {
     claim: (id) => {
       const c = gc001Claim(id)
@@ -1289,10 +1298,15 @@ function inquiryBlock(): HTMLElement {
       return e ? `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}` : id
     },
     people: SUSPECTS.map((s) => ({ id: s, name: CASE.suspects[s].name })),
-  }, shakyClaims(ui.inq), ui.inqTab)
+  }, shakyClaims(ui.inq), ui.inqTab, badges)
 
   return renderInquiry(view, {
-    changeTab: (tab) => { ui.inqTab = tab; play('paper'); render() },
+    changeTab: (tab) => {
+      ui.inqTab = tab
+      // 탭을 여는 순간 그 탭의 본 개수를 갱신한다 (3.2.13 알림 리셋)
+      ui.inqTabSeen[tab] = tabItemCounts(ui.inq)[tab]
+      play('paper'); render()
+    },
     pickSuspect: (id) => {
       // 자원을 쓰지 않는다. 표시가 바뀔 뿐이다 (명세 §22)
       ui.inq = setSuspect(ui.inq, id)

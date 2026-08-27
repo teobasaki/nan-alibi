@@ -116,6 +116,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* ── 탭 알림 배지 (3.2.13 · 3.2.8 장식 최소화) ── */
+.iq-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--fa-red-seal, #a8382c);
+  color: var(--fa-paper-hi, #efe9da);
+  font: 700 8.5px/1 var(--fa-mono, ui-monospace, monospace);
+  letter-spacing: -.02em;
+  flex-shrink: 0;
+}
+.iq-tab.has-new {
+  color: var(--ink, #221b14);
+}
 .iq-page { padding-bottom: 20px; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
