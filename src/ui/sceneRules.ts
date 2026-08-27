@@ -28,6 +28,11 @@ export const SCENE_FX = {
   surveyMs: 12000,
   /** 수집 시간 — 30.0초. 십분의일초까지 표시한다 */
   collectMs: 30000,
+  /**
+   * 3D 무대 준비 상한. 평상시 2~4초이며, 커튼의 느림 표시(8초)보다 먼저
+   * 기록철 폴백으로 전환해 연출이 입력을 영구 차단하지 못하게 한다.
+   */
+  mountTimeoutMs: 6000,
   /** 이 잔여초 이하부터 째깍이 2Hz (기획서 §3: 10~6초) */
   tick2FromSec: 10,
   /** 이 잔여초 이하부터 심박+비네트 강 (기획서 §3: 5~0초) */
@@ -679,4 +684,71 @@ export function moveDirFor(yaw: number, fwd: number, side: number): [number, num
   const s = Math.sin(yaw)
   const c = Math.cos(yaw)
   return [s * fwd - c * side, c * fwd + s * side]
+}
+
+/** `raceSceneMount` 의 네 갈래. 어느 길로 가도 `settled` 는 정확히 한 번 지난다 */
+export interface SceneMountHooks<T> {
+  /** ① 시간 안에 무대가 섰다 — 화면에 붙이고 커튼을 연다 */
+  staged: (handle: T) => void
+  /** ②③ 못 섰다(null·거절) 또는 시간을 넘겼다 — 기록철 흐름으로 되돌린다 */
+  fallback: () => void
+  /** 재진입 가드 해제. **결과보다 먼저** 불린다 — 폴백 화면에서 다시 눌러도 잠긴 문이 없다 */
+  settled: () => void
+  /** ④ 시간을 넘긴 뒤 늦게 선 무대 — 붙이지 않고 버린다. 숨은 렌더 루프까지 정리할 책임이 여기 있다 */
+  late: (handle: T) => void
+  /** 시간 초과의 기록 훅 (로깅). 판정에는 관여하지 않는다 */
+  timedOut?: (ms: number) => void
+  /** 기본 `SCENE_FX.mountTimeoutMs` */
+  timeoutMs?: number
+}
+
+/**
+ * **3D 무대 준비의 시계.**
+ *
+ * 커튼은 `ready` 를 받아야 열린다(curtain.ts 규칙 ②). 그래서 준비가 끝나지 않으면
+ * **연출이 입력을 영구히 막는다** — 배포판에서 실제로 그랬다: 현장 에셋 요청이
+ * reject 하지 않고 **pending 으로 남아** 10.5초가 지나도 「무대를 준비하는 중」에
+ * 머물렀고, 플레이어는 이야기 뒤에서 아무것도 할 수 없었다.
+ *
+ * `catch`/`finally` 는 이 사고를 못 막는다. **정착하지 않는 프라미스에는 아무 핸들러도
+ * 불리지 않는다.** 그러므로 프라미스 밖에 시계가 하나 있어야 한다.
+ *
+ * 3D 를 import 하지 않는다 — `T` 는 무대 손잡이의 자리표시자일 뿐이라 이 판정이
+ * 헤드리스 테스트에 닿는다. DOM 철거·커튼 신호·가드 해제는 전부 호출부(main.ts)의 몫이다.
+ *
+ * ## 잠그는 두 가지
+ * - **`staged` 와 `fallback` 은 합쳐서 한 번만.** 3D 현장과 2D 기록철이 같은 화면에
+ *   겹치는 것이 원래 버그보다 나쁘다.
+ * - **시간을 넘기면 늦게 온 무대는 버린다.** 관객은 이미 기록철을 보고 있다.
+ */
+export function raceSceneMount<T>(mount: Promise<T | null>, hooks: SceneMountHooks<T>): void {
+  const ms = hooks.timeoutMs ?? SCENE_FX.mountTimeoutMs
+  let decided = false
+  let settled = false
+  const settle = (): void => {
+    if (settled) return
+    settled = true
+    hooks.settled()
+  }
+  const timer = setTimeout(() => {
+    if (decided) return
+    decided = true
+    hooks.timedOut?.(ms)
+    settle()
+    hooks.fallback()
+  }, ms)
+  const land = (handle: T | null): void => {
+    clearTimeout(timer)
+    if (decided) {
+      // 시간을 넘긴 뒤 도착했다 — 판정은 이미 기록철이다 (④)
+      if (handle) hooks.late(handle)
+      return
+    }
+    decided = true
+    settle()
+    if (handle) hooks.staged(handle)
+    else hooks.fallback()
+  }
+  // 거절도 「못 섰다」의 한 형태다 — 호출부가 이미 접었더라도 여기서 한 번 더 접는다
+  void mount.then(land, () => land(null))
 }

@@ -33,7 +33,7 @@ import { portraitFor } from './ui/portraits'
 import { hasModel, mount, type Stage3D } from './ui/stage3d'
 import { anyWalkSlug, hasStation, hasWalkModel, mountExplore, type Explore3D, type Marker, type Seat } from './ui/explore3d'
 import { mountCrimeScene, type CrimeScene, type SceneMarker } from './ui/crimescene3d'
-import { SCENE_FX, bagIds, spawnAnchored, swapField, timeUp } from './ui/sceneRules'
+import { SCENE_FX, bagIds, raceSceneMount, spawnAnchored, swapField, timeUp } from './ui/sceneRules'
 import { renderWall, wallData } from './ui/cardwall'
 import { curtainSwap } from './ui/curtain'
 import { castTagFor } from './ui/cast'
@@ -864,7 +864,24 @@ function openCrimeScene(fallback: () => void, ready?: () => void): void {
   // 발견 지점 서술 1줄 — 수단·시신 묘사 금지 (골든 케이스 §4). 라벨은 월드 소유.
   const pedLine = `${PLACE_L(CRIME_PLACE)} 발견 지점 — 조각상 아래, 테이프 안쪽에 서류가 흩어져 있다. 감식반의 표식만 남았다.`
 
-  void mountCrimeScene(host, slug, CALM, pedLine, {
+  let readyCalled = false
+  let fallbackCalled = false
+  const signalReady = (): void => {
+    if (readyCalled) return
+    readyCalled = true
+    ready?.()
+  }
+  const useFallback = (): void => {
+    if (fallbackCalled) return
+    fallbackCalled = true
+    try {
+      fallback()
+    } catch (e) {
+      console.error('[현장] 기록철 폴백 전환 실패', e)
+    }
+  }
+
+  const mount = mountCrimeScene(host, slug, CALM, pedLine, {
     onPick: onScenePick,
     /**
      * **제1막이 내리고 제2막이 오른다** (R3 · 연극 3막 구조).
@@ -889,36 +906,38 @@ function openCrimeScene(fallback: () => void, ready?: () => void): void {
         },
       })
     },
-  })
+  }).catch((e: unknown) => {
     /**
-     * **거절도 「못 섰다」의 한 형태다.** mountCrimeScene 은 자기 안에서 전부 잡아
-     * `null` 을 주게 돼 있지만, 그 밖(동적 import 실패·데코더 워커 부재)에서 던지면
-     * `.then` 이 아예 안 불린다. 그러면 `csOpening` 이 참으로 남아 **그 세션 내내**
-     * 재진입 가드가 현장을 통째로 스킵했다 — 커튼은 `ready` 없이 열리고 제1막 자리에
-     * 2D 수사 화면이 그대로 드러난다. 거절을 `null` 로 접어 한 갈래로 모은다.
+     * **거절도 「못 섰다」의 한 형태다.** 동적 import·디코더·WebGL 실패를 모두
+     * null 로 접어 아래의 한 폴백 경로로 보낸다.
      */
-    .catch((e: unknown) => {
-      console.error('[현장] 3D 무대가 서지 못했다 — 기록철 흐름으로 되돌린다', e)
-      return null
-    })
-    .then((hd) => {
+    console.error('[현장] 3D 무대가 서지 못했다 — 기록철 흐름으로 되돌린다', e)
+    return null
+  })
+
+  /**
+   * 판정은 `raceSceneMount`(sceneRules) 가 소유한다 — 요청이 pending 으로 남아도
+   * 커튼이 게임을 막지 못하게 하는 시계가 그 안에 있고, 게이트가 그 시계를 본다.
+   * 여기 남는 것은 DOM 철거와 커튼 신호뿐이다.
+   */
+  raceSceneMount<CrimeScene>(mount, {
+    staged: (hd) => {
       loading.remove()
-      if (!hd) {
-        host.remove()
-        ready?.()
-        return fallback()
-      }
       csHandle = hd
       syncSceneState()
-      ready?.()      // 무대가 다 섰다 — 커튼은 여기서 열린다
-    })
-    /**
-     * **가드는 반드시 풀린다.** 예전에는 `.then` 안에서만 풀어서, 위의 어느 경로로든
-     * 프라미스가 `.then` 에 못 닿으면 가드가 영구히 잠겼다. `finally` 는 성공·실패·
-     * 폴백 어느 쪽이든 지난다 (PLAYBOOK #45 — 가드가 열린 채/닫힌 채 죽는 방향을 정하라.
-     * 이 가드는 연타 방지용이므로 **실패 시 열려야** 다음 시도가 가능하다).
-     */
-    .finally(() => { csOpening = false })
+      signalReady()      // 무대가 다 섰다 — 커튼은 여기서 열린다
+    },
+    fallback: () => {
+      loading.remove()
+      host.remove()
+      signalReady()
+      useFallback()
+    },
+    // 타임아웃 뒤 늦게 선 무대는 화면에 붙이지 않는다 — 숨은 렌더 루프도 즉시 정리한다
+    late: (hd) => hd.dispose(),
+    settled: () => { csOpening = false },
+    timedOut: (ms) => console.error(`[현장] 3D 준비가 ${ms}ms를 넘겨 기록철로 전환한다`),
+  })
 }
 
 /**

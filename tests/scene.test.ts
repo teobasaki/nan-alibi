@@ -6,10 +6,10 @@
  *   ⑦ calm 모드 — 타이머 없음
  * 3D 그림은 여기 없다 — 시각 판정·배치처럼 틀리면 자원을 잃는 것만 순수 함수로 떼었다.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   SCENE_FX, phaseAt, remainMs, pulseAt, vignetteAt, timeUp, swapField, bagIds,
-  sceneBlocked, spawnFor, spawnAnchored, moveSpeedFor, rampTo,
+  sceneBlocked, spawnFor, spawnAnchored, moveSpeedFor, rampTo, raceSceneMount,
   FLAG_KEY, KIND_MODELS, clipRateFor, modelKeyFor, variantFor, VARIANT,
   DEATH_AT, SCENE_START, SCENE_PLACE_AT,
 } from '../src/ui/sceneRules'
@@ -364,5 +364,117 @@ describe('증거품 유일성 — 같은 실모델은 한 현장에 한 번만 (
   it('같은 사건의 배치는 모델까지 결정론이다', () => {
     const list = CASE.evidence.map((e) => ({ id: e.id, kind: e.kind }))
     expect(spawnAnchored(list)).toEqual(spawnAnchored(list))
+  })
+})
+
+/**
+ * **연출이 게임을 막아서는 안 된다** (curtain.ts 규칙 ②의 게이트).
+ *
+ * 실측 사고: 배포판에서 현장 에셋 요청이 reject 하지 않고 **pending 으로 남아**
+ * 10.5초가 지나도 커튼이 「무대를 준비하는 중」에 머물며 입력을 통째로 막았다.
+ * 정착하지 않는 프라미스에는 `catch`·`finally` 가 불리지 않으므로 프라미스 밖의
+ * 시계만이 이 사고를 막는다. 3D 는 테스트가 못 닿으니 그 시계를 여기서 잠근다.
+ */
+describe('3D 무대 준비의 시계 — 커튼이 입력을 영구 차단하지 못한다', () => {
+  interface Handle { readonly id: string }
+  /** 호출부(main.ts)가 하는 일을 이름만 기록한다 — 순서와 횟수가 이 테스트의 대상이다 */
+  const spy = () => {
+    const log: string[] = []
+    const disposed: string[] = []
+    return {
+      log,
+      disposed,
+      hooks: {
+        staged: (h: Handle) => log.push(`staged:${h.id}`),
+        fallback: () => log.push('fallback'),
+        settled: () => log.push('settled'),
+        late: (h: Handle) => { log.push(`late:${h.id}`); disposed.push(h.id) },
+        timedOut: (ms: number) => log.push(`timedOut:${ms}`),
+      },
+    }
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('정착하지 않는 요청도 상한에서 기록철로 풀린다 — 이 버그의 회귀 테스트', async () => {
+    const s = spy()
+    raceSceneMount<Handle>(new Promise(() => { /* 영원히 pending */ }), s.hooks)
+
+    await vi.advanceTimersByTimeAsync(SCENE_FX.mountTimeoutMs - 1)
+    expect(s.log).toEqual([])                    // 상한 전에는 조용히 기다린다
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(s.log).toEqual([`timedOut:${SCENE_FX.mountTimeoutMs}`, 'settled', 'fallback'])
+  })
+
+  it('상한은 커튼의 「무대를 준비하는 중」(8초)보다 먼저 온다', () => {
+    // curtain.ts 의 기본 maxHold. 이 부등호가 깨지면 폴백 전에 사고 표시가 뜬다
+    expect(SCENE_FX.mountTimeoutMs).toBeLessThan(8000)
+    // 평상시 현장은 2~4초에 선다 — 정상 로딩을 잘라내지 않을 만큼은 길어야 한다
+    expect(SCENE_FX.mountTimeoutMs).toBeGreaterThan(4000)
+  })
+
+  it('시간 안에 서면 무대가 열리고 폴백은 없다', async () => {
+    const s = spy()
+    raceSceneMount<Handle>(Promise.resolve({ id: 'A' }), s.hooks)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.log).toEqual(['settled', 'staged:A'])
+
+    // 상한이 지나도 시계가 뒤늦게 폴백을 부르지 않는다 (타이머가 걷혔다)
+    await vi.advanceTimersByTimeAsync(SCENE_FX.mountTimeoutMs * 2)
+    expect(s.log).toEqual(['settled', 'staged:A'])
+  })
+
+  it('null 과 거절은 같은 한 갈래다 — 즉시 기록철', async () => {
+    const nul = spy()
+    raceSceneMount<Handle>(Promise.resolve(null), nul.hooks)
+    const rej = spy()
+    raceSceneMount<Handle>(Promise.reject(new Error('WebGL 없음')), rej.hooks)
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nul.log).toEqual(['settled', 'fallback'])
+    expect(rej.log).toEqual(['settled', 'fallback'])
+  })
+
+  it('상한을 넘겨 늦게 선 무대는 버린다 — 3D 와 기록철이 겹치지 않는다', async () => {
+    const s = spy()
+    let land: (h: Handle) => void = () => {}
+    raceSceneMount<Handle>(new Promise<Handle>((r) => { land = r }), s.hooks)
+
+    await vi.advanceTimersByTimeAsync(SCENE_FX.mountTimeoutMs)
+    land({ id: 'LATE' })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(s.log).toEqual([`timedOut:${SCENE_FX.mountTimeoutMs}`, 'settled', 'fallback', 'late:LATE'])
+    expect(s.disposed).toEqual(['LATE'])         // 숨은 렌더 루프를 남기지 않는다
+    expect(s.log.filter((l) => l.startsWith('staged'))).toEqual([])
+  })
+
+  it('가드 해제(settled)는 어느 길로 가도 정확히 한 번이다', async () => {
+    /** 프라미스는 그 갈래를 실제로 돌 때 만든다 — 미리 만들면 거절이 핸들러보다 먼저 뜬다 */
+    const branches: Array<() => Promise<Handle | null>> = [
+      () => Promise.resolve({ id: 'A' }),
+      () => Promise.resolve(null),
+      () => Promise.reject(new Error('x')),
+      () => new Promise(() => {}),
+    ]
+    for (const mount of branches) {
+      const s = spy()
+      raceSceneMount<Handle>(mount(), s.hooks)
+      await vi.advanceTimersByTimeAsync(SCENE_FX.mountTimeoutMs + 1000)
+      expect(s.log.filter((l) => l === 'settled')).toHaveLength(1)
+      // 무대와 기록철은 **합쳐서** 한 번만 — 둘이 겹치면 원래 버그보다 나쁘다
+      expect(s.log.filter((l) => l === 'fallback' || l.startsWith('staged:'))).toHaveLength(1)
+    }
+  })
+
+  it('호출부가 상한을 정할 수 있다 — 기본은 SCENE_FX 가 소유한다', async () => {
+    const s = spy()
+    raceSceneMount<Handle>(new Promise(() => {}), { ...s.hooks, timeoutMs: 1200 })
+    await vi.advanceTimersByTimeAsync(1199)
+    expect(s.log).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(s.log).toEqual(['timedOut:1200', 'settled', 'fallback'])
   })
 })
