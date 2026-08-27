@@ -32,8 +32,11 @@ const src: InquirySource = {
 }
 
 const view = (s = createInquiry()) => inquiryView(s, src, shakyClaims(s))
-const draw = (s = createInquiry()) =>
-  renderInquiry(view(s), { pickSuspect: () => {}, setMemo: () => {} })
+const handlers = (pickSuspect: (id: SuspectId | null) => void = () => {}) => ({
+  changeTab: () => {}, pickSuspect, setMemo: () => {}, saveHypothesis: () => {},
+  removeHypothesis: () => {}, addLink: () => {}, removeLink: () => {}, openProof: () => {},
+})
+const draw = (s = createInquiry()) => renderInquiry(view(s), handlers())
 
 describe('상태 이름 — 관찰만 적는다 (AC-12)', () => {
   it('어떤 상태 이름에도 "거짓" 이라는 낱말이 없다', () => {
@@ -123,7 +126,7 @@ describe('현재 의심 인물 — 정답 제출이 아니다 (명세 §22)', ()
 
   it('같은 사람을 다시 누르면 표시를 거둔다 — 의심을 거두는 것도 수사다', () => {
     const pickSuspect = vi.fn()
-    const root = renderInquiry(view(setSuspect(createInquiry(), 'S1')), { pickSuspect, setMemo: () => {} })
+    const root = renderInquiry(view(setSuspect(createInquiry(), 'S1')), handlers(pickSuspect))
     const first = root.querySelector<HTMLButtonElement>('.iq-person.on')!
     first.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(pickSuspect).toHaveBeenCalledWith(null)

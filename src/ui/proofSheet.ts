@@ -14,7 +14,7 @@
  */
 
 import '../styles/proof.css'
-import type { DeductionSubmission, ProofResult, Verdict } from '../engine/proof'
+import { validateConnectionGraph, type DeductionSubmission, type ProofResult, type Verdict } from '../engine/proof'
 
 export interface ProofClue {
   id: string
@@ -36,6 +36,8 @@ export interface ProofSheetData {
   /** 명제 목록 (판정 화면에서 상태와 함께 보여준다) */
   propositions: { id: string; statement: string }[]
   verdictLine: Record<Verdict, string>
+  /** 수사일지에서 미리 이어 둔 연결 — 둘 다 선택됐을 때 제출 초안으로 들어온다 */
+  draftConnections?: { fromId: string; toId: string }[]
 }
 
 export interface ProofSheetHandlers {
@@ -70,6 +72,8 @@ export function renderProofSheet(d: ProofSheetData, on: ProofSheetHandlers): HTM
   let methodId = d.methods[0] ?? ''
   /** 고른 순서가 곧 사슬의 순서다 (§31 의 예시가 사슬로 적혀 있다) */
   const picked: string[] = []
+  let connections = [...(d.draftConnections ?? [])]
+  let linkStart: string | null = null
 
   const body = el('div', 'pf-body')
   root.appendChild(body)
@@ -119,17 +123,43 @@ export function renderProofSheet(d: ProofSheetData, on: ProofSheetHandlers): HTM
     s3.appendChild(el('p', 'pf-hint',
       '고른 순서가 그대로 사슬이 된다. 판정은 무엇을 골랐는지가 아니라, 그 연결로 무엇이 성립했는지를 본다.'))
 
-    // 사슬 — 고른 순서대로
+    // 연결 편집 — 두 단서를 차례로 눌러 선을 잇거나 끊는다. 목록에 함께 있는 것만으로는 증명이 아니다.
+    const activeConnections = connections.filter((x) => picked.includes(x.fromId) && picked.includes(x.toId))
+    const graph = validateConnectionGraph(picked, activeConnections)
     if (picked.length) {
-      const chain = el('div', 'pf-chain')
-      picked.forEach((id, i) => {
+      const chain = el('div', 'pf-chain pf-graph')
+      chain.appendChild(el('div', 'pf-graph-h', linkStart
+        ? '연결할 둘째 근거를 고른다' : '두 근거를 차례로 눌러 연결한다'))
+      const nodes = el('div', 'pf-graph-nodes')
+      for (const id of picked) {
         const c = d.clues.find((x) => x.id === id)
-        if (i) chain.appendChild(el('span', 'pf-arrow', '↓'))
-        const node = el('div', 'pf-link')
+        const node = el('button', `pf-link${linkStart === id ? ' linking' : ''}`) as HTMLButtonElement
+        node.type = 'button'; node.setAttribute('aria-pressed', String(linkStart === id))
         node.appendChild(el('span', 'pf-link-k', KIND_LABEL[c?.kind ?? 'FACT']))
         node.appendChild(el('span', 'pf-link-t', c?.label ?? id))
-        chain.appendChild(node)
-      })
+        node.onclick = () => {
+          if (!linkStart) { linkStart = id; return drawPick() }
+          if (linkStart === id) { linkStart = null; return drawPick() }
+          const i = connections.findIndex((x) =>
+            (x.fromId === linkStart && x.toId === id) || (x.fromId === id && x.toId === linkStart))
+          if (i >= 0) connections.splice(i, 1)
+          else connections.push({ fromId: linkStart, toId: id })
+          linkStart = null; drawPick()
+        }
+        nodes.appendChild(node)
+      }
+      chain.appendChild(nodes)
+      const edges = el('div', 'pf-edges')
+      for (const edge of activeConnections) {
+        const a = d.clues.find((x) => x.id === edge.fromId)?.label ?? edge.fromId
+        const b = d.clues.find((x) => x.id === edge.toId)?.label ?? edge.toId
+        const line = el('button', 'pf-edge', `${a}  →  ${b}  ×`) as HTMLButtonElement
+        line.type = 'button'; line.onclick = () => { connections = connections.filter((x) => x !== edge); drawPick() }
+        edges.appendChild(line)
+      }
+      chain.appendChild(edges)
+      chain.appendChild(el('div', `pf-graph-state${graph.valid ? ' ok' : ''}`,
+        graph.valid ? '연결 확인 — 하나의 논증이다' : '연결 필요 — 모든 근거가 한 덩어리여야 한다'))
       s3.appendChild(chain)
     }
 
@@ -151,8 +181,11 @@ export function renderProofSheet(d: ProofSheetData, on: ProofSheetHandlers): HTM
       if (c.detail) b.appendChild(el('div', 'pf-clue-d', c.detail))
       b.onclick = () => {
         const i = picked.indexOf(c.id)
-        if (i >= 0) picked.splice(i, 1)
-        else if (picked.length < d.pick.max) picked.push(c.id)
+        if (i >= 0) {
+          picked.splice(i, 1)
+          connections = connections.filter((x) => x.fromId !== c.id && x.toId !== c.id)
+          if (linkStart === c.id) linkStart = null
+        } else if (picked.length < d.pick.max) picked.push(c.id)
         drawPick()
       }
       // 상한을 넘겨 고르려 할 때는 **막되 이유를 보인다** — 조용히 무시하면 고장으로 읽힌다
@@ -166,17 +199,18 @@ export function renderProofSheet(d: ProofSheetData, on: ProofSheetHandlers): HTM
     const foot = el('div', 'pf-foot')
     const go = el('button', 'pf-go', '이 논증을 제출한다') as HTMLButtonElement
     go.type = 'button'
-    go.disabled = picked.length < d.pick.min || !culpritId || !methodId
-    if (go.disabled) {
+    go.disabled = picked.length < d.pick.min || !culpritId || !methodId || !graph.valid
+    if (picked.length < d.pick.min) {
       foot.appendChild(el('span', 'pf-need', `근거를 최소 ${d.pick.min}개 골라야 한다`))
+    } else if (!graph.valid) {
+      foot.appendChild(el('span', 'pf-need', '고른 근거를 모두 하나의 연결로 이어야 한다'))
     }
     go.onclick = () => {
       const sub: DeductionSubmission = {
         culpritId,
         methodId,
         selectedClueIds: [...picked],
-        // 사슬은 고른 순서의 인접 쌍이다
-        connections: picked.slice(0, -1).map((from, i) => ({ fromId: from, toId: picked[i + 1]! })),
+        connections: activeConnections.map((x) => ({ ...x })),
       }
       drawVerdict(sub, on.judge(sub))
     }

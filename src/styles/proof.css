@@ -226,3 +226,17 @@
   .pf-clues { grid-template-columns: 1fr; }
   .pf-body { padding: 14px 13px 12px; }
 }
+
+/* ── 명시적 연결 그래프 ── */
+.pf-graph-h { margin-bottom: 7px; font: 10px/1.4 var(--fa-mono, ui-monospace, monospace); color: var(--fa-paper-ink-soft, #5e5343); }
+.pf-graph-nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 5px; }
+.pf-graph .pf-link {
+  min-width: 0; padding: 6px 8px; text-align: left; color: var(--fa-paper-ink, #221b14);
+  background: rgba(255,255,255,.38); border: 1px solid var(--fa-paper-edge, rgba(90,74,52,.26));
+  border-radius: 2px; cursor: pointer;
+}
+.pf-graph .pf-link.linking { border-color: var(--fa-red-seal, #a8382c); box-shadow: inset 3px 0 0 var(--fa-red-seal, #a8382c); }
+.pf-edges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.pf-edge { max-width: 100%; padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9.5px; color: var(--fa-paper-ink-soft, #5e5343); background: rgba(255,255,255,.3); border: 1px dashed var(--fa-paper-edge, rgba(90,74,52,.26)); }
+.pf-graph-state { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--fa-red-seal, #a8382c); font-size: 10.5px; color: var(--fa-red-seal, #a8382c); }
+.pf-graph-state.ok { border-left-color: #3c6349; color: #3c6349; }

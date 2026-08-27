@@ -223,3 +223,21 @@ describe('GC-001 조사 데이터 — 정본과 어긋나지 않는다', () => {
     for (const w of banned) expect(text, `금칙어: ${w}`).not.toContain(w)
   })
 })
+
+describe('W7 · 플레이어 가설과 연결 편집', () => {
+  it('연결을 추가하고 어느 방향에서든 끊을 수 있다', async () => {
+    const { link, unlink } = await import('../src/engine/inquiry')
+    const linked = link(createInquiry(), 'A', 'B')
+    expect(linked.links).toEqual([['A', 'B']])
+    expect(unlink(linked, 'B', 'A').links).toEqual([])
+  })
+
+  it('가설 삭제는 단서와 연결을 지우지 않는다', async () => {
+    const { link, removeHypothesis, upsertHypothesis } = await import('../src/engine/inquiry')
+    let s = link(createInquiry(), 'A', 'B')
+    s = upsertHypothesis(s, { id: 'H-1', proposition: '가설', supportClueIds: ['A'], counterClueIds: [], proofPropositionIds: [], status: 'DRAFT' })
+    s = removeHypothesis(s, 'H-1')
+    expect(s.hypotheses).toEqual([])
+    expect(s.links).toEqual([['A', 'B']])
+  })
+})

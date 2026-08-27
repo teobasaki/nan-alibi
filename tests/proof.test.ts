@@ -226,3 +226,28 @@ describe('경계와 위생', () => {
     expect(GC001_CULPRIT_PROOF.requires).not.toContain('PROP-07')
   })
 })
+
+describe('§33 ② · Clue Connection 은 장식이 아니다', () => {
+  it('명제를 만족하는 단서가 함께 있어도 연결이 없으면 UNPROVEN', () => {
+    const clues = [
+      'F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE',
+      'F-GC001-MUN-AT-LOADING-2118', 'F-GC001-MAIN-LOADING-TRAVEL-TIME',
+      'CLM-GC001-RYU-LEFT-PRESSED', 'E4',
+    ]
+    const r = validateProof({
+      culpritId: 'S1', methodId: '고의적 직접 물리력', selectedClueIds: clues, connections: [],
+    }, ctxOf(clues))
+    expect(r.verdict).toBe('UNPROVEN')
+    expect(r.proven).toEqual([])
+    expect(r.reasons.join(' ')).toContain('연결이 끊어져')
+  })
+
+  it('일부만 이어 고립된 근거가 있어도 명제가 서지 않는다', () => {
+    const clues = ['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']
+    const r = validateProof({
+      culpritId: 'S1', methodId: '고의적 직접 물리력', selectedClueIds: clues,
+      connections: [{ fromId: 'E8', toId: 'E9' }, { fromId: 'E9', toId: 'E6' }],
+    }, ctxOf(clues))
+    expect(r.verdict).toBe('UNPROVEN')
+  })
+})

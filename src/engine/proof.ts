@@ -100,6 +100,48 @@ export interface ProofResult {
 
 /* ────────────────────────────── 평가 ────────────────────────────── */
 
+export interface ConnectionGraphResult {
+  valid: boolean
+  /** 선택됐지만 어떤 유효 연결에도 닿지 않은 단서 */
+  isolated: string[]
+  /** 무방향으로 보았을 때 나뉜 연결 묶음 수 */
+  components: number
+}
+
+/**
+ * 제출의 연결이 **하나의 논증 그래프**인지 확인한다 (§33 ②).
+ * 화살표 방향은 화면의 읽는 순서이고, 연결성은 무방향으로 본다. 자기 연결·선택 밖 연결은 무시한다.
+ */
+export function validateConnectionGraph(
+  selectedClueIds: readonly string[],
+  connections: readonly { fromId: string; toId: string }[],
+): ConnectionGraphResult {
+  const ids = [...new Set(selectedClueIds)]
+  if (ids.length <= 1) return { valid: ids.length === 1, isolated: ids.length ? [] : [], components: ids.length }
+  const selected = new Set(ids)
+  const adj = new Map(ids.map((id) => [id, new Set<string>()]))
+  for (const { fromId, toId } of connections) {
+    if (fromId === toId || !selected.has(fromId) || !selected.has(toId)) continue
+    adj.get(fromId)!.add(toId)
+    adj.get(toId)!.add(fromId)
+  }
+  const isolated = ids.filter((id) => adj.get(id)!.size === 0)
+  const seen = new Set<string>()
+  let components = 0
+  for (const start of ids) {
+    if (seen.has(start)) continue
+    components += 1
+    const stack = [start]
+    while (stack.length) {
+      const id = stack.pop()!
+      if (seen.has(id)) continue
+      seen.add(id)
+      for (const next of adj.get(id)!) stack.push(next)
+    }
+  }
+  return { valid: components === 1, isolated, components }
+}
+
 const satisfied = (rule: SupportRule, clues: Set<string>, proven: Set<string>): boolean => {
   if (rule.allOf?.length && !rule.allOf.every((id) => clues.has(id))) return false
   if (rule.anyOf?.length && !rule.anyOf.some((id) => clues.has(id))) return false
@@ -176,6 +218,21 @@ export function validateProof(sub: DeductionSubmission, ctx: ProofContext): Proo
       culpritProven: false,
       methodProven: false,
       reasons: ['서로 양립할 수 없는 근거가 함께 들어 있다. 어긋난 진술과 고쳐진 진술을 같은 근거로 쓸 수는 없다.'],
+      ignored,
+    }
+  }
+
+  /* ② 연결 확인 — 같은 목록에 있다는 이유만으로 명제가 서면 연결 UI 는 장식이 된다 */
+  const submitted = [...new Set(sub.selectedClueIds.filter((id) => held.has(id)))]
+  const graph = validateConnectionGraph(submitted, sub.connections)
+  if (!graph.valid) {
+    return {
+      verdict: 'UNPROVEN',
+      propositions: Object.fromEntries(ctx.propositions.map((p) => [p.id, 'UNKNOWN' as const])),
+      proven: [],
+      culpritProven: false,
+      methodProven: false,
+      reasons: ['근거 사이의 연결이 끊어져 있다. 모든 근거를 하나의 추론으로 이어야 한다.'],
       ignored,
     }
   }

@@ -157,3 +157,63 @@
 
 .iq-person:focus-visible,
 .iq-memo:focus-visible { outline: 2px solid var(--amber, #6f5417); outline-offset: 1px; }
+
+/* ── 레퍼런스: 상단 5탭 + 카드형 수사일지 ── */
+.iq-notebook { min-height: 100%; }
+.iq-tabs {
+  position: sticky; top: -12px; z-index: 4; display: grid; grid-template-columns: repeat(5, 1fr);
+  margin: -12px -16px 18px -14px; padding: 0 14px;
+  background: linear-gradient(180deg, rgba(239,233,218,.98), rgba(230,223,205,.96));
+  border-bottom: 1px solid var(--line);
+}
+.iq-tab {
+  display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0;
+  padding: 10px 4px 8px; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
+  color: var(--muted); background: transparent; box-shadow: none !important; font-size: 11px;
+}
+.iq-tab:hover:not(:disabled) { background: rgba(255,255,255,.25) !important; }
+.iq-tab.on { color: var(--ink); border-bottom-color: var(--red); font-weight: 700; }
+.iq-tab-no { font: 8px/1 var(--fa-mono, monospace); opacity: .6; }
+.iq-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iq-page { padding-bottom: 20px; }
+.iq-overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.iq-overview-grid > .iq-sec { padding: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.22); }
+
+.iq select, .iq textarea { color: var(--ink); background: rgba(255,255,255,.42); border: 1px solid var(--line); border-radius: 2px; font: inherit; }
+.iq select { min-height: 30px; padding: 4px 7px; }
+.iq-deduction { display: flex; flex-direction: column; gap: 14px; }
+.iq-add { margin-left: auto; padding: 3px 8px; font-size: 10px; }
+.iq-hyp { margin-top: 10px; padding: 11px; border: 1px solid rgba(91,72,48,.34); background: rgba(255,255,255,.28); box-shadow: 0 2px 5px rgba(60,45,25,.1); }
+.iq-hyp-top { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.iq-hyp-id { font: 10px/1 var(--fa-mono, monospace); color: var(--red); }
+.iq-hyp-status { margin-left: auto; }
+.iq-hyp-del { padding: 4px 7px; font-size: 10px; color: var(--muted); }
+.iq-hyp-text { width: 100%; padding: 7px 8px; line-height: 1.55; resize: vertical; }
+.iq-hyp-who { width: 100%; margin-top: 6px; }
+.iq-hyp-role { margin-top: 9px; padding-left: 9px; border-left: 2px solid var(--green); }
+.iq-hyp-role.counter { border-left-color: var(--red); }
+.iq-hyp-role-k { font: 10px/18px var(--fa-mono, monospace); color: var(--muted); }
+.iq-hyp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.iq-hyp-tag { max-width: 100%; padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; text-align: left; }
+.iq-clue-select { width: 100%; margin-top: 5px; font-size: 10px !important; }
+.iq-link-new { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 5px; align-items: center; margin-top: 8px; }
+.iq-link-new .iq-clue-select { margin: 0; min-width: 0; }
+.iq-link-arrow { color: var(--red); font-family: var(--fa-mono, monospace); }
+.iq-link-add { padding: 5px 8px; font-size: 10px; }
+.iq-link { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto; gap: 6px; align-items: center; margin-top: 6px; padding: 7px; border-bottom: 1px dashed var(--line); font-size: 10.5px; }
+.iq-link span:not(.iq-link-arrow) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iq-link button { padding: 3px 6px; font-size: 9px; }
+.iq-proof { width: 100%; padding: 10px; border-color: var(--red) !important; color: var(--red); font-family: var(--fa-serif, serif); }
+.iq-timeline { position: relative; }
+.iq-time { display: grid; grid-template-columns: 48px 64px 1fr; gap: 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.iq-time time { font: 11px var(--fa-mono, monospace); color: var(--red); }
+.iq-time-who { font-family: var(--fa-serif, serif); font-weight: 700; }
+.iq-time-text { font-size: 11px; }
+
+@media (max-width: 760px) {
+  .iq-overview-grid { grid-template-columns: 1fr; }
+  .iq-tab { flex-direction: column; gap: 2px; padding-inline: 1px; }
+  .iq-tab-label { font-size: 9px; }
+  .iq-link-new { grid-template-columns: 1fr; }
+  .iq-link-arrow { text-align: center; }
+}

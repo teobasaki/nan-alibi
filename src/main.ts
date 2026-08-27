@@ -54,10 +54,11 @@ import {
 import { FIELD_BUDGET, TALK_CAP, WEAPONS, WEAPON_TRACE } from './data/config'
 import { chalkData, renderChalkboard } from './ui/chalkboard'
 import {
-  createInquiry, hear, learnFact, revise, heldClueIds, setMemo, setSuspect, shakyClaims,
+  createInquiry, hear, learnFact, revise, heldClueIds, link as linkInquiry,
+  removeHypothesis, setMemo, setSuspect, shakyClaims, unlink as unlinkInquiry, upsertHypothesis,
   type InquiryState,
 } from './engine/inquiry'
-import { CLAIM_STATE_LABEL, inquiryView, renderInquiry } from './ui/inquiryPanel'
+import { CLAIM_STATE_LABEL, inquiryView, renderInquiry, type InquiryTab } from './ui/inquiryPanel'
 import { renderProofSheet, type ProofClue } from './ui/proofSheet'
 import { validateProof, VERDICT_LINE, type ProofContext } from './engine/proof'
 import {
@@ -143,6 +144,8 @@ interface UI {
    * `game`(자원·채점)과 나란히 든다. gc001 에서만 채워지고, 다른 사건에서는 빈 채로 남는다.
    */
   inq: InquiryState
+  /** 수첩의 현재 탭 — 재렌더 뒤에도 펼쳐 본 면을 유지한다 */
+  inqTab: InquiryTab
   /** 심문석 3D. 없거나 실패하면 null 이고 사진으로 폴백한다. */
   /** AI 파이프라인 판을 펼쳤는가 */
   dash: boolean
@@ -261,6 +264,7 @@ const ui: UI = {
   inq: IS_GC001
     ? gc001KnownFacts().reduce<InquiryState>((s, f) => learnFact(s, f.id), createInquiry())
     : createInquiry(),
+  inqTab: 'overview',
   dash: false,
   opening: false,
   journalSeen: 0,
@@ -1155,6 +1159,12 @@ function rightPage(forDrawer = false): HTMLElement {
 
   const page = h('div', 'nb-page nb-right')
 
+  // GC-001 드로어는 다섯 탭 수사일지 한 벌이다. 옛 일지·인물·기록철을 아래에 또 쌓지 않는다.
+  if (forDrawer && IS_GC001) {
+    page.appendChild(inquiryBlock())
+    return page
+  }
+
   page.appendChild(journalBlock())
 
   page.appendChild(h('div', 'nb-rule'))
@@ -1194,9 +1204,10 @@ function inquiryBlock(): HTMLElement {
       return e ? `${labelOfKind(e.kind)} · ${SLOT_L(e.slot)} ${PLACE_L(e.place)}` : id
     },
     people: SUSPECTS.map((s) => ({ id: s, name: CASE.suspects[s].name })),
-  }, shakyClaims(ui.inq))
+  }, shakyClaims(ui.inq), ui.inqTab)
 
   return renderInquiry(view, {
+    changeTab: (tab) => { ui.inqTab = tab; play('paper'); render() },
     pickSuspect: (id) => {
       // 자원을 쓰지 않는다. 표시가 바뀔 뿐이다 (명세 §22)
       ui.inq = setSuspect(ui.inq, id)
@@ -1204,6 +1215,11 @@ function inquiryBlock(): HTMLElement {
       render()
     },
     setMemo: (text) => { ui.inq = setMemo(ui.inq, text) },
+    saveHypothesis: (hypothesis) => { ui.inq = upsertHypothesis(ui.inq, hypothesis); render() },
+    removeHypothesis: (id) => { ui.inq = removeHypothesis(ui.inq, id); render() },
+    addLink: (a, b) => { ui.inq = linkInquiry(ui.inq, a, b); render() },
+    removeLink: (a, b) => { ui.inq = unlinkInquiry(ui.inq, a, b); render() },
+    openProof: () => { notebookDrawer().close(); openProofSheet() },
   })
 }
 
@@ -2640,6 +2656,7 @@ function openProofSheet(): void {
     pick: GC001_CLUE_PICK,
     propositions: GC001_PROPOSITIONS.map((p) => ({ id: p.id, statement: p.statement })),
     verdictLine: VERDICT_LINE,
+    draftConnections: ui.inq.links.map(([fromId, toId]) => ({ fromId, toId })),
   }, {
     judge: (sub) => {
       // 여정 기록은 `showResult` 가 남긴다 — 여기서 또 남기면 한 판에 제출이 여러 번 찍힌다

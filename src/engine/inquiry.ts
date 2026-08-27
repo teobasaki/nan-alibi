@@ -242,6 +242,12 @@ export function link(s: InquiryState, a: string, b: string): InquiryState {
   return has ? s : { ...s, links: [...s.links, [a, b]] }
 }
 
+/** 플레이어가 지운 연결만 제거한다. 없는 쌍을 지우는 동작은 같은 상태를 돌려준다 */
+export function unlink(s: InquiryState, a: string, b: string): InquiryState {
+  const links = s.links.filter(([x, y]) => !((x === a && y === b) || (x === b && y === a)))
+  return links.length === s.links.length ? s : { ...s, links }
+}
+
 /** 지금 의심하는 인물을 바꾼다 — 자원을 소모하지 않고, 언제든 되돌릴 수 있다 (명세 §22) */
 export function setSuspect(s: InquiryState, who: SuspectId | null): InquiryState {
   return { ...s, suspect: who }
@@ -256,6 +262,12 @@ export function upsertHypothesis(s: InquiryState, h: Hypothesis): InquiryState {
   const i = s.hypotheses.findIndex((x) => x.id === h.id)
   const hypotheses = i < 0 ? [...s.hypotheses, h] : s.hypotheses.map((x, k) => (k === i ? h : x))
   return { ...s, hypotheses }
+}
+
+/** 가설을 지운다. 연결·단서는 세계의 정보라 함께 지우지 않는다 */
+export function removeHypothesis(s: InquiryState, id: string): InquiryState {
+  const hypotheses = s.hypotheses.filter((h) => h.id !== id)
+  return hypotheses.length === s.hypotheses.length ? s : { ...s, hypotheses }
 }
 
 /* ────────────────────────────── 조회 ────────────────────────────── */

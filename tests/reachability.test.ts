@@ -15,6 +15,8 @@ import { GC001_CULPRIT_PROOF, GC001_METHOD_PROOF, GC001_PROPOSITIONS } from '../
 import { createInquiry, evidenceStateOf, hear, heldClueIds, learnFact } from '../src/engine/inquiry'
 import { closeProof, validateProof, type ProofContext } from '../src/engine/proof'
 
+const chain = (ids: readonly string[]) => ids.slice(0, -1).map((fromId, i) => ({ fromId, toId: ids[i + 1]! }))
+
 /** 게임 안에서 그 Fact 를 얻을 수 있는 경로가 하나라도 있는가 */
 const reachableFacts = (): Set<string> => {
   const out = new Set<string>(gc001KnownFacts().map((f) => f.id))
@@ -116,7 +118,7 @@ describe('AC-15 — 두 경로가 **플레이로** PROVEN 에 닿는다', () => 
         'CLM-GC001-RYU-LEFT-PRESSED',
         'E4',
       ],
-      connections: [],
+      connections: chain(['F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE', 'CLM-GC001-MUN-LOADING', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
     }, ctxOf(s))
     expect(r.verdict).toBe('PROVEN')
   })
@@ -131,7 +133,7 @@ describe('AC-15 — 두 경로가 **플레이로** PROVEN 에 닿는다', () => 
       culpritId: 'S1',
       methodId: '고의적 직접 물리력',
       selectedClueIds: ['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4'],
-      connections: [],
+      connections: chain(['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
     }, ctxOf(s))
     expect(r.verdict).toBe('PROVEN')
   })

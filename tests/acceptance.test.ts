@@ -29,6 +29,8 @@ import { validateProof, type ProofContext } from '../src/engine/proof'
 import { GC001_CULPRIT_PROOF, GC001_METHOD_PROOF, GC001_PROPOSITIONS } from '../src/data/gc001-proof'
 import { slotLabel, SLOTS, SUSPECTS } from '../src/types'
 
+const chain = (ids: readonly string[]) => ids.slice(0, -1).map((fromId, i) => ({ fromId, toId: ids[i + 1]! }))
+
 const CASE = gc001Case()
 const ctx = {
   names: Object.fromEntries(Object.values(CASE.suspects).map((s) => [s.name, s.id])),
@@ -115,7 +117,7 @@ describe('AC-06 — REV-17-084 를 못 찾아도 Proof Path B 로 입증된다',
         'F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE', 'CLM-GC001-MUN-LOADING',
         'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4',
       ],
-      connections: [],
+      connections: chain(['F-GC001-LABEL-CHANGED-2118', 'F-GC001-REVISION-OPERATOR-SCOPE', 'CLM-GC001-MUN-LOADING', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
     }, proofCtx(s))
     expect(r.verdict).toBe('PROVEN')
   })
@@ -137,7 +139,7 @@ describe('AC-07 — 문소라의 거짓말 해소가 필수 진행 열쇠가 아
         'E8', 'F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-MUN-AT-LOADING-2118',
         'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4',
       ],
-      connections: [],
+      connections: chain(['E8', 'F-GC001-REVISION-OPERATOR-SCOPE', 'F-GC001-MUN-AT-LOADING-2118', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
     }, proofCtx(s))
     expect(r.verdict).toBe('PROVEN')
   })
@@ -152,7 +154,7 @@ describe('AC-08 — 류나린을 골랐다고 즉시 정답이 아니다', () =>
     const r = validateProof({
       culpritId: 'S1', methodId: '고의적 직접 물리력',
       selectedClueIds: ['F-GC001-DISMISSAL-NOTICE', 'CLM-GC001-RYU-LEFT-PRESSED'],
-      connections: [],
+      connections: chain(['F-GC001-DISMISSAL-NOTICE', 'CLM-GC001-RYU-LEFT-PRESSED']),
     }, proofCtx(s))
     expect(r.verdict).toBe('CULPRIT_PLAUSIBLE_PROOF_INCOMPLETE')
   })
@@ -173,7 +175,7 @@ describe('AC-09 — 자백 없이 객관 Clue 만으로 클리어할 수 있다'
     const r = validateProof({
       culpritId: 'S1', methodId: '고의적 직접 물리력',
       selectedClueIds: ['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4'],
-      connections: [],
+      connections: chain(['E8', 'E9', 'E6', 'F-GC001-MAIN-LOADING-TRAVEL-TIME', 'CLM-GC001-RYU-LEFT-PRESSED', 'E4']),
     }, proofCtx(s))
     expect(r.verdict).toBe('PROVEN')
   })
@@ -298,7 +300,7 @@ describe('§39 금지 3 — REV-17 발견이 범인을 자동 확정하지 않�
     const s = discoverGc001Evidence(createInquiry(), 'E9')
     const r = validateProof({
       culpritId: 'S1', methodId: '고의적 직접 물리력',
-      selectedClueIds: ['E9', 'F-GC001-REV17-ISSUED-2111'], connections: [],
+      selectedClueIds: ['E9', 'F-GC001-REV17-ISSUED-2111'], connections: chain(['E9', 'F-GC001-REV17-ISSUED-2111']),
     }, proofCtx(s))
     expect(r.culpritProven).toBe(false)
     expect(r.verdict).not.toBe('PROVEN')
